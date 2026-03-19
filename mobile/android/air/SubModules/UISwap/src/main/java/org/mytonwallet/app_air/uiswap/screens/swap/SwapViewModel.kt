@@ -40,10 +40,11 @@ import org.mytonwallet.app_air.walletcore.api.swapCexEstimate
 import org.mytonwallet.app_air.walletcore.api.swapCexSubmit
 import org.mytonwallet.app_air.walletcore.api.swapGetPairs
 import org.mytonwallet.app_air.walletcore.api.swapSubmit
-import org.mytonwallet.app_air.walletcore.models.MBlockchain
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.models.MBridgeError
 import org.mytonwallet.app_air.walletcore.moshi.IApiToken
 import org.mytonwallet.app_air.walletcore.moshi.MApiCheckTransactionDraftOptions
+import org.mytonwallet.app_air.walletcore.moshi.MApiCheckTransactionDraftResult
 import org.mytonwallet.app_air.walletcore.moshi.MApiSubmitTransferOptions
 import org.mytonwallet.app_air.walletcore.moshi.MApiSwapAsset
 import org.mytonwallet.app_air.walletcore.moshi.MApiSwapBuildRequest
@@ -162,7 +163,7 @@ class SwapViewModel : ViewModel(), WalletCore.EventObserver {
         val state = _inputStateFlow.value
         val pairs = tokenPairsCache[state.tokenToSend?.slug]
 
-        if (state.tokenToSend == null || _inputStateFlow.value.shouldShowAllPairs) {
+        if (state.tokenToSend == null || _inputStateFlow.value.shouldShowAllPairsToBuy) {
             _walletStateFlow.value?.assets?.let {
                 _eventsFlow.tryEmit(Event.ShowSelector(it, mode = Mode.RECEIVE))
             }
@@ -761,30 +762,40 @@ class SwapViewModel : ViewModel(), WalletCore.EventObserver {
     private suspend fun callEstimate(request: SwapEstimateRequest): SwapEstimateResponse {
         try {
             if (request.isCex) {
-                val firstTransactionFee: BigInteger
-                val balance = request.wallet.balances[request.tokenToSend.slug] ?: BigInteger.ZERO
+                var firstTransactionFee: BigInteger
                 val needEstFee = request.wallet.isSupportedChain(request.tokenToSend.mBlockchain)
 
-                if (needEstFee && balance > BigInteger.ZERO) {
+                if (needEstFee) { // Must call even when balance is 0 for proper fee estimation
                     val estFeeAddress = when (request.tokenToSend.mBlockchain) {
                         MBlockchain.ton -> request.wallet.tonAddress
-                        MBlockchain.tron -> "TW2LXSebZ7Br1zHaiA2W1zRojDkDwjGmpw"    // random address for estimate
-                        else -> throw NotImplementedError()
+                        else -> request.tokenToSend.mBlockchain?.feeCheckAddress ?: throw NotImplementedError()
                     }
 
                     val estAmount = BigInteger.ONE
-                    firstTransactionFee = WalletCore.Transfer.checkTransactionDraft(
-                        request.tokenToSend.mBlockchain!!,
-                        MApiCheckTransactionDraftOptions(
-                            accountId = request.wallet.accountId,
-                            toAddress = estFeeAddress,
-                            amount = estAmount,
-                            stateInit = null,
-                            tokenAddress = if (!request.tokenToSend.isBlockchainNative) request.tokenToSend.tokenAddress else null,
-                            payload = null,
-                            allowGasless = null
-                        )
-                    ).fee!!
+                    try {
+                        firstTransactionFee = WalletCore.Transfer.checkTransactionDraft(
+                            request.tokenToSend.mBlockchain!!,
+                            MApiCheckTransactionDraftOptions(
+                                accountId = request.wallet.accountId,
+                                toAddress = estFeeAddress,
+                                amount = estAmount,
+                                stateInit = null,
+                                tokenAddress = if (!request.tokenToSend.isBlockchainNative) request.tokenToSend.tokenAddress else null,
+                                payload = null,
+                                allowGasless = null
+                            )
+                        ).fee!!
+                    } catch (apiError: JSWebViewBridge.ApiError) {
+                        if (apiError.parsed == MBridgeError.INSUFFICIENT_BALANCE &&
+                            apiError.parsedResult is MApiCheckTransactionDraftResult
+                        ) {
+                            firstTransactionFee =
+                                (apiError.parsedResult!! as MApiCheckTransactionDraftResult).fee
+                                    ?: BigInteger.ZERO
+                        } else {
+                            throw apiError
+                        }
+                    }
                 } else {
                     firstTransactionFee = BigInteger.ZERO
                 }
@@ -924,8 +935,6 @@ class SwapViewModel : ViewModel(), WalletCore.EventObserver {
                     ),
                     estimate.request.isDiesel
                 )
-
-                _eventsFlow.tryEmit(Event.SwapComplete(success = true))
             }
 
             estimate.cex?.let { cex ->
@@ -943,6 +952,7 @@ class SwapViewModel : ViewModel(), WalletCore.EventObserver {
                     estimate.fee?.toBigDecimal(9)?.toDouble() ?: 0.0
                 } else 0.0
 
+                swappedEstimateConfig = estimate
                 val result = WalletCore.Swap.swapCexCreateTransaction(
                     accountId,
                     passcode,
@@ -959,7 +969,6 @@ class SwapViewModel : ViewModel(), WalletCore.EventObserver {
                 )
 
                 if (estimate.request.tokenToSendIsSupported) {
-                    swappedEstimateConfig = estimate
                     WalletCore.Transfer.swapCexSubmit(
                         tokenToSend.mBlockchain!!, MApiSubmitTransferOptions(
                             accountId = accountId,
@@ -991,6 +1000,18 @@ class SwapViewModel : ViewModel(), WalletCore.EventObserver {
         }
     }
 
+    private fun checkReceivedActivity(receivedActivity: MApiTransaction) {
+        val isSwapDone = receivedActivity is MApiTransaction.Swap &&
+            (receivedActivity.from == swappedEstimateConfig?.request?.tokenToSend?.slug ||
+                receivedActivity.from == swappedEstimateConfig?.request?.tokenToSend?.tokenAddress) &&
+            (receivedActivity.to == swappedEstimateConfig?.request?.tokenToReceive?.slug ||
+                receivedActivity.to == swappedEstimateConfig?.request?.tokenToReceive?.tokenAddress)
+        if (!isSwapDone)
+            return
+        _eventsFlow.tryEmit(Event.SwapComplete(success = true, activity = receivedActivity))
+        swappedEstimateConfig = null
+    }
+
     override fun onWalletEvent(walletEvent: WalletEvent) {
         when (walletEvent) {
             is WalletEvent.AccountChanged,
@@ -1006,14 +1027,22 @@ class SwapViewModel : ViewModel(), WalletCore.EventObserver {
                 _inputStateFlow.value = correctVal
             }
 
+            is WalletEvent.NewLocalActivities -> {
+                walletEvent.localActivities?.forEach {
+                    checkReceivedActivity(it)
+                }
+            }
+
             is WalletEvent.ReceivedPendingActivities -> {
-                val activity = walletEvent.pendingActivities?.firstOrNull { activity ->
-                    activity is MApiTransaction.Swap &&
-                        activity.from == swappedEstimateConfig?.request?.tokenToSend?.slug &&
-                        activity.to == swappedEstimateConfig?.request?.tokenToReceive?.slug
-                } ?: return
-                _eventsFlow.tryEmit(Event.SwapComplete(success = true, activity = activity))
-                swappedEstimateConfig = null
+                walletEvent.pendingActivities?.forEach {
+                    checkReceivedActivity(it)
+                }
+            }
+
+            is WalletEvent.ReceivedNewActivities -> {
+                walletEvent.newActivities?.filter { it.isPending() }?.forEach {
+                    checkReceivedActivity(it)
+                }
             }
 
             else -> {}

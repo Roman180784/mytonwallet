@@ -1,21 +1,20 @@
-import React, { type ElementRef, memo, useMemo, useRef } from '../../../../lib/teact/teact';
+import React, { type ElementRef, memo, useRef } from '../../../../lib/teact/teact';
 
 import type { ApiBaseCurrency, ApiStakingState, ApiYieldType } from '../../../../api/types';
 import type { AppTheme, UserToken } from '../../../../global/types';
-import type { LangFn } from '../../../../hooks/useLang';
 import type { Layout } from '../../../../hooks/useMenuPosition';
 import type { StakingStateStatus } from '../../../../util/staking';
 
-import { ANIMATED_STICKER_TINY_ICON_PX, IS_CORE_WALLET, TOKEN_WITH_LABEL, TON_USDE } from '../../../../config';
+import { ANIMATED_STICKER_TINY_ICON_PX, IS_CORE_WALLET } from '../../../../config';
 import { Big } from '../../../../lib/big.js';
 import buildClassName from '../../../../util/buildClassName';
 import { calcChangeValue } from '../../../../util/calcChangeValue';
 import { DAY, formatFullDay } from '../../../../util/dateFormat';
 import { toDecimal } from '../../../../util/decimals';
 import { formatCurrency, getShortCurrencySymbol } from '../../../../util/formatNumber';
-import getPseudoRandomNumber from '../../../../util/getPseudoRandomNumber';
 import { round } from '../../../../util/round';
 import { ANIMATED_STICKERS_PATHS } from '../../../ui/helpers/animatedAssets';
+import getTokenName from '../../helpers/getTokenName';
 
 import { useDeviceScreen } from '../../../../hooks/useDeviceScreen';
 import useLang from '../../../../hooks/useLang';
@@ -56,6 +55,8 @@ interface OwnProps {
   isSwapDisabled?: boolean;
   isStakingAvailable?: boolean;
   isViewMode?: boolean;
+  isPinned?: boolean;
+  withPinTransition?: boolean;
   onClick: (slug: string) => void;
 }
 
@@ -84,6 +85,8 @@ function Token({
   isStakingAvailable,
   isSwapDisabled,
   isViewMode,
+  isPinned,
+  withPinTransition,
   yieldType,
   onClick,
 }: OwnProps) {
@@ -94,6 +97,7 @@ function Token({
     price,
     change24h: change,
     decimals,
+    label,
   } = token;
 
   const lang = useLang();
@@ -109,11 +113,10 @@ function Token({
   const changePercent = Math.abs(round(change * 100, 2));
   const withYield = !IS_CORE_WALLET && annualYield !== undefined;
   const shortBaseSymbol = getShortCurrencySymbol(baseCurrency);
-  const withLabel = Boolean(!isVesting && TOKEN_WITH_LABEL[slug]);
+  const withLabel = Boolean(!isVesting && label);
   const stakingId = stakingState?.id;
-  const name = getTokenName(lang, token, !!stakingId);
-  const amountCols = useMemo(() => getPseudoRandomNumber(4, 12, name), [name]);
-  const fiatAmountCols = 5 + (amountCols % 6);
+  const name = getTokenName(lang, token);
+  const withChainIconRendered = withChainIcon && !stakingId;
   if (ref) {
     buttonRef = ref;
   }
@@ -126,8 +129,16 @@ function Token({
     withShouldRender: true,
   });
 
+  const {
+    shouldRender: shouldRenderPin,
+    ref: pinRef,
+  } = useShowTransition<HTMLElement>({
+    isOpen: isPinned,
+    withShouldRender: true,
+  });
+
   const handleClick = useLastCallback(() => {
-    onClick(stakingId ?? slug);
+    onClick(slug);
   });
 
   const getTriggerElement = useLastCallback(() => buttonRef.current);
@@ -160,6 +171,7 @@ function Token({
     isSwapDisabled,
     isViewMode,
     stakingState,
+    isPinned,
   });
 
   function renderYield() {
@@ -171,7 +183,7 @@ function Token({
 
     return (
       <span ref={yieldRef} className={labelClassName}>
-        {yieldType} {round(annualYield ?? 0, 2)}%
+        {stakingStatus ? '' : `${yieldType} `}{round(annualYield ?? 0, 2)}%
       </span>
     );
   }
@@ -240,7 +252,7 @@ function Token({
         <TokenIcon
           size="large"
           token={token}
-          withChainIcon={withChainIcon}
+          withChainIcon={withChainIconRendered}
           className={styles.tokenIcon}
         >
           <>
@@ -258,13 +270,15 @@ function Token({
             <span className={styles.nameText}>{name}</span>
             {shouldRenderYield && renderYield()}
             {withLabel && (
-              <span className={buildClassName(styles.label, styles.chainLabel)}>{TOKEN_WITH_LABEL[slug]}</span>
+              <span className={buildClassName(styles.label, styles.chainLabel)}>{label}</span>
             )}
           </div>
           <div className={styles.subtitle}>
             <SensitiveData
               isActive={isSensitiveDataHidden}
-              cols={fiatAmountCols}
+              min={5}
+              max={10}
+              seed={name}
               rows={2}
               cellSize={8}
             >
@@ -277,7 +291,9 @@ function Token({
         <div className={styles.secondaryCell}>
           <SensitiveData
             isActive={isSensitiveDataHidden}
-            cols={amountCols}
+            min={4}
+            max={12}
+            seed={name}
             rows={2}
             cellSize={8}
             align="right"
@@ -304,7 +320,9 @@ function Token({
           ) : (
             <SensitiveData
               isActive={isSensitiveDataHidden}
-              cols={fiatAmountCols}
+              min={5}
+              max={10}
+              seed={name}
               rows={2}
               cellSize={8}
               align="right"
@@ -336,7 +354,7 @@ function Token({
         <TokenIcon
           token={token}
           size="large"
-          withChainIcon={withChainIcon}
+          withChainIcon={withChainIconRendered}
           className={styles.tokenIcon}
         >
           <>
@@ -351,10 +369,21 @@ function Token({
         </TokenIcon>
         <div className={styles.primaryCell}>
           <div className={styles.name}>
+            {shouldRenderPin && (
+              <i
+                ref={pinRef}
+                className={buildClassName(
+                  styles.pinIcon,
+                  'icon-pin',
+                  withPinTransition && styles.pinIcon_withTransition,
+                )}
+                aria-hidden
+              />
+            )}
             <span className={styles.nameText}>{name}</span>
             {canRenderYield && renderYield()}
             {withLabel && (
-              <span className={buildClassName(styles.label, styles.chainLabel)}>{TOKEN_WITH_LABEL[slug]}</span>
+              <span className={buildClassName(styles.label, styles.chainLabel)}>{label}</span>
             )}
           </div>
           <div className={styles.subtitle}>
@@ -380,7 +409,9 @@ function Token({
         <div className={styles.secondaryCell}>
           <SensitiveData
             isActive={isSensitiveDataHidden}
-            cols={amountCols}
+            min={4}
+            max={12}
+            seed={name}
             rows={2}
             cellSize={8}
             align="right"
@@ -395,7 +426,9 @@ function Token({
           </SensitiveData>
           <SensitiveData
             isActive={isSensitiveDataHidden}
-            cols={fiatAmountCols}
+            min={5}
+            max={10}
+            seed={name}
             rows={2}
             cellSize={8}
             align="right"
@@ -438,19 +471,6 @@ function Token({
       )}
     </div>
   );
-}
-
-function getTokenName(lang: LangFn, token: UserToken, isStaking: boolean): string {
-  if (!isStaking) {
-    return token.name;
-  }
-
-  switch (token.slug) {
-    case TON_USDE.slug:
-      return lang('%token% Staking', { token: 'Ethena' })[0] as any;
-    default:
-      return lang('%token% Staking', { token: token.name })[0] as any;
-  }
 }
 
 export default memo(Token);

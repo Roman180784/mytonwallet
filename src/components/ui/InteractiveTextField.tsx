@@ -9,16 +9,19 @@ import type { IAnchorPosition, SavedAddress } from '../../global/types';
 import type { Layout } from '../../hooks/useMenuPosition';
 import type { DropdownItem } from './Dropdown';
 
-import { selectCurrentAccountState, selectIsMultichainAccount } from '../../global/selectors';
+import { closeAllOverlays } from '../../global/helpers/misc';
+import {
+  selectCurrentAccountState,
+} from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
 import { getChainTitle } from '../../util/chain';
 import { copyTextToClipboard } from '../../util/clipboard';
 import { stopEvent } from '../../util/domEvents';
-import { handleUrlClick, openUrl } from '../../util/openUrl';
+import { openUrl } from '../../util/openUrl';
 import { shareUrl } from '../../util/share';
 import { MEANINGFUL_CHAR_LENGTH, shortenAddress } from '../../util/shortenAddress';
-import { getExplorerAddressUrl, getExplorerName, getHostnameFromUrl } from '../../util/url';
+import { getExplorerAddressUrl, getExplorerName, getHostnameFromUrl, getViewTransactionUrl } from '../../util/url';
 import { IS_IOS, IS_TOUCH_ENV, REM } from '../../util/windowEnvironment';
 import windowSize from '../../util/windowSize';
 
@@ -35,6 +38,7 @@ import Input from './Input';
 import MenuBackdrop from './MenuBackdrop';
 import Modal from './Modal';
 import Transition from './Transition';
+import WalletAvatar from './WalletAvatar';
 
 import styles from './InteractiveTextField.module.scss';
 import modalStyles from './Modal.module.scss';
@@ -64,11 +68,11 @@ interface OwnProps {
 
 interface StateProps {
   savedAddresses?: SavedAddress[];
-  isMultichainAccount?: boolean;
   isTestnet?: boolean;
+  selectedExplorerIds?: Partial<Record<ApiChain, string>>;
 }
 
-type MenuHandler = 'copy' | 'share' | 'addressBook' | 'explorer';
+type MenuHandler = 'copy' | 'share' | 'addressBook' | 'explorer' | 'viewInApp';
 
 const SAVED_ADDRESS_NAME_MAX_LENGTH = 255;
 const MENU_VERTICAL_OFFSET_PX = -16;
@@ -94,11 +98,11 @@ function InteractiveTextField({
   textClassName,
   savedAddresses,
   isTestnet,
-  isMultichainAccount,
   noDimming,
   withShareInMenu,
+  selectedExplorerIds,
 }: OwnProps & StateProps) {
-  const { showNotification, addSavedAddress } = getActions();
+  const { showToast, addSavedAddress, openTemporaryViewAccount } = getActions();
 
   const addressNameRef = useRef<HTMLInputElement>();
   const contentRef = useRef<HTMLDivElement>();
@@ -114,11 +118,15 @@ function InteractiveTextField({
     }));
   }, [address, chain, savedAddresses]);
 
-  addressUrl = addressUrl ?? (chain ? getExplorerAddressUrl(chain, address, isTestnet) : undefined);
-  const saveAddressTitle = lang(isAddressAlreadySaved ? 'Remove From Saved' : 'Save Address');
+  const selectedExplorerId = chain ? selectedExplorerIds?.[chain] : undefined;
+  const resolvedAddressUrl = addressUrl ?? (chain
+    ? getExplorerAddressUrl(chain, address, isTestnet, selectedExplorerId)
+    : undefined);
+  const saveAddressTitle = lang(isAddressAlreadySaved ? 'Remove from Saved' : 'Save Address');
   const explorerTitle = lang('View on Explorer');
   const withSavedAddresses = Boolean(!isScam && !noSavedAddress && address);
-  const withExplorer = Boolean(!noExplorer && addressUrl);
+  const withExplorer = Boolean(!noExplorer && resolvedAddressUrl);
+  const isAddressCanBeViewed = Boolean(withSavedAddresses && !isAddressAlreadySaved);
 
   useEffect(() => {
     if (isSaveAddressModalOpen) {
@@ -132,7 +140,7 @@ function InteractiveTextField({
     }
 
     addSavedAddress({ address, chain, name: savedAddressName });
-    showNotification({ message: lang('Address was saved!'), icon: 'icon-star' });
+    showToast({ message: lang('Address Saved'), icon: 'icon-star' });
     closeSaveAddressModal();
   });
 
@@ -146,16 +154,34 @@ function InteractiveTextField({
 
   const handleCopy = useLastCallback(() => {
     if (!copyNotification) return;
-    showNotification({ message: copyNotification, icon: 'icon-copy' });
+    showToast({ message: copyNotification, icon: 'icon-copy' });
     void copyTextToClipboard(address || text);
   });
 
-  const handleShare = useLastCallback(() => {
-    void shareUrl(addressUrl!, chain ? getExplorerName(chain) : undefined);
+  const handleShareTransaction = useLastCallback(() => {
+    const url = getViewTransactionUrl(chain!, address!, isTestnet);
+
+    void shareUrl(url);
   });
 
-  const handleTonExplorerOpen = useLastCallback(() => {
-    void openUrl(addressUrl!, { title: getExplorerName(chain!), subtitle: getHostnameFromUrl(addressUrl!) });
+  const handleExplorerOpen = useLastCallback(() => {
+    if (!chain) return;
+
+    void openUrl(resolvedAddressUrl!, {
+      title: getExplorerName(chain, selectedExplorerId),
+      subtitle: getHostnameFromUrl(resolvedAddressUrl!),
+      shouldSkipOverlayClose: true,
+    });
+  });
+
+  const handleViewInApp = useLastCallback(async () => {
+    if (!address || !chain) return;
+    await closeAllOverlays();
+    openTemporaryViewAccount({
+      addressByChain: {
+        [chain]: address,
+      },
+    });
   });
 
   const {
@@ -168,16 +194,19 @@ function InteractiveTextField({
     closeActionsMenu,
   } = useDropdownMenu({
     copy: handleCopy,
-    share: handleShare,
+    share: handleShareTransaction,
     addressBook: isAddressAlreadySaved ? openDeletedSavedAddressModal : openSaveAddressModal,
-    explorer: handleTonExplorerOpen,
+    explorer: handleExplorerOpen,
+    viewInApp: handleViewInApp,
   }, {
     isAddressAlreadySaved,
-    isWalletAddress: Boolean(address && chain && noSavedAddress && !isTransaction),
+    isAddressCanBeViewed,
     isTransaction,
     withSavedAddresses,
     withExplorer,
     withShare: withShareInMenu,
+    address,
+    addressName,
   });
 
   const shouldUseMenu = !spoiler && IS_TOUCH_ENV && menuItems.length > 1;
@@ -187,7 +216,7 @@ function InteractiveTextField({
 
   const longPressHandlers = useLongPress({
     onClick: handleMenuShow,
-    onStart: handleCopy,
+    onStart: (_target: HTMLElement) => handleCopy(),
   });
 
   const handleRevealSpoiler = useLastCallback(() => {
@@ -250,7 +279,7 @@ function InteractiveTextField({
         onClick={!shouldUseMenu ? handleCopy : undefined}
       >
         {isScam && <img src={scamImg} alt={lang('Scam')} className={styles.scamImage} />}
-        {isMultichainAccount && !isTransaction && (
+        {Boolean(chain) && !isTransaction && (
           <i
             className={buildClassName(styles.chainIcon, `icon-chain-${chain}`)}
             aria-label={chain && getChainTitle(chain)}
@@ -329,23 +358,34 @@ function InteractiveTextField({
             className={styles.button}
             title={lang('Share Link')}
             aria-label={lang('Share Link')}
-            onClick={handleShare}
+            onClick={handleShareTransaction}
           >
             <i className={buildClassName(styles.icon, styles.iconShare, 'icon-link')} aria-hidden />
           </span>
         )}
+        {isAddressCanBeViewed && (
+          <span
+            className={styles.button}
+            title={lang('View in App')}
+            aria-label={lang('View in App')}
+            tabIndex={0}
+            role="button"
+            onClick={handleViewInApp}
+          >
+            <i className={buildClassName(styles.icon, 'icon-eye-outlined')} aria-hidden />
+          </span>
+        )}
         {withExplorer && (
-          <a
-            href={addressUrl}
+          <span
             className={styles.button}
             title={explorerTitle}
             aria-label={explorerTitle}
-            target="_blank"
-            rel="noreferrer noopener"
-            onClick={handleUrlClick}
+            tabIndex={0}
+            role="button"
+            onClick={handleExplorerOpen}
           >
             <i className={buildClassName(styles.icon, 'icon-tonexplorer-small')} aria-hidden />
-          </a>
+          </span>
         )}
       </>
     );
@@ -425,8 +465,8 @@ export default memo(withGlobal<OwnProps>(
 
     return {
       savedAddresses: accountState?.savedAddresses,
-      isMultichainAccount: selectIsMultichainAccount(global, global.currentAccountId!),
       isTestnet: global.settings.isTestnet,
+      selectedExplorerIds: global.settings.selectedExplorerIds,
     };
   },
 )(InteractiveTextField));
@@ -437,9 +477,11 @@ function useDropdownMenu(
     withSavedAddresses?: boolean;
     withExplorer?: boolean;
     isAddressAlreadySaved?: boolean;
-    isWalletAddress?: boolean;
+    isAddressCanBeViewed?: boolean;
     isTransaction?: boolean;
     withShare?: boolean;
+    address?: string;
+    addressName?: string;
   },
 ) {
   const [menuPositionY, setMenuPositionY] = useState<'top' | 'bottom'>('top');
@@ -449,20 +491,34 @@ function useDropdownMenu(
 
   const menuItems = useMemo<DropdownItem<MenuHandler>[]>(() => {
     const {
-      isAddressAlreadySaved, isWalletAddress, isTransaction, withSavedAddresses, withExplorer, withShare,
+      isAddressAlreadySaved, isAddressCanBeViewed, isTransaction, withSavedAddresses, withExplorer, withShare,
+      address, addressName,
     } = options;
 
     const items: DropdownItem<MenuHandler>[] = [{
-      name: withSavedAddresses || isWalletAddress
+      name: withSavedAddresses || isAddressCanBeViewed
         ? 'Copy Address'
         : (isTransaction ? 'Copy Transaction ID' : 'Copy'),
       fontIcon: 'copy',
       value: 'copy',
     }];
 
+    if (isAddressCanBeViewed) {
+      const shortAddress = shortenAddress(address!);
+      items.unshift({
+        name: addressName || shortAddress!,
+        description: addressName ? shortAddress : undefined,
+        icon: <WalletAvatar title={addressName || shortAddress} className={styles.menuAvatar} />,
+        fontIcon: 'chevron-right',
+        fontIconClassName: styles.menuIconChevronRight,
+        value: 'viewInApp',
+        withDelimiterAfter: true,
+      });
+    }
+
     if (withSavedAddresses) {
       items.push({
-        name: isAddressAlreadySaved ? 'Remove From Saved' : 'Save Address',
+        name: isAddressAlreadySaved ? 'Remove from Saved' : 'Save Address',
         fontIcon: isAddressAlreadySaved ? 'star-filled' : 'star',
         value: 'addressBook',
       });

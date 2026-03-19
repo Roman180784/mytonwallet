@@ -6,11 +6,10 @@
 //
 
 import UIKit
-import WalletCore
 import WalletContext
 import UIComponents
 
-open class RecoveryPhraseVC: WViewController {
+open class RecoveryPhraseVC: SettingsBaseVC {
     
     public var wordList: [String]
 
@@ -29,10 +28,6 @@ open class RecoveryPhraseVC: WViewController {
         super.loadView()
         
         setupViews()
-    }
-    
-    public override var hideNavigationBar: Bool {
-        true
     }
     
     public var headerView: HeaderView!
@@ -108,7 +103,7 @@ open class RecoveryPhraseVC: WViewController {
         super.viewDidAppear(animated)
         // We don't consider additional space under bottomActionsView, to make it fixed without any scroll on bigger iOS devices,
         //  and add this space on smaller devices to let button come up a little more and make user feel better :)
-        let isDeviceHeightEnoughForAllContent = UIScreen.main.bounds.height >= scrollView.contentSize.height
+        let isDeviceHeightEnoughForAllContent = screenHeight >= scrollView.contentSize.height
         if !isDeviceHeightEnoughForAllContent {
             scrollView.contentInset.bottom = BottomActionsView.reserveHeight
         }

@@ -11,12 +11,13 @@ import UIComponents
 import WalletCore
 import WalletContext
 import SwiftUI
-import Combine
+import Perception
+import SwiftNavigation
 
 public class BuyWithCardVC: WViewController, UIScrollViewDelegate {
     
     let model: BuyWithCardModel
-    var observer: AnyCancellable?
+    var observer: ObserveToken?
     
     public init(chain: ApiChain) {
         self.model = BuyWithCardModel(chain: chain, selectedCurrency: TokenStore.baseCurrency)
@@ -30,9 +31,9 @@ public class BuyWithCardVC: WViewController, UIScrollViewDelegate {
     public override func viewDidLoad() {
         super.viewDidLoad()
         setupViews()
-        loadOnramp(currency: model.selectedCurrency)
-        observer = model.$selectedCurrency.sink { [weak self] currency in
-            self?.loadOnramp(currency: currency)
+        observer = observe { [weak self] in
+            guard let self else { return }
+            loadOnramp(currency: model.selectedCurrency)
         }
     }
 
@@ -77,13 +78,20 @@ public class BuyWithCardVC: WViewController, UIScrollViewDelegate {
     private func loadOnramp(currency: MBaseCurrency) {
         
         if currency == .RUB {
-            open(url: "https://dreamwalkers.io/ru/mytonwallet/?wallet=\(AccountStore.account?.tonAddress ?? "")&give=CARDRUB&take=TON&type=buy")
+            open(url: model.account.dreamwalkersLink)
         } else {
-            guard let address = AccountStore.account?.addressByChain[model.chain.rawValue] else { return }
+            guard let address = AccountStore.account?.getAddress(chain: model.chain) else { return }
             Task {
                 let activeTheme = ResolvedTheme(traitCollection: traitCollection)
                 do {
-                    let url = try await Api.getMoonpayOnrampUrl(chain: model.chain, address: address, activeTheme: activeTheme, selectedCurrency: currency).url
+                    let url = try await Api.getMoonpayOnrampUrl(
+                        params: MoonpayOnrampParams(
+                            chain: model.chain,
+                            address: address,
+                            theme: activeTheme,
+                            currency: currency
+                        )
+                    ).url
                     open(url: url)
                 } catch {
                     showAlert(error: error)
@@ -92,8 +100,8 @@ public class BuyWithCardVC: WViewController, UIScrollViewDelegate {
         }
     }
     
-    private func open(url: String) {
-        if let url = URL(string: url) {
+    private func open(url string: String?) {
+        if let string, let url = URL(string: string) {
             webView.load(URLRequest(url: url))
         }
     }

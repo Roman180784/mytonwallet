@@ -2,7 +2,7 @@ import type { ApiNetwork, ApiSwapActivity, ApiTransactionActivity } from '../../
 import type { TracesResponse } from './toncenter/traces';
 
 import { makeMockSwapActivity, makeMockTransactionActivity } from '../../../../tests/mocks';
-import { calculateActivityDetails } from './activities';
+import { fillActivityDetails } from './activities';
 import { parseTrace } from './traces';
 
 describe('parseTrace + calculateActivityDetails', () => {
@@ -90,6 +90,8 @@ describe('parseTrace + calculateActivityDetails', () => {
           status: 'completed',
           slug: 'toncoin',
           nft: {
+            interface: 'default',
+            chain: 'ton',
             index: 69146,
             name: 'Sins Postmark Series #69147',
             address: 'EQBtqQlC09xW_oOHJOrMofDmFndOrY7zCjd7bYELIoabO9JC',
@@ -164,6 +166,8 @@ describe('parseTrace + calculateActivityDetails', () => {
           status: 'failed',
           slug: 'toncoin',
           nft: {
+            interface: 'default',
+            chain: 'ton',
             index: 3568,
             name: 'USD₮ - pTON Farm NFT',
             address: 'EQCFPen3WvwP0sIr-C4zVQs03UI7SgsFs8mlCWnIkjKNLMsj',
@@ -179,7 +183,7 @@ describe('parseTrace + calculateActivityDetails', () => {
         },
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         traceResponse: require('./testData/failedNftTransferTraceResponse.json'),
-        expectedFee: 103673203n, // This is the full fee, because the excess is a separate action in this trace
+        expectedFee: 5472803n,
       },
     ];
 
@@ -194,7 +198,7 @@ describe('parseTrace + calculateActivityDetails', () => {
 
       const parsedTrace = parseTraceResponse('mainnet', walletAddress, traceResponse);
 
-      expect(calculateActivityDetails(activity, parsedTrace)?.activity).toEqual({
+      expect(fillActivityDetails(activity, parsedTrace)).toEqual({
         ...activity,
         fee: expectedFee,
         shouldLoadDetails: undefined,
@@ -241,7 +245,7 @@ describe('parseTrace + calculateActivityDetails', () => {
       const activity = makeMockSwapActivity(activityPart);
       const parsedTrace = parseTraceResponse('mainnet', walletAddress, traceResponse);
 
-      expect(calculateActivityDetails(activity, parsedTrace)?.activity).toEqual({
+      expect(fillActivityDetails(activity, parsedTrace)).toEqual({
         ...activity,
         networkFee: expectedFee,
       });
@@ -259,6 +263,8 @@ function parseTraceResponse(network: ApiNetwork, walletAddress: string, traceRes
     actions: traceResponse.traces[0].actions,
     traceDetail: traceResponse.traces[0].trace,
     addressBook: traceResponse.address_book,
+    metadata: traceResponse.metadata,
     transactions: traceResponse.traces[0].transactions,
+    nftSuperCollectionsByCollectionAddress: {},
   });
 }

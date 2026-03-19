@@ -20,19 +20,20 @@ extension Api {
     }
     
     /// - Important: Do not call this method directly, use **DappsStore** instead
-    internal static func deleteDapp(accountId: String, url: String, uniqueId: String, dontNotifyDapp: Bool?) async throws -> Any? {
-        try await bridge.callApiRaw("deleteDapp", accountId, url, uniqueId, dontNotifyDapp)
+    internal static func deleteDapp(accountId: String, url: String, uniqueId: String, dontNotifyDapp: Bool?) async throws {
+        _ = try await bridge.callApiRaw("deleteDapp", accountId, url, uniqueId, dontNotifyDapp)
     }
     
     internal static func deleteAllDapps(accountId: String) async throws {
         try await bridge.callApiVoid("deleteAllDapps", accountId)
     }
     
-    public static func loadExploreSites(isLandscape: Bool = false) async throws -> ApiExploreSitesResult {
+    public static func loadExploreSites(isLandscape: Bool = false, langCode: String) async throws -> ApiExploreSitesResult {
         struct Opts: Encodable {
             var isLandscape: Bool
+            var langCode: String
         }
-        return try await bridge.callApi("loadExploreSites", Opts(isLandscape: isLandscape), decoding: ApiExploreSitesResult.self)
+        return try await bridge.callApi("loadExploreSites", Opts(isLandscape: isLandscape, langCode: langCode), decoding: ApiExploreSitesResult.self)
     }
 }
 
@@ -40,6 +41,7 @@ extension Api {
 // MARK: - Types
 
 public struct ApiExploreSitesResult: Codable, Sendable {
+    public var featuredTitle: String?
     public var categories: [ApiSiteCategory]
     public var sites: [ApiSite]
 }

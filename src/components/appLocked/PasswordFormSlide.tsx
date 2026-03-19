@@ -44,7 +44,8 @@ function PasswordFormSlide({
     const result = await callApi('verifyPassword', password);
 
     if (!result) {
-      setPasswordError('Wrong password, please try again.');
+      const error = getDoesUsePinPad() ? 'Wrong passcode, please try again.' : 'Wrong password, please try again.';
+      setPasswordError(error);
       return;
     }
 
@@ -74,6 +75,7 @@ function PasswordFormSlide({
         pinPadClassName={styles.pinPadContent}
         inputWrapperClassName={styles.passwordInputWrapper}
         submitLabel={lang('Unlock')}
+        noAutoConfirm
         onSubmit={handleSubmitPassword}
         onUpdate={handlePasswordChange}
       >

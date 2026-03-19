@@ -2,7 +2,7 @@ import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiNft } from '../../api/types';
-import type { Account, GlobalState, SavedAddress } from '../../global/types';
+import type { GlobalState, SavedAddress } from '../../global/types';
 import { DomainLinkingState } from '../../global/types';
 
 import { TONCOIN } from '../../config';
@@ -10,12 +10,11 @@ import {
   selectCurrentAccount,
   selectCurrentAccountState,
   selectCurrentToncoinBalance,
-  selectNetworkAccounts,
   selectTonDnsLinkedAddress,
 } from '../../global/selectors';
 import { getDoesUsePinPad } from '../../util/biometrics';
 import buildClassName from '../../util/buildClassName';
-import { isValidAddressOrDomain } from '../../util/isValidAddressOrDomain';
+import { isValidAddressOrDomain } from '../../util/isValidAddress';
 import resolveSlideTransitionName from '../../util/resolveSlideTransitionName';
 import { ANIMATED_STICKERS_PATHS } from '../ui/helpers/animatedAssets';
 
@@ -46,16 +45,9 @@ interface StateProps {
   byAddress?: Record<string, ApiNft>;
   tonBalance: bigint;
   savedAddresses?: SavedAddress[];
-  accounts?: Record<string, Account>;
   currentTonAddress?: string;
   currentLinkedWalletAddress?: string;
 }
-
-const FULL_NATIVE_STATES = new Set([
-  DomainLinkingState.Password,
-  DomainLinkingState.ConnectHardware,
-  DomainLinkingState.ConfirmHardware,
-]);
 
 function LinkingDomainModal({
   currentDomainLinking: {
@@ -72,7 +64,6 @@ function LinkingDomainModal({
   isMediaViewerOpen,
   byAddress,
   tonBalance,
-  accounts,
   savedAddresses,
   currentTonAddress,
   currentLinkedWalletAddress,
@@ -94,7 +85,6 @@ function LinkingDomainModal({
   const { renderingKey, nextKey } = useModalTransitionKeys(state ?? 0, isOpen);
   const domainNft = address ? byAddress?.[address] : undefined;
   const isInsufficientBalance = realFee ? tonBalance < realFee : undefined;
-  const forceFullNative = FULL_NATIVE_STATES.has(renderingKey);
   const feeTerms = useMemo(() => (realFee ? { native: realFee } : undefined), [realFee]);
   const modalTitle = currentLinkedWalletAddress ? 'Change Linked Wallet' : 'Link to Wallet';
   const isAddressValid = isValidAddressOrDomain(walletAddress, 'ton');
@@ -146,13 +136,11 @@ function LinkingDomainModal({
 
             <AddressInput
               withQrScan
+              withCurrentAccount
               value={walletAddress}
-              // It is necessary to allow linking of current wallet address to the domain, so pass an empty string
-              currentAccountId=""
               // Domain linking is available only for TON blockchain
               addressBookChain="ton"
               chain="ton"
-              accounts={accounts}
               savedAddresses={savedAddresses}
               validateAddress={checkLinkingAddress}
               label={currentLinkedWalletAddress ? lang('Linked Wallet') : lang('Wallet')}
@@ -196,7 +184,6 @@ function LinkingDomainModal({
           onSubmit={handlePasswordSubmit}
           onCancel={cancelDomainLinking}
           onUpdate={clearDomainLinkingError}
-          skipAuthScreen
         >
           <TransactionBanner
             imageUrl={domainNft?.thumbnail}
@@ -211,7 +198,7 @@ function LinkingDomainModal({
   function renderComplete(isActive: boolean) {
     return (
       <>
-        <ModalHeader title={lang('Domain has been linked!')} onClose={cancelDomainLinking} />
+        <ModalHeader title={lang('Domain Linked')} onClose={cancelDomainLinking} />
 
         <div className={modalStyles.transitionContent}>
           <AnimatedIconWithPreview
@@ -259,7 +246,7 @@ function LinkingDomainModal({
       case DomainLinkingState.ConfirmHardware:
         return (
           <LedgerConfirmOperation
-            text={lang('Please confirm transaction on your Ledger')}
+            text={lang('Please confirm action on your Ledger')}
             error={error}
             onClose={cancelDomainLinking}
             onTryAgain={handleHardwareSubmit}
@@ -274,8 +261,6 @@ function LinkingDomainModal({
   return (
     <Modal
       isOpen={isOpen}
-      nativeBottomSheetKey="link-domain"
-      forceFullNative={forceFullNative}
       dialogClassName={styles.modalDialog}
       onClose={cancelDomainLinking}
     >
@@ -309,7 +294,6 @@ export default memo(
       currentDomainLinking,
       byAddress,
       tonBalance: selectCurrentToncoinBalance(global),
-      accounts: selectNetworkAccounts(global),
       savedAddresses: accountState?.savedAddresses,
       currentLinkedWalletAddress,
       currentTonAddress: currentAccount?.byChain.ton?.address,

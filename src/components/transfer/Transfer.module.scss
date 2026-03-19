@@ -7,9 +7,6 @@
     height: calc(40.5rem + var(--safe-area-bottom));
   }
 
-  :global(.is-native-bottom-sheet) & {
-    height: calc(40.5rem + var(--safe-area-bottom, 0rem));
-  }
 }
 
 .help,
@@ -133,13 +130,15 @@
 
   font-size: 0.9375rem;
 
-  &:active {
-    transition: none;
-  }
+  @include mixins.active-transition-optimization();
 
   &:hover,
   &:focus-visible {
     text-decoration: none;
+    background-color: var(--color-interactive-drop-down-menu-hover);
+  }
+
+  &[aria-selected="true"] {
     background-color: var(--color-interactive-drop-down-menu-hover);
   }
 
@@ -230,10 +229,7 @@
     color: var(--color-red);
   }
 
-  &:active {
-    // Optimization
-    transition: none;
-  }
+  @include mixins.active-transition-optimization();
 }
 
 .savedAddressDeleteIcon {
@@ -365,5 +361,26 @@ textarea.inputStatic {
 
   &_static {
     height: auto !important;
+  }
+}
+
+.closeButton {
+  position: absolute;
+  z-index: 3;
+  top: 1rem;
+  right: 0;
+}
+
+.transferTitle {
+  margin: 1.5rem auto 1.3125rem;
+
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.0625rem;
+  color: var(--color-black);
+  text-align: center;
+
+  &_small {
+    margin: 0 0 1rem;
   }
 }

@@ -9,71 +9,65 @@ import UIKit
 import WalletContext
 import GRDB
 
-public let DUMMY_ACCOUNT = MAccount(id: "dummy-mainnet", title: " ", type: .view, byChain: ["ton": .init(address: " ")])
+public let DUMMY_ACCOUNT = MAccount(id: "dummy-mainnet", title: " ", type: .view, byChain: [.ton: .init(address: " ")])
 
 // see src/global/types.ts > Account
 
-public struct MAccount: Equatable, Hashable, Sendable, Codable, FetchableRecord, PersistableRecord {
+public struct MAccount: Equatable, Hashable, Sendable, Codable, Identifiable, FetchableRecord, PersistableRecord {
     
     public let id: String
     
     public var title: String?
     public var type: AccountType
     public var byChain: [String: AccountChain] // keys have to be strings because encoding won't work with ApiChain as keys
-    
-    static public var databaseTableName: String = "accounts"
+    public var isTemporary: Bool?
 
-    public init(id: String, title: String?, type: AccountType, byChain: [String : AccountChain]) {
+    static public let databaseTableName: String = "accounts"
+
+    init(id: String, title: String?, type: AccountType, byChain: [String : AccountChain], isTemporary: Bool? = nil) {
         self.id = id
         self.title = title
         self.type = type
         self.byChain = byChain
+        self.isTemporary = isTemporary
     }
-}
-
-public struct AccountChain: Equatable, Hashable, Sendable, Codable {
-    public var address: String
-    public var domain: String?
-    public var isMultisig: Bool?
-    /** Is set only in hardware accounts */
-    public var ledgerIndex: Int?
     
-    public init(address: String, domain: String? = nil, isMultisig: Bool? = nil, ledgerIndex: Int? = nil) {
-        self.address = address
-        self.domain = domain
-        self.isMultisig = isMultisig
-        self.ledgerIndex = ledgerIndex
+    public init(id: String, title: String?, type: AccountType, byChain: [ApiChain : AccountChain], isTemporary: Bool? = nil) {
+        self.init(
+            id: id,
+            title: title,
+            type: type,
+            byChain: Dictionary(byChain.map { ($0.rawValue, $1) }, uniquingKeysWith: { first, _ in first }),
+            isTemporary: isTemporary,
+        )
     }
 }
 
 extension MAccount {
-    public var addressByChain: [String: String] {
-        byChain.mapValues(\.address)
+    public func getChainInfo(chain: ApiChain?) -> AccountChain? {
+        guard let chain else { return nil }
+        return byChain[chain.rawValue]
+    }
+
+    public func getAddress(chain: ApiChain?) -> String? {
+        getChainInfo(chain: chain)?.address
     }
     
-    public var tonAddress: String? {
-        byChain[ApiChain.ton.rawValue]?.address
+    public var firstChain: ApiChain {
+        ApiChain.allCases.first(where: { self.supports(chain: $0) }) ?? FALLBACK_CHAIN
     }
     
-    public var tronAddress: String? {
-        byChain[ApiChain.tron.rawValue]?.address
+    public var firstAddress: String {
+        getAddress(chain: firstChain) ?? ""
     }
     
-    public var firstAddress: String? {
-        ApiChain.allCases
-            .first(where: { self.supports(chain: $0.rawValue) })
-            .flatMap { addressByChain[$0.rawValue] }
+    public func supports(chain: ApiChain?) -> Bool {
+        guard let chain, chain.isSupported else { return false }
+        return byChain[chain.rawValue] != nil
     }
     
-    public func supports(chain: String?) -> Bool {
-        if let chain {
-            return byChain[chain] != nil
-        }
-        return false
-    }
-    
-    public var supportedChains: [ApiChain] {
-        ApiChain.allCases.filter { self.supports(chain: $0.rawValue) }
+    public var supportedChains: Set<ApiChain> {
+        Set(byChain.compactMap { chain, _ in ApiChain(rawValue: chain) }.filter(\.isSupported))
     }
     
     public var isMultichain: Bool {
@@ -88,11 +82,19 @@ extension MAccount {
         type == .view
     }
     
+    public var isTemporaryView: Bool {
+        isTemporary == true
+    }
+    
     public var network: ApiNetwork {
-        id.contains("mainnet") ? .mainnet  : .testnet
+        getNetwork(accountId: id)
     }
     
     public var supportsSend: Bool {
+        !isView
+    }
+    
+    public var supportsBurn: Bool {
         !isView
     }
     
@@ -111,6 +113,40 @@ extension MAccount {
         }
         return nil
     }
+    
+    public var orderedChains: [(ApiChain, AccountChain)] {
+        ApiChain.allCases.compactMap { chain  in
+            if let info = getChainInfo(chain: chain) {
+                return (chain, info)
+            }
+            return nil
+        }
+    }
+    
+    public var shareLink: URL {
+        var components = URLComponents(string: SHORT_UNIVERSAL_URL + "view/")!
+        components.queryItems = orderedChains.map { (chain, info) in
+            URLQueryItem(name: chain.rawValue, value: info.preferredCopyString)
+        }
+        if network == .testnet {
+            components.queryItems?.append(URLQueryItem(name: "testnet", value: "true"))
+        }
+        return components.url!
+    }
+    
+    public var dieselAuthLink: URL? {
+        guard let tonAddress = getAddress(chain: .ton) else { return nil }
+        return URL(string: "https://t.me/MyTonWalletBot?start=auth-\(tonAddress)")!
+    }
+    
+    public var dreamwalkersLink: String? {
+        guard let tonAddress = getAddress(chain: .ton) else { return nil }
+        return "https://dreamwalkers.io/ru/mytonwallet/?wallet=\(tonAddress)&give=CARDRUB&take=TON&type=buy"
+    }
+    
+    public var crosschainIdentifyingFromAddress: String? {
+        getAddress(chain: .ton)
+    }
 }
 
 public extension MAccount {
@@ -122,4 +158,8 @@ public extension MAccount {
             "ton": .init(address: "748327432974324328094328903428"),
         ]
     )
+}
+
+public func getNetwork(accountId: String) -> ApiNetwork {
+    accountId.contains("testnet") ? .testnet  : .mainnet
 }

@@ -60,7 +60,7 @@ class ConnectRequestView(context: Context) : WView(context), WThemedView, Skelet
     private val linkTextView = AppCompatTextView(context).apply {
         id = generateViewId()
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
+        setLineHeight(TypedValue.COMPLEX_UNIT_SP, 22f)
         ellipsize = TextUtils.TruncateAt.END
         gravity = Gravity.CENTER
         typeface = WFont.Regular.typeface
@@ -74,7 +74,7 @@ class ConnectRequestView(context: Context) : WView(context), WThemedView, Skelet
     private val infoTextView = AppCompatTextView(context).apply {
         id = generateViewId()
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
+        setLineHeight(TypedValue.COMPLEX_UNIT_SP, 20f)
         ellipsize = TextUtils.TruncateAt.END
         gravity = Gravity.CENTER
         typeface = WFont.Regular.typeface
@@ -130,12 +130,12 @@ class ConnectRequestView(context: Context) : WView(context), WThemedView, Skelet
     }
 
     fun configure(dApp: ApiDapp?) {
-        infoTextView.text = LocaleController.getString("\$dapps_init_info")
+        infoTextView.text = LocaleController.getString("Connected apps can only see your wallet address and will not be able to move your assets without permission.")
         dApp?.let {
             if (isShowingSkeleton) {
                 hideSkeleton()
             }
-            titleTextView.text = dApp.name
+            titleTextView.text = LocaleController.getFormattedString("Connect to %1$@?", listOf(dApp.name ?: "dApp"))
             linkTextView.text = dApp.host
             dApp.iconUrl?.let { iconUrl ->
                 imageView.set(Content.ofUrl(iconUrl))
@@ -152,7 +152,7 @@ class ConnectRequestView(context: Context) : WView(context), WThemedView, Skelet
         linkTextView.setTextColor(WColor.Tint.color)
         infoTextView.setTextColor(WColor.PrimaryText.color)
 
-        val skeletonColor = WColor.SecondaryBackground.color
+        val skeletonColor = WColor.Background.color
         imageSkeletonView.setBackgroundColor(skeletonColor, IMAGE_SKELETON_RADIUS.dp)
         titleSkeletonView.setBackgroundColor(skeletonColor, SKELETON_RADIUS.dp)
         linkSkeletonView.setBackgroundColor(skeletonColor, SKELETON_RADIUS.dp)

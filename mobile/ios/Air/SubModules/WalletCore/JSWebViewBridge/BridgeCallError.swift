@@ -3,7 +3,7 @@ import Foundation
 import WalletContext
 
 
-public enum BridgeCallError: Error {
+public enum BridgeCallError: Error { // todo: remove Any associated values
     case message(BridgeCallErrorMessages, Any?)
     case customMessage(String, Any?)
     case unknown(baseError: Any? = nil)
@@ -48,7 +48,7 @@ public enum BridgeCallErrorMessages: String {
         case .serverError:
             return lang("Please make sure your internet connection is working and try again.")
         case .invalidMnemonic:
-            return lang("Looks like you entered an invalid mnemonic phrase.")
+            return lang("InvalidMnemonic")
         case .partialTransactionFailure:
             return lang("Not all transactions were sent successfully.")
         case .incorrectDeviceTime:

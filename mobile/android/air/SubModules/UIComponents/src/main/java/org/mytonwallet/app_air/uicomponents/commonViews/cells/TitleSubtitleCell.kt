@@ -2,12 +2,12 @@ package org.mytonwallet.app_air.uicomponents.commonViews.cells
 
 import android.content.Context
 import org.mytonwallet.app_air.uicomponents.commonViews.IconView
+import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
-import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcore.models.MTokenBalance
@@ -16,6 +16,8 @@ import org.mytonwallet.app_air.walletcore.stores.TokenStore
 class TitleSubtitleCell(
     context: Context,
 ) : WCell(context), WThemedView {
+
+    private val ripple = WRippleDrawable.create(0f)
 
     private var identifier: String = ""
     var onTap: ((identifier: String) -> Unit)? = null
@@ -37,30 +39,22 @@ class TitleSubtitleCell(
         lbl
     }
 
-    private val separator: WView by lazy {
-        val v = WView(context)
-        v
-    }
-
     init {
+        background = ripple
         layoutParams.apply {
-            height = 64.dp
+            height = 60.dp
         }
-        addView(iconView, LayoutParams(53.dp, 48.dp))
+        addView(iconView, LayoutParams(50.dp, 50.dp))
         addView(topLeftLabel)
         addView(bottomLeftLabel)
-        addView(separator, LayoutParams(0, 1))
         setConstraints {
-            toTop(iconView, 8f)
-            toBottom(iconView, 8f)
+            toTop(iconView, 6f)
+            toBottom(iconView, 6f)
             toStart(iconView, 12f)
-            toTop(topLeftLabel, 10f)
-            startToEnd(topLeftLabel, iconView, 7f)
-            toBottom(bottomLeftLabel, 10f)
-            startToEnd(bottomLeftLabel, iconView, 7f)
-            toBottom(separator)
-            toStart(separator, 72f)
-            toEnd(separator)
+            toTop(topLeftLabel, 8f)
+            toStart(topLeftLabel, 60f)
+            toBottom(bottomLeftLabel, 8f)
+            toStart(bottomLeftLabel, 60f)
         }
 
         setOnClickListener {
@@ -71,11 +65,10 @@ class TitleSubtitleCell(
     }
 
     override fun updateTheme() {
-        setBackgroundColor(WColor.Background.color)
-        addRippleEffect(WColor.SecondaryBackground.color)
+        ripple.backgroundColor = WColor.Background.color
+        ripple.rippleColor = WColor.SecondaryBackground.color
         topLeftLabel.setTextColor(WColor.PrimaryText.color)
         bottomLeftLabel.setTextColor(WColor.SecondaryText.color)
-        separator.setBackgroundColor(WColor.Separator.color)
     }
 
     fun configure(tokenBalance: MTokenBalance, isLast: Boolean) {
@@ -90,7 +83,6 @@ class TitleSubtitleCell(
             token?.decimals ?: 9,
             true
         )
-        separator.visibility = if (isLast) INVISIBLE else VISIBLE
     }
 
 }

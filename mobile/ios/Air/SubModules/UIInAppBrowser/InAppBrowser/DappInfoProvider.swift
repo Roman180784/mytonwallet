@@ -1,7 +1,6 @@
 
 import UIKit
 import WebKit
-import UIDapp
 import UIComponents
 import WalletCore
 import WalletContext
@@ -42,7 +41,7 @@ struct DappInfo {
     func loadExploreSites() {
         Task { [weak self] in
             do {
-                let result = try await Api.loadExploreSites()
+                let result = try await Api.loadExploreSites(langCode: LocalizationSupport.shared.langCode)
                 self?.exploreSites = result.sites.dictionaryByKey(\.url)
             } catch {
                 log.error("failed to fetch explore sites \(error, .public)")

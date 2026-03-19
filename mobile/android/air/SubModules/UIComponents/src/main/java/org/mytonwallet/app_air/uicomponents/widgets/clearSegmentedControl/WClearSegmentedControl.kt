@@ -22,6 +22,9 @@ import android.widget.TextView
 import androidx.core.animation.doOnEnd
 import androidx.core.graphics.withClip
 import androidx.core.graphics.withSave
+import androidx.dynamicanimation.animation.FloatValueHolder
+import androidx.dynamicanimation.animation.SpringAnimation
+import androidx.dynamicanimation.animation.SpringForce
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -31,6 +34,8 @@ import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.setPaddingDp
 import org.mytonwallet.app_air.uicomponents.helpers.SpacesItemDecoration
+import org.mytonwallet.app_air.uicomponents.helpers.WFont
+import org.mytonwallet.app_air.uicomponents.helpers.typeface
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
@@ -71,7 +76,7 @@ class WClearSegmentedControl(
         private const val ANIMATION_DURATION = 200L
         private const val CORNER_RADIUS = 16f
         private const val THUMB_HEIGHT = 32f
-        private const val ITEM_SPACING = 8
+        private const val ITEM_SPACING = 6
         private const val DRAG_ELEVATION = 8f
     }
 
@@ -87,7 +92,7 @@ class WClearSegmentedControl(
 
     // Used to animate dragMode enter/exit animations
     private var dragModePresentationFraction: Float = 0f
-    private var targetPosition: Float = 0f
+    private var targetPosition: Float? = null
     private var lastPosition: Float = -1f
     private var items: MutableList<Item> = mutableListOf()
     private var selectedItem: Int = 0
@@ -122,13 +127,18 @@ class WClearSegmentedControl(
     private val fullPath = Path()
     private val rvAdapter = WRecyclerViewAdapter(WeakReference(this), arrayOf(ITEM_CELL))
 
-    private val animator = ValueAnimator().apply {
-        addUpdateListener { animation ->
-            currentPosition = animation.animatedValue as Float
+    private val positionHolder = FloatValueHolder(0f)
+    private val springAnimation = SpringAnimation(positionHolder).apply {
+        spring = SpringForce().apply {
+            dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
+            stiffness = 500f
+        }
+        addUpdateListener { _, value, _ ->
+            currentPosition = value
             updateThumbPositionInternal(
                 currentPosition,
                 ensureVisibleThumb = false,
-                targetIndex = targetPosition.toInt()
+                targetIndex = targetPosition?.toInt()
             )
         }
     }
@@ -138,7 +148,7 @@ class WClearSegmentedControl(
             updateThumbPositionInternal(
                 currentPosition,
                 ensureVisibleThumb = false,
-                targetIndex = targetPosition.toInt()
+                targetIndex = targetPosition?.toInt()
             )
         }
         doOnEnd {
@@ -146,7 +156,7 @@ class WClearSegmentedControl(
             updateThumbPositionInternal(
                 currentPosition,
                 ensureVisibleThumb = false,
-                targetIndex = targetPosition.toInt()
+                targetIndex = targetPosition?.toInt()
             )
         }
     }
@@ -313,6 +323,7 @@ class WClearSegmentedControl(
                 super.dispatchDraw(canvas)
                 return
             }
+            isNestedScrollingEnabled = true
             drawOutOfThumb(canvas)
             drawThumbBackground(canvas)
             drawInThumb(canvas)
@@ -355,6 +366,7 @@ class WClearSegmentedControl(
 
             val textView = itemView.textView
             textView.setTextColor(if (isDrawThumb) primaryTextColor else secondaryTextColor)
+            textView.paint.typeface = if (isDrawThumb) WFont.DemiBold.typeface else WFont.Medium.typeface
             val frameResult = super.drawChild(canvas, itemView, drawingTime)
 
             drawChildText(canvas, itemView, textView)
@@ -404,7 +416,7 @@ class WClearSegmentedControl(
         setLayoutManager(layoutManager)
         addItemDecoration(SpacesItemDecoration(ITEM_SPACING.dp, 0))
         addOnItemTouchListener(recyclerViewTouchListener)
-        setPaddingDp(11, 4, 11, 4)
+        setPaddingDp(11, 0, 11, 0)
         clipToPadding = false
         overScrollMode = OVER_SCROLL_NEVER
 
@@ -448,7 +460,7 @@ class WClearSegmentedControl(
                 updateThumbPositionInternal(
                     position = currentPosition,
                     ensureVisibleThumb = false,
-                    targetIndex = targetPosition.toInt()
+                    targetIndex = targetPosition?.toInt()
                 )
             }
         })
@@ -577,6 +589,8 @@ class WClearSegmentedControl(
     }
 
     fun updateOnMenuPressed(index: Int, onMenuPressed: ((v: View) -> Unit)?) {
+        if (!isEnabled)
+            return
         if (isValidIndex(index)) {
             items[index].onClick = onMenuPressed
             Handler(Looper.getMainLooper()).post {
@@ -661,7 +675,7 @@ class WClearSegmentedControl(
             item.arrowVisibility =
                 if (item.onClick != null &&
                     !isInDragMode &&
-                    (!isAnimatingDragMode || item.onRemove != null)
+                    ((!isAnimatingDragMode && isSelected) || item.onRemove != null)
                 ) 1f else 0f
         }
         cell.configure(
@@ -680,7 +694,7 @@ class WClearSegmentedControl(
         row: Int,
         cell: WClearSegmentedControlItemView
     ) {
-        if (isInDragMode)
+        if (isInDragMode || !isEnabled)
             return
         if (selectedItem == row) {
             items[row].onClick?.invoke(cell)
@@ -693,7 +707,7 @@ class WClearSegmentedControl(
     fun updateThumbPosition(
         index: Int,
         offset: Float,
-        targetIndex: Int,
+        targetIndex: Int?,
         force: Boolean,
         isAnimatingToPosition: Boolean
     ) {
@@ -711,7 +725,7 @@ class WClearSegmentedControl(
 
     fun updateThumbPosition(
         position: Float,
-        targetPosition: Int,
+        targetPosition: Int?,
         animated: Boolean,
         force: Boolean,
         isAnimatingToPosition: Boolean,
@@ -721,10 +735,10 @@ class WClearSegmentedControl(
         val clampedPosition = position.coerceIn(0f, (items.size - 1).toFloat())
         if (clampedPosition == lastPosition && !animated && !force) return
 
-        animator.cancel()
+        springAnimation.cancel()
 
         if (animated) {
-            this.targetPosition = targetPosition.toFloat()
+            this.targetPosition = targetPosition?.toFloat()
             startAnimation()
         } else {
             currentPosition = clampedPosition
@@ -738,12 +752,8 @@ class WClearSegmentedControl(
     }
 
     private fun startAnimation() {
-        animator.apply {
-            setFloatValues(currentPosition, targetPosition)
-            duration = ANIMATION_DURATION
-            interpolator = AccelerateDecelerateInterpolator()
-            start()
-        }
+        positionHolder.value = currentPosition
+        springAnimation.animateToFinalPosition(targetPosition ?: 0f)
     }
 
     private fun updateThumbPositionInternal(

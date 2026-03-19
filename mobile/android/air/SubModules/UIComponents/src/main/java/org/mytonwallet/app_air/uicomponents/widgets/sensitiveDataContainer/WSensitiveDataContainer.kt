@@ -5,10 +5,10 @@ import android.annotation.SuppressLint
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.FrameLayout
 import androidx.core.animation.doOnEnd
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.widgets.WFrameLayout
 import org.mytonwallet.app_air.uicomponents.widgets.WProtectedView
 import org.mytonwallet.app_air.uicomponents.widgets.fadeInObjectAnimator
 import org.mytonwallet.app_air.uicomponents.widgets.fadeOutObjectAnimator
@@ -18,7 +18,7 @@ import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 class WSensitiveDataContainer<V : View>(
     val contentView: V,
     private val maskConfig: MaskConfig
-) : FrameLayout(contentView.context), WProtectedView {
+) : WFrameLayout(contentView.context), WProtectedView {
 
     var isSensitiveData = true
         set(value) {
@@ -32,6 +32,7 @@ class WSensitiveDataContainer<V : View>(
         val gravity: Int,
         val cornerRadius: Int = 8.dp,
         val cellSize: Int = 8.dp,
+        val endMargin: Int = 0,
         val skin: SensitiveDataMaskView.Skin? = null,
         // `protectContentLayoutSize` is used to hide real content size, from the view hierarchy.
         //  may cause ui glitches if the content size is not correct in the first frame,
@@ -55,12 +56,12 @@ class WSensitiveDataContainer<V : View>(
     private var isShowingMask: Boolean = false
 
     init {
-        id = generateViewId()
         addView(contentView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
             gravity = maskConfig.gravity
         })
         addView(maskView, LayoutParams(WRAP_CONTENT, MATCH_PARENT).apply {
             gravity = maskConfig.gravity
+            marginEnd = maskConfig.endMargin
         })
 
         maskView.visibility = GONE
@@ -93,6 +94,7 @@ class WSensitiveDataContainer<V : View>(
                 // View is not attached to the window yet, wait...
                 return
             }
+            maskView.initMask()
             isShowingMask = true
             maskView.setIntersecting(true)
             maskView.visibility = VISIBLE
@@ -155,23 +157,21 @@ class WSensitiveDataContainer<V : View>(
 
     fun setMaskCols(cols: Int) {
         maskView.cols = cols
+        if (!isShowingMask)
+            return
         val changed = maskView.initMask()
-        if (changed) {
-            if (maskConfig.protectContentLayoutSize &&
-                isSensitiveData &&
-                contentView.visibility == GONE
-            ) {
-                setMaskedLayoutParams()
-            }
-            requestLayout()
-        }
+        if (!changed)
+            return
+        if (maskConfig.protectContentLayoutSize)
+            setMaskedLayoutParams()
+        requestLayout()
     }
 
     private var _maskPivotYPercent = 0f
     fun setMaskPivotYPercent(yPercent: Float) {
         _maskPivotYPercent = yPercent
         maskView.pivotX = maskView.width / 2f
-        maskView.pivotY = maskView.height * 0.5f
+        maskView.pivotY = maskView.height.toFloat()
     }
 
     fun setMaskScale(scale: Float) {

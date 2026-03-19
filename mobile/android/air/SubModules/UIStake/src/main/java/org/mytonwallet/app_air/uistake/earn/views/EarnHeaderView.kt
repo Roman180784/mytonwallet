@@ -15,7 +15,6 @@ import androidx.core.view.isGone
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.SkeletonContainer
-import org.mytonwallet.app_air.uicomponents.drawable.SeparatorBackgroundDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.helpers.spans.WForegroundColorSpan
@@ -62,12 +61,7 @@ class EarnHeaderView(
 
     private val sizeSpan = RelativeSizeSpan(28f / 36f)
     private val colorSpan = WForegroundColorSpan()
-
-    private val separatorBackgroundDrawable: SeparatorBackgroundDrawable by lazy {
-        SeparatorBackgroundDrawable().apply {
-            backgroundWColor = WColor.Background
-        }
-    }
+    private val fractionalColorSpan = WForegroundColorSpan()
 
     private val amountTextView = WSensitiveDataContainer(
         WLabel(context),
@@ -114,7 +108,7 @@ class EarnHeaderView(
     }
 
     private val unstakeButton: WButton by lazy {
-        val wButton = WButton(context, WButton.Type.PRIMARY).apply {
+        val wButton = WButton(context, WButton.Type.SECONDARY_WITH_BACKGROUND).apply {
             text = LocaleController.getString("Unstake")
             isEnabled = AccountStore.activeAccount?.accountType != MAccount.AccountType.VIEW
             setOnClickListener {
@@ -192,23 +186,17 @@ class EarnHeaderView(
     }
 
     override fun updateTheme() {
-        if (ThemeManager.uiMode.hasRoundedCorners) {
-            setBackgroundColor(WColor.SecondaryBackground.color)
-        } else {
-            background = separatorBackgroundDrawable
-            separatorBackgroundDrawable.invalidateSelf()
-        }
+        setBackgroundColor(WColor.SecondaryBackground.color)
         amountTextView.contentView.setTextColor(WColor.PrimaryText.color)
         colorSpan.color = WColor.SecondaryText.color
+        fractionalColorSpan.color = WColor.SecondaryText.color
         messageLabel.setTextColor(WColor.SecondaryText.color)
         amountSkeletonView.setBackgroundColor(
-            if (ThemeManager.uiMode.hasRoundedCorners) WColor.SecondaryText.color
-            else WColor.SecondaryBackground.color,
+            WColor.SecondaryText.color,
             AMOUNT_SKELETON_RADIUS
         )
         messageSkeletonView.setBackgroundColor(
-            if (ThemeManager.uiMode.hasRoundedCorners) WColor.SecondaryText.color
-            else WColor.SecondaryBackground.color,
+            WColor.SecondaryText.color,
             MESSAGE_SKELETON_RADIUS
         )
     }
@@ -226,7 +214,10 @@ class EarnHeaderView(
         unstakeButton.alpha = 0f
     }
 
-    fun showInnerViews(shouldShowStakeButton: Boolean, shouldShowUnstakeButton: Boolean) {
+    fun showInnerViews(
+        shouldShowStakeButton: Boolean, shouldShowUnstakeButton: Boolean,
+        shouldShowBiggerUnstakeButton: Boolean
+    ) {
         amountTextView.visibility = VISIBLE
         messageLabel.visibility = VISIBLE
         addStakeButton.visibility = VISIBLE
@@ -241,6 +232,12 @@ class EarnHeaderView(
             })
         }
 
+        addStakeButton.layoutParams.width =
+            if (shouldShowBiggerUnstakeButton)
+                ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
+            else
+                150.dp
+
         if (addStakeButton.alpha == 1f)
             return
         Handler(Looper.getMainLooper()).postDelayed({
@@ -251,10 +248,13 @@ class EarnHeaderView(
     }
 
     @SuppressLint("SetTextI18n")
-    fun setStakingBalance(balance: String, tokenSymbol: String) {
+    fun setStakingBalance(balance: String, tokenSymbol: String, isLargeAmount: Boolean) {
         amountTextView.contentView.text = "$balance $tokenSymbol".let {
             val ssb = SpannableStringBuilder(it)
             CoinUtils.setSpanToFractionalPart(ssb, sizeSpan)
+            if (isLargeAmount) {
+                CoinUtils.setSpanToFractionalPart(ssb, fractionalColorSpan)
+            }
             CoinUtils.setSpanToSymbolPart(ssb, colorSpan)
             ssb
         }

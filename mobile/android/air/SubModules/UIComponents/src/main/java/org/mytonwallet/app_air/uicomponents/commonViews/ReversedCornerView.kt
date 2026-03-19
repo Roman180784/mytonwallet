@@ -7,7 +7,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.os.Build
@@ -15,7 +14,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.widget.FrameLayout
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
@@ -24,20 +22,20 @@ import org.mytonwallet.app_air.uicomponents.widgets.WBlurryBackgroundView
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.fadeIn
 import org.mytonwallet.app_air.uicomponents.widgets.fadeOut
-import org.mytonwallet.app_air.walletcontext.helpers.DevicePerformanceClassifier
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
 class ReversedCornerView(
     context: Context,
     private val initialConfig: Config,
-) : FrameLayout(context), WThemedView {
+) : BaseReversedCornerView(context), WThemedView {
 
     data class Config(
+        val shouldBlur: Boolean = true,
         val blurRootView: ViewGroup? = null,
         val forceSeparator: Boolean = false,
         val showSeparator: Boolean = true,
@@ -51,26 +49,14 @@ class ReversedCornerView(
         }
     }
 
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (initialConfig.blurRootView != null)
-            Color.TRANSPARENT
-        else
-            initialConfig.overrideBackgroundColor?.color ?: WColor.SecondaryBackground.color
-        style = Paint.Style.FILL
-    }
-
     private val backgroundView = View(context).apply {
         setBackgroundColor(
-            initialConfig.overrideBackgroundColor?.color
-                ?: if (ThemeManager.uiMode.hasRoundedCorners)
-                    WColor.SecondaryBackground.color
-                else
-                    WColor.Background.color
+            initialConfig.overrideBackgroundColor?.color ?: WColor.SecondaryBackground.color
         )
     }
 
-    private val blurryBackgroundView =
-        if (DevicePerformanceClassifier.isHighClass) initialConfig.blurRootView?.let {
+    private var blurryBackgroundView: WBlurryBackgroundView? =
+        if (WGlobalStorage.isBlurEnabled() && initialConfig.shouldBlur) initialConfig.blurRootView?.let {
             WBlurryBackgroundView(context, WBlurryBackgroundView.Side.BOTTOM).apply {
                 setupWith(it)
                 setBackgroundVisible(visible = true, animated = false)
@@ -83,11 +69,9 @@ class ReversedCornerView(
 
     private var lastWidth = -1
     private var lastHeight = -1
-    private var pathDirty = true
 
-    var cornerRadius: Float =
-        if (ThemeManager.uiMode.hasRoundedCorners)
-            ViewConstants.BAR_ROUNDS.dp else 0f
+    var overrideRadius: Float? = null
+    var cornerRadius: Float = ViewConstants.TOOLBAR_RADIUS.dp
         private set
 
     private var radii: FloatArray =
@@ -97,11 +81,17 @@ class ReversedCornerView(
     private var _desiredShowSeparator: Boolean? = null
     private var showSeparator: Boolean? = null
 
-    private var isPlaying = true
+    var isPlaying = true
+        private set
     private var radiusAnimator: ValueAnimator? = null
 
-    fun setBlurOverlayColor(color: WColor) {
-        blurryBackgroundView?.setOverlayColor(color.color)
+    private var overlayColor: Int? = null
+    fun setBlurOverlayColor(color: Int?) {
+        overlayColor = color
+
+        blurryBackgroundView?.setOverlayColor(color ?: Color.TRANSPARENT)
+        backgroundView.setBackgroundColor(color ?: WColor.SecondaryBackground.color)
+        postInvalidateOnAnimation()
     }
 
     fun setBackgroundVisible(visible: Boolean, animated: Boolean = true) {
@@ -121,7 +111,7 @@ class ReversedCornerView(
         if (showSeparator == visible) return
         showSeparator = visible
         _desiredShowSeparator = visible
-        invalidate()
+        postInvalidateOnAnimation()
     }
 
     override fun onAttachedToWindow() {
@@ -130,7 +120,7 @@ class ReversedCornerView(
             addView(backgroundView, LayoutParams(MATCH_PARENT, MATCH_PARENT))
             blurryBackgroundView?.let { addView(it, LayoutParams(MATCH_PARENT, MATCH_PARENT)) }
         }
-        pauseBlurring(false)
+        resumeBlurring()
     }
 
     override fun dispatchDraw(canvas: Canvas) {
@@ -151,7 +141,6 @@ class ReversedCornerView(
         }
 
         drawChildren(canvas)
-        canvas.drawPath(path, paint)
     }
 
     private fun updatePath(width: Float, height: Float) {
@@ -165,7 +154,7 @@ class ReversedCornerView(
 
         rectF.set(
             horizontalPadding,
-            height - cornerRadius,
+            height - cornerRadius + 0.5f,
             width - horizontalPadding,
             height
         )
@@ -198,7 +187,7 @@ class ReversedCornerView(
                 translationY =
                     (if (to > from) 1f else -1f) * ((animatedFraction - 1) * 24.dp).roundToInt()
 
-                invalidate()
+                postInvalidateOnAnimation()
             }
 
             addListener(object : AnimatorListenerAdapter() {
@@ -211,62 +200,88 @@ class ReversedCornerView(
         }
     }
 
-    override fun updateTheme() {
-        cornerRadius =
-            if (ThemeManager.uiMode.hasRoundedCorners)
-                ViewConstants.BAR_ROUNDS.dp else 0f
-        radii = floatArrayOf(cornerRadius, cornerRadius, cornerRadius, cornerRadius, 0f, 0f, 0f, 0f)
-        pathDirty = true
+    private fun syncBlurView() {
+        val blurEnabled =
+            WGlobalStorage.isBlurEnabled() && initialConfig.shouldBlur && initialConfig.blurRootView != null
+        if (blurEnabled && blurryBackgroundView == null) {
+            blurryBackgroundView =
+                WBlurryBackgroundView(context, WBlurryBackgroundView.Side.BOTTOM).apply {
+                    setupWith(initialConfig.blurRootView)
+                    setBackgroundVisible(visible = true, animated = false)
+                }
+            if (backgroundView.parent != null) {
+                addView(blurryBackgroundView, LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                if (isPlaying) {
+                    blurryBackgroundView!!.resumeBlurring()
+                    backgroundView.isGone = true
+                }
+            }
+        } else if (!blurEnabled && blurryBackgroundView != null) {
+            blurryBackgroundView?.let { blur ->
+                blur.pauseBlurring()
+                if (blur.parent != null) (blur.parent as ViewGroup).removeView(blur)
+            }
+            blurryBackgroundView = null
+            backgroundView.alpha = 1f
+            backgroundView.isVisible = true
+        }
+    }
 
-        backgroundView.setBackgroundColor(
-            initialConfig.overrideBackgroundColor?.color
-                ?: if (ThemeManager.uiMode.hasRoundedCorners)
-                    WColor.SecondaryBackground.color
-                else
-                    WColor.Background.color
-        )
+    override fun updateTheme() {
+        syncBlurView()
+        updateRadius()
+
+        val bgColor = overlayColor
+            ?: initialConfig.overrideBackgroundColor?.color
+            ?: WColor.SecondaryBackground.color
+        backgroundView.setBackgroundColor(bgColor)
+
         blurryBackgroundView?.updateTheme()
-        paint.color = if (initialConfig.blurRootView != null)
-            Color.TRANSPARENT
-        else
-            initialConfig.overrideBackgroundColor?.color ?: WColor.SecondaryBackground.color
 
         if (!isPlaying) {
             resumeBlurring()
             post { pauseBlurring(showSeparator == true) }
         } else {
-            invalidate()
+            postInvalidateOnAnimation()
         }
     }
 
-    private var horizontalPadding = ViewConstants.HORIZONTAL_PADDINGS.dp.toFloat()
-    fun setHorizontalPadding(padding: Float) {
-        horizontalPadding = padding
+    fun setRadius(radius: Float?) {
+        overrideRadius = radius
+        updateRadius()
+    }
+
+    private fun updateRadius() {
+        if (cornerRadius == (overrideRadius ?: ViewConstants.TOOLBAR_RADIUS.dp))
+            return
+        cornerRadius = overrideRadius ?: ViewConstants.TOOLBAR_RADIUS.dp
+        radii = floatArrayOf(cornerRadius, cornerRadius, cornerRadius, cornerRadius, 0f, 0f, 0f, 0f)
         pathDirty = true
-        invalidate()
     }
 
     fun pauseBlurring(keepBlurAsImage: Boolean) {
         if (!isPlaying) return
         isPlaying = false
+        val blurryBackgroundView = blurryBackgroundView
         blurryBackgroundView?.apply {
-            setBlurAutoUpdate(false)
+            blurryBackgroundView.pauseBlurring()
             isGone = !keepBlurAsImage
             alpha = if (keepBlurAsImage) 1f else 0f
             backgroundView.isVisible = true
             backgroundView.alpha = 1f
         }
         showSeparator = keepBlurAsImage
-        invalidate()
+        postInvalidateOnAnimation()
     }
 
     fun resumeBlurring() {
         if (isPlaying) return
         isPlaying = true
+        val blurryBackgroundView = blurryBackgroundView
         blurryBackgroundView?.apply {
             alpha = 1f
             visibility = VISIBLE
-            setBlurAutoUpdate(true)
+            blurryBackgroundView.resumeBlurring()
             backgroundView.isGone = true
         } ?: {
             // No blurs available, show background
@@ -276,7 +291,7 @@ class ReversedCornerView(
             }
         }
         showSeparator = _desiredShowSeparator
-        invalidate()
+        postInvalidateOnAnimation()
     }
 
     private var currentAlpha = 1f
@@ -289,10 +304,11 @@ class ReversedCornerView(
             backgroundView.alpha = targetAlpha
         } else {
             // Combine blur and normal background
-            if (blurryBackgroundView.alpha == targetAlpha) return
-            blurryBackgroundView.alpha = targetAlpha
+            val blurryBackgroundView = blurryBackgroundView
+            if (blurryBackgroundView?.alpha == targetAlpha) return
+            blurryBackgroundView?.alpha = targetAlpha
             backgroundView.alpha = 1 - targetAlpha
         }
-        invalidate()
+        postInvalidateOnAnimation()
     }
 }

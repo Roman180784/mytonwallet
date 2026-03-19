@@ -9,9 +9,8 @@ import UIKit
 import SwiftUI
 import UIComponents
 import WalletContext
-import WalletCore
 
-public final class AboutVC: WViewController {
+public final class AboutVC: SettingsBaseVC {
     
     let showLegalSection: Bool
     private var hostingController: UIHostingController<AboutView>!

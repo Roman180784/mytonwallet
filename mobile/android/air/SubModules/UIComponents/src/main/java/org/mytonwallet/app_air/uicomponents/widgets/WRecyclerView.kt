@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.ViewConfiguration
+import kotlin.math.abs
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import me.everything.android.ui.overscroll.OverScrollBounceEffectDecoratorBase
@@ -19,6 +20,7 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
     init {
         id = generateViewId()
         isVerticalScrollBarEnabled = false
+        setHasFixedSize(true)
     }
 
     private var viewControllerRef: WeakReference<WViewController>? = null
@@ -69,6 +71,7 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
         if (overscrollListener != null)
             return
         overscrollListener = object : OnItemTouchListener {
+            private var startX = 0f
             private var startY = 0f
             private var overscrollDetected = false
             private val mSwipeSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -76,6 +79,7 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
             override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
                 when (e.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        startX = e.x
                         startY = e.y
                     }
 
@@ -83,12 +87,16 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
                         if (overscrollDetected)
                             return false
 
+                        val deltaX = e.x - startX
                         val deltaY = e.y - startY
+
+                        if (abs(deltaX) > abs(deltaY))
+                            return false
 
                         val atTop = !rv.canScrollVertically(-1)
                         val atBottom = !rv.canScrollVertically(1)
 
-                        if ((atTop && deltaY > mSwipeSlop) || (atBottom && deltaY < mSwipeSlop)) {
+                        if ((atTop && deltaY > mSwipeSlop) || (atBottom && deltaY < -mSwipeSlop)) {
                             if (!overscrollDetected) {
                                 overscrollDetected = true
                                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -115,6 +123,12 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
         overscrollListener?.let { it ->
             removeOnItemTouchListener(it)
         }
+        adapter = null
+    }
+
+    fun cancelActiveGesture() {
+        suppressLayout(true)
+        suppressLayout(false)
     }
 
     // OVERSCROLL //////////////////////////////////////////////////////////////////////////////////

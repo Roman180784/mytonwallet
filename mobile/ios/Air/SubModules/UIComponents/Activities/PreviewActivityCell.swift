@@ -26,35 +26,43 @@ public class PreviewActivityCell: ActivityCell {
         ])
     }
     
-    public func configure(withPreviewActivity activity: ApiActivity, delegate: Delegate?, shouldFadeOutSkeleton: Bool) {
+    @MainActor public struct ConfigureOptions {
+        var detailsOptions: ConfigureDetailsOptions
+        var amountOptions: ConfigureAmountOptions
+
+        public init(activity: ApiActivity, accountContext: AccountContext, tokenStore: _TokenStore) {
+            self.detailsOptions = .init(activity: activity, accountContext: accountContext, isEmulation: true)
+            self.amountOptions = .init(activity: activity, tokenStore: tokenStore)
+        }
+    }
+    
+    fileprivate func configure(_ options: ConfigureOptions) {
+        let activity = options.detailsOptions.activity
         
-        if shouldFadeOutSkeleton {
-            skeletonView?.layer.maskedCorners = contentView.layer.maskedCorners
-            fadeOutSkeleton()
-        } else if skeletonView?.alpha ?? 0 > 0 {
+        if skeletonView?.alpha ?? 0 > 0 {
             skeletonView?.alpha = 0
             mainView.alpha = 1
         }
         self.activity = activity
-        self.delegate = delegate
+        self.delegate = nil
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        
+                        
         iconView.config(with: activity)
         
         let shouldShowCenteredTitle = activity.shouldShowCenteredTitle
         if shouldShowCenteredTitle {
             configureCenteredLabel(activity: activity)
         }
-        configureTitle(activity: activity, isEmulation: true)
-        configureDetails(activity: activity, isEmulation: true)
+        configureTitle(activity: activity, isEmulation: options.detailsOptions.isEmulation)
+        configureDetails(options.detailsOptions)
         centeredLabel.isHidden = !shouldShowCenteredTitle
         titleLabel.isHidden = shouldShowCenteredTitle
         detailsLabel.isHidden = shouldShowCenteredTitle
-        
-        configureAmount(activity: activity)
-        configureAmount2(activity: activity)
+                
+        configureAmount(options.amountOptions)
+        configureAmount2(options.amountOptions)
         configureSensitiveData(activity: activity)
         configureNft(activity: activity)
         configureComment(activity: activity)
@@ -75,27 +83,34 @@ public class PreviewActivityCell: ActivityCell {
 }
 
 public struct WPreviewActivityCell: UIViewRepresentable {
+    public var configureOptions: PreviewActivityCell.ConfigureOptions
     
-    public var activity: ApiActivity
-    
-    public init(activity: ApiActivity) {
-        self.activity = activity
+    public init(_ configureOptions: PreviewActivityCell.ConfigureOptions) {
+        self.configureOptions = configureOptions
     }
     
     public func makeUIView(context: Context) -> PreviewActivityCell {
-        PreviewActivityCell()
+        let cell =  PreviewActivityCell()
+        cell.configure(configureOptions)
+        return cell
     }
     
     public func updateUIView(_ cell: PreviewActivityCell, context: Context) {
-        cell.configure(withPreviewActivity: activity, delegate: nil, shouldFadeOutSkeleton: false)
+        Task { @MainActor in cell.configure(configureOptions) }
     }
     
     public func sizeThatFits(_ proposal: ProposedViewSize, uiView cell: PreviewActivityCell, context: Context) -> CGSize? {
-        var fitting = cell.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
-        if let w = proposal.width, w > fitting.width {
-            fitting.width = w
+        if let proposedWidth = proposal.width, proposedWidth.isFinite {
+            let targetSize = CGSize(width: proposedWidth, height: UIView.layoutFittingCompressedSize.height)
+            let fitting = cell.systemLayoutSizeFitting(
+                targetSize,
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel
+            )
+            return CGSize(width: proposedWidth, height: fitting.height)
         }
-        return .some(fitting)
+
+        return cell.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
     }
 }
 
@@ -103,7 +118,6 @@ public struct WPreviewActivityCell: UIViewRepresentable {
 //@available(iOS 18, *)
 //#Preview {
 //    let activity = ApiActivity.transaction(ApiTransactionActivity(id: "d", kind: "transaction", timestamp: 0, amount: 123456789, fromAddress: "foo", toAddress: "bar", comment: nil, encryptedComment: nil, fee: 12345, slug: TON_USDT_SLUG, isIncoming: false, normalizedAddress: nil, externalMsgHashNorm: nil, shouldHide: nil, type: nil, metadata: nil, nft: nil, status: .pending))
-//    let _ = UIFont.registerAirFonts()
 //
 //    WPreviewActivityCell(activity: activity)
 //        .padding()

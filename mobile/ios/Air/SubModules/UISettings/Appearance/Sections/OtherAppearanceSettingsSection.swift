@@ -16,7 +16,7 @@ import Flow
 struct OtherAppearanceSettingsSection: View {
     
     @State private var animationEnabled: Bool = AppStorageHelper.animations
-    @State private var color = Color.air.tint
+    @State private var seasonalThemingEnabled: Bool = !AppStorageHelper.isSeasonalThemingDisabled
     
     var body: some View {
         InsetSection {
@@ -27,9 +27,17 @@ struct OtherAppearanceSettingsSection: View {
                     HStack {
                         Toggle(lang("Enable Animations"), isOn: $animationEnabled)
                             .labelsHidden()
-                            .tint(color)
-                            .transition(.opacity.animation(.default))
-                            .id(color) // bug: as of iOS 26 color changes without animation without id trick
+                    }
+                }
+                .frame(minHeight: 44)
+            }
+            InsetCell(verticalPadding: 0) {
+                HStack {
+                    Text(lang("Enable Seasonal Theming"))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack {
+                        Toggle(lang("Enable Seasonal Theming"), isOn: $seasonalThemingEnabled)
+                            .labelsHidden()
                     }
                 }
                 .frame(minHeight: 44)
@@ -37,18 +45,24 @@ struct OtherAppearanceSettingsSection: View {
         } header: {
             Text(lang("Other"))
         }
-        .onChange(of: animationEnabled) { animationEnabled in
-            Task {
-                AppStorageHelper.animations = animationEnabled
-                try await GlobalStorage.syncronize()
-            }
-        }
-        .task {
-            for await _ in NotificationCenter.default.notifications(named: .updateTheme) {
-                withAnimation(.default) {
-                    color = Color.air.tint
+        .task(id: animationEnabled) {
+            do {
+                try await Task.sleep(for: .seconds(0.2)) // delay so button animation doesn't get disabled inflight
+                if animationEnabled != AppStorageHelper.animations {
+                    AppStorageHelper.animations = animationEnabled
+                    try await GlobalStorage.syncronize()
                 }
-            }
+            } catch {}
+        }
+        .task(id: seasonalThemingEnabled) {
+            do {
+                try await Task.sleep(for: .seconds(0.2))
+                let isDisabled = !seasonalThemingEnabled
+                if isDisabled != AppStorageHelper.isSeasonalThemingDisabled {
+                    AppStorageHelper.isSeasonalThemingDisabled = isDisabled
+                    try await GlobalStorage.syncronize()
+                }
+            } catch {}
         }
     }
 }

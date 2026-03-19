@@ -2,8 +2,6 @@ import type { GlobalState } from '../../types';
 import { MintCardState } from '../../types';
 
 import { getAccentColorIndexFromNft } from '../../../util/accentColor';
-import { callActionInMain } from '../../../util/multitab';
-import { IS_DELEGATED_BOTTOM_SHEET } from '../../../util/windowEnvironment';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { resetHardware, updateCurrentAccountSettings, updateMintCards } from '../../reducers';
 import { selectIsHardwareAccount } from '../../selectors';
@@ -24,7 +22,7 @@ addActionHandler('startCardMinting', (global, action, { type }): GlobalState => 
     global = updateMintCards(global, { state: MintCardState.Password });
   }
 
-  return global;
+  return updateMintCards(global, { type });
 });
 
 addActionHandler('clearMintCardError', (global): GlobalState => {
@@ -32,21 +30,11 @@ addActionHandler('clearMintCardError', (global): GlobalState => {
 });
 
 addActionHandler('setCardBackgroundNft', (global, actions, { nft }) => {
-  if (IS_DELEGATED_BOTTOM_SHEET) {
-    callActionInMain('setCardBackgroundNft', { nft });
-    return;
-  }
-
   global = updateCurrentAccountSettings(global, { cardBackgroundNft: nft });
   setGlobal(global);
 });
 
 addActionHandler('clearCardBackgroundNft', (global) => {
-  if (IS_DELEGATED_BOTTOM_SHEET) {
-    callActionInMain('clearCardBackgroundNft');
-    return;
-  }
-
   global = updateCurrentAccountSettings(global, { cardBackgroundNft: undefined });
   setGlobal(global);
 });

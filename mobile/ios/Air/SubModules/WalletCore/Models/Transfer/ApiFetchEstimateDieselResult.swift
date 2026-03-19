@@ -48,7 +48,7 @@ public enum DieselStatus: String, Codable, Sendable {
 
 extension DieselStatus {
     public var canContinue: Bool {
-        return self == .notAuthorized || self == .available
+        return self == .notAuthorized || self == .available || self == .starsFee
     }
 
     public var errorString: String? {
@@ -56,7 +56,7 @@ extension DieselStatus {
         case .notAvailable, .starsFee, .notAuthorized, .available:
             return nil
         case .pendingPrevious:
-            return lang("Pending previous fee")
+            return lang("Awaiting Previous Fee")
         }
     }
 }

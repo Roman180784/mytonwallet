@@ -1,56 +1,55 @@
-//
-//  SwapDetailsView.swift
-//  UISwap
-//
-//  Created by Sina on 5/10/24.
-//
-
 import SwiftUI
 import UIKit
 import UIComponents
 import WalletCore
 import WalletContext
-import Combine
+import Perception
+import SwiftNavigation
 
-public let DEFAULT_SLIPPAGE = BigInt(5_0)
-public let MAX_SLIPPAGE_VALUE = BigInt(50_0)
-public let SLIPPAGE_DECIMALS = 1
+let DEFAULT_SLIPPAGE = BigInt(5_0)
+let MAX_SLIPPAGE_VALUE = BigInt(50_0)
+let SLIPPAGE_DECIMALS = 1
 private let slippageFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
+let DEFAULT_OUR_SWAP_FEE = 0.875
 
-@MainActor
-class SwapDetailsVM: ObservableObject {
+@Perceptible
+@MainActor final class SwapDetailsVM {
     
-    @Published var isExpanded = false
-    @Published var slippageExpanded = false
-    @Published var slippage: BigInt? = DEFAULT_SLIPPAGE
+    var isExpanded = false
+    var slippageExpanded = false
+    var slippage: BigInt? = DEFAULT_SLIPPAGE
     
+    @PerceptionIgnored
     var onSlippageChanged: (Double) -> () = { _ in }
+    @PerceptionIgnored
     var onPreferredDexChanged: (ApiSwapDexLabel?) -> () = { _ in }
 
-    var fromToken: ApiToken { tokensSelectorVM.sellingToken }
-    var toToken: ApiToken { tokensSelectorVM.buyingToken }
-    var swapEstimate: ApiSwapEstimateResponse? { swapVM.swapEstimate }
-    var selectedDex: ApiSwapDexLabel? { swapVM.dex }
+    var fromToken: ApiToken { inputModel.sellingToken }
+    var toToken: ApiToken { inputModel.buyingToken }
+    var swapEstimate: ApiSwapEstimateResponse? { onchainModel.swapEstimate }
+    var selectedDex: ApiSwapDexLabel? { onchainModel.dex }
     
-    private var swapVM: SwapVM
-    private var tokensSelectorVM: SwapSelectorsVM
-    private var observer: AnyCancellable?
+    @PerceptionIgnored
+    private var onchainModel: OnchainSwapModel
+    @PerceptionIgnored
+    private var inputModel: SwapInputModel
+    @PerceptionIgnored
+    private var observer: ObserveToken?
     
-    public var displayImpactWarning: Double? {
+    var displayImpactWarning: Double? {
         if let impact = displayEstimate?.impact, impact > MAX_PRICE_IMPACT_VALUE {
             return impact
         }
         return nil
     }
     
-    init(swapVM: SwapVM, tokensSelectorVM: SwapSelectorsVM) {
-        self.swapVM = swapVM
-        self.tokensSelectorVM = tokensSelectorVM
-        observer = $slippage.sink { [weak self] value in
-            if let value {
-                let doubleValue = value.doubleAbsRepresentation(decimals: SLIPPAGE_DECIMALS)
-                self?.onSlippageChanged(doubleValue)
-            }
+    init(onchainModel: OnchainSwapModel, inputModel: SwapInputModel) {
+        self.onchainModel = onchainModel
+        self.inputModel = inputModel
+        observer = observe { [weak self] in
+            guard let self, let value = slippage else { return }
+            let doubleValue = value.doubleAbsRepresentation(decimals: SLIPPAGE_DECIMALS)
+            onSlippageChanged(doubleValue)
         }
     }
     
@@ -67,6 +66,24 @@ class SwapDetailsVM: ObservableObject {
             )
         }
         return nil
+    }
+    
+    var feeDetails: ExplainedTransferFee? {
+        guard let displayEstimate,
+              let nativeToken = TokenStore.tokens[fromToken.nativeTokenSlug] else {
+            return nil
+        }
+        let explainedFee = explainSwapFee(.init(
+            swapType: .onChain,
+            tokenIn: fromToken,
+            networkFee: displayEstimate.networkFee,
+            realNetworkFee: displayEstimate.realNetworkFee,
+            ourFee: displayEstimate.ourFee,
+            dieselStatus: displayEstimate.dieselStatus,
+            dieselFee: displayEstimate.dieselFee,
+            nativeTokenInBalance: inputModel.$account.balances[nativeToken.slug]
+        ))
+        return explainedFee.networkFeeDetails
     }
 }
 
@@ -85,9 +102,8 @@ extension ApiSwapEstimateResponse {
 
 struct SwapDetailsView: View {
 
-    @ObservedObject var swapVM: SwapVM
-    @ObservedObject var selectorsVM: SwapSelectorsVM
-    @ObservedObject var model: SwapDetailsVM
+    var inputModel: SwapInputModel
+    var model: SwapDetailsVM
     var sellingToken: ApiToken { model.fromToken }
     var buyingToken: ApiToken { model.toToken }
     var exchangeRate: SwapRate? { model.displayExchangeRate }
@@ -103,26 +119,27 @@ struct SwapDetailsView: View {
     }
     
     var body: some View {
-        
-        InsetSection(horizontalPadding: 0) {
-            header
-                
-            if model.isExpanded {
-                pricePerCoinRow
-                slippageRow
-                blockchainFeeRow
-                routingFeesRow
-                priceImpactRow
-                minimumReceivedRow
+        WithPerceptionTracking {
+            InsetSection(horizontalPadding: 0) {
+                header
+                    
+                if model.isExpanded {
+                    pricePerCoinRow
+                    slippageRow
+                    blockchainFeeRow
+                    routingFeesRow
+                    priceImpactRow
+                    minimumReceivedRow
+                }
             }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxHeight: model.isExpanded ? nil : 44, alignment: .top)
+            .clipShape(.rect(cornerRadius: S.insetSectionCornerRadius))
+            .frame(height: 400, alignment: .top)
+            .tint(Color(WTheme.tint))
+            .animation(.spring(duration: model.isExpanded ? 0.45 : 0.3), value: model.isExpanded)
+            .animation(.snappy, value: model.slippageExpanded)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxHeight: model.isExpanded ? nil : 44, alignment: .top)
-        .clipShape(.rect(cornerRadius: 12))
-        .frame(height: 400, alignment: .top)
-        .tint(Color(WTheme.tint))
-        .animation(.spring(duration: model.isExpanded ? 0.45 : 0.3), value: model.isExpanded)
-        .animation(.snappy, value: model.slippageExpanded)
     }
     
     var header: some View {
@@ -141,6 +158,7 @@ struct SwapDetailsView: View {
                 .foregroundStyle(Color(WTheme.secondaryLabel))
             }
             .frame(minHeight: 44)
+            .frame(height: 44)
             .contentShape(.rect)
         }
         .buttonStyle(InsetButtonStyle())
@@ -153,79 +171,20 @@ struct SwapDetailsView: View {
             InsetCell {
                 VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: 0) {
-                        Text(lang("Price per") + " 1 " + exchangeRate.toToken.symbol)
+                        Text(lang("Exchange Rate"))
                             .foregroundStyle(Color(WTheme.secondaryLabel))
                         Spacer(minLength: 4)
-                        Text("~\(formatAmountText(amount: exchangeRate.price, decimalsCount: min(6, sellingToken.decimals))) \(exchangeRate.fromToken.symbol)")
+                        let priceAmount = DecimalAmount.fromDouble(exchangeRate.price, exchangeRate.fromToken)
+                        Text("\(exchangeRate.toToken.symbol) ≈ \(priceAmount.formatted(.none, maxDecimals: min(6, sellingToken.decimals)))")
                     }
-                    selectDexButton
                 }
             }
         }
     }
     
     @ViewBuilder
-    private var selectDexButton: some View {
-        if swapEstimate != nil {
-            Button(action: showDexPicker) {
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    if model.selectedDex == nil && hasAlternative {
-                        Text(lang("Best rate"))
-                            .foregroundStyle(gradient)
-                            .background {
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(secondaryGradient)
-                                    .padding(.vertical, -2)
-                                    .padding(.horizontal, -5)
-                            }
-                            .padding(.trailing, 2)
-                    }
-                    if let dexString {
-                        Text(lang(" via "))
-                        Text(dexString)
-                    }
-                    if hasAlternative {
-                        Text(Image(systemName: "chevron.right.circle.fill"))
-                            .foregroundStyle(Color(WTheme.secondaryLabel.withAlphaComponent(0.3)))
-                    }
-                }
-                .font13()
-                .foregroundStyle(Color(WTheme.secondaryLabel))
-                .contentShape(.rect)
-            }
-            .allowsHitTesting(hasAlternative)
-        }
-    }
-    
-    var gradient: LinearGradient {
-        LinearGradient(colors: [
-            Color("EarnGradientColorLeft", bundle: AirBundle),
-            Color("EarnGradientColorRight", bundle: AirBundle),
-        ], startPoint: .leading, endPoint: .trailing)
-    }
-    
-    var secondaryGradient: LinearGradient {
-        LinearGradient(colors: [
-            Color("EarnGradientDisabledColorLeft", bundle: AirBundle),
-            Color("EarnGradientDisabledColorRight", bundle: AirBundle),
-        ], startPoint: .leading, endPoint: .trailing)
-    }
-    
-    private var dexString: String? {
-        displayEstimate?.dexLabel?.displayName
-    }
-    
-    func showDexPicker() {
-        if let topVC = topViewController() {
-            topVC.view.endEditing(true)
-            let vc = UIHostingController(rootView: SwapAgregatorContainerView(model: model))
-            vc.modalPresentationStyle = .overFullScreen
-            vc.view.backgroundColor = .clear
-            topVC.present(vc, animated: false)
-        }
-    }
-    
     var slippageRow: some View {
+        @Perception.Bindable var model = model
         VStack(spacing: 0) {
             InsetDetailCell(alignment: .firstTextBaseline) {
                 Text(lang("Slippage"))
@@ -313,8 +272,20 @@ struct SwapDetailsView: View {
                 Text(lang("Blockchain Fee"))
                     .foregroundStyle(Color(WTheme.secondaryLabel))
             } value: {
-                let fee = sellingToken.chain == "ton" ? displayEstimate.realNetworkFee : displayEstimate.networkFee
-                Text("~\(formatAmountText(amount: fee.value, currency: "TON", decimalsCount: 6))")
+                if let nativeToken = TokenStore.tokens[sellingToken.nativeTokenSlug],
+                   let feeDetails = model.feeDetails {
+                    FeeView(
+                        token: sellingToken,
+                        nativeToken: nativeToken,
+                        fee: nil,
+                        explainedTransferFee: feeDetails,
+                        includeLabel: false
+                    )
+                } else if let tonToken = TokenStore.tokens[TONCOIN_SLUG] {
+                    let fee = sellingToken.chain == .ton ? displayEstimate.realNetworkFee : displayEstimate.networkFee
+                    let feeAmountString = DecimalAmount.fromDouble(fee.value, tonToken).formatted(.defaultAdaptive)
+                    Text("~\(feeAmountString)")
+                }
             }
         }
     }
@@ -323,13 +294,19 @@ struct SwapDetailsView: View {
     var routingFeesRow: some View {
         if displayEstimate != nil {
             InsetDetailCell {
-                Text(lang("Routing Fees"))
+                Text(lang("Aggregator Fee"))
                     .foregroundStyle(Color(WTheme.secondaryLabel))
                     .overlay(alignment: .trailingFirstTextBaseline) {
-                        InfoButton(title: lang("Routing Fees"), message: lang("Both decentralized exchange and app fees (~0.875%) are already included in the price you see and will not be charged additionally."))
+                        let feePercent = displayEstimate?.ourFeePercent ?? DEFAULT_OUR_SWAP_FEE
+                        InfoButton(title: lang("Aggregator Fee"), message: lang("$swap_aggregator_fee_tooltip", arg1: "\(feePercent)"))
                     }
             } value: {
-                Text(lang("Included"))
+                if let ourFee = displayEstimate?.ourFee {
+                    let amount = DecimalAmount.fromDouble(ourFee.value, sellingToken)
+                    Text(amount.formatted(.defaultAdaptive))
+                } else {
+                    Text(lang("Included"))
+                }
             }
         }
     }
@@ -344,10 +321,10 @@ struct SwapDetailsView: View {
                         InfoButton(title: lang("Price Impact"), message: lang("$swap_price_impact_tooltip1") + "\n\n" +  lang("$swap_price_impact_tooltip2"))
                     }
             } value: {
-                HStack {
-                    Text("\(formatAmountText(amount: displayEstimate.impact, decimalsCount: 1))%")
+                HStack(spacing: 3) {
+                    Text(formatPercent(displayEstimate.impact / 100, decimals: 1, showPlus: false))
                     if model.displayImpactWarning != nil {
-                        Text(Image(systemName: "exclamitiexclamationmark.triangle.fill"))
+                        Text(Image(systemName: "exclamationmark.triangle.fill"))
                             .foregroundStyle(.red)
                     }
                 }
@@ -365,21 +342,19 @@ struct SwapDetailsView: View {
                         InfoButton(title: lang("Minimum Received"), message: lang("$swap_minimum_received_tooltip2"))
                     }
             } value: {
-                Text(formatAmountText(amount: displayEstimate.toMinAmount.value,
-                                      currency: buyingToken.symbol,
-                                      decimalsCount: tokenDecimals(for: displayEstimate.toMinAmount.value, tokenDecimals: buyingToken.decimals)))
+                let minAmount = DecimalAmount.fromDouble(displayEstimate.toMinAmount.value, buyingToken)
+                Text(minAmount.formatted(.defaultAdaptive))
             }
         }
     }
 }
 
-
-struct SlippagePickerButton: View {
+private struct SlippagePickerButton: View {
     
     var value: BigInt
     var onTap: () -> ()
     
-    public var body: some View {
+    var body: some View {
         Button(action: onTap) {
             HStack(spacing: 2) {
                 Text("\(formatBigIntText(value, tokenDecimals: 1))%")
@@ -399,8 +374,7 @@ struct SlippagePickerButton: View {
     }
 }
 
-
-struct InfoButton: View {
+private struct InfoButton: View {
     
     var title: String
     var message: String
@@ -420,7 +394,7 @@ struct InfoButton: View {
     
     func onTap() {
         topWViewController()?.showTip(title: title) {
-            Text(message)
+            Text(langMd(message))
         }
     }
 }

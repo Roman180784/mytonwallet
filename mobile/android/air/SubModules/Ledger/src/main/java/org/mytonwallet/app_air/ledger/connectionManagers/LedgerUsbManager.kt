@@ -7,7 +7,7 @@ import org.mytonwallet.app_air.ledger.LedgerManager.ConnectionState
 import org.mytonwallet.app_air.ledger.usb.HIDDevice
 import org.mytonwallet.app_air.ledger.usb.USBManager
 import org.mytonwallet.app_air.walletcore.WalletCore
-import org.mytonwallet.app_air.walletcore.models.MBlockchain
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiMethod
 
 object LedgerUsbManager : ILedgerConnectionManager {
@@ -103,7 +103,10 @@ object LedgerUsbManager : ILedgerConnectionManager {
         onUpdate: (ConnectionState) -> Unit,
     ) {
         WalletCore.call(
-            ApiMethod.Other.WaitForLedgerApp(chain = MBlockchain.ton),
+            ApiMethod.Other.WaitForLedgerApp(
+                chain = MBlockchain.ton,
+                ApiMethod.Other.WaitForLedgerApp.Options(timeout = 2000)
+            ),
             callback = { res, error ->
                 if (res != true || error != null) {
                     onUpdate(

@@ -10,7 +10,7 @@ import WalletCore
 import WalletContext
 
 
-public struct StakingConfig: Identifiable, Equatable, Hashable {
+public struct StakingConfig: Identifiable, Equatable, Hashable, Sendable {
     public let id: String
     let _baseToken: ApiToken
     let _stakedToken: ApiToken
@@ -29,46 +29,29 @@ public struct StakingConfig: Identifiable, Equatable, Hashable {
 }
 
 public extension StakingConfig {
-    
-    static let tonLiquid = StakingConfig(
-        id: "liquid",
+
+    static let ton = StakingConfig(
+        id: "ton",
         baseToken: .TONCOIN,
         stakedToken: .STAKED_TON,
         displayTitle: "TON",
-        explainTitle: lang("Why is staking safe?"),
+        explainTitle: lang("Why this is safe"),
         explainContent: [
             lang("$safe_staking_description1"),
-            lang("$safe_staking_description2"),
+            lang("$safe_staking_description2", arg1: ApiChain.ton.title),
             lang("$safe_staking_description3"),
         ],
     )
-    
-    static let tonNominators = StakingConfig(
-        id: "nominators",
-        baseToken: .TONCOIN,
-        stakedToken: .STAKED_TON,
-        displayTitle: "TON",
-        explainTitle: lang("Why is staking safe?"),
-        explainContent: [
-            lang("$safe_staking_description1"),
-            lang("$safe_staking_description2"),
-            lang("$safe_staking_description3"),
-        ],
-    )
-    
-    static var ton: StakingConfig {
-        StakingStore.currentAccount?.shouldUseNominators == true ? tonNominators : tonLiquid
-    }
 
     static let mycoin = StakingConfig(
         id: MYCOIN_STAKING_POOL,
         baseToken: .MYCOIN,
         stakedToken: .STAKED_MYCOIN,
         displayTitle: "MY",
-        explainTitle: lang("Why is staking safe?"),
+        explainTitle: lang("Why this is safe"),
         explainContent: [
             lang("$safe_staking_description_jetton1", arg1: "[JVault](\(JVAULT_URL))"),
-            lang("$safe_staking_description_jetton2")
+            lang("$safe_staking_description_jetton2"),
         ],
     )
 
@@ -95,16 +78,29 @@ public extension StakingConfig {
     var stakedToken: ApiToken { TokenStore.tokens[stakedTokenSlug] ?? _stakedToken }
     var nativeToken: ApiToken { TokenStore.tokens[nativeTokenSlug] ?? .TONCOIN }
     
-    var stakingState: ApiStakingState? { StakingStore.currentAccount?.stateById[id] }
+    func stakingState(stakingData: MStakingData?) -> ApiStakingState? {
+        switch self {
+        case .ton:
+            if stakingData?.shouldUseNominators == true {
+                return stakingData?.stateById["nominators"]
+            }
+            return stakingData?.stateById["liquid"]
+        default:
+            return stakingData?.stateById[id]
+        }
+    }
 
-    var fullStakingBalance: BigInt? {
-        stakingState.flatMap(getFullStakingBalance(state:))
+    func fullStakingBalance(stakingData: MStakingData?) -> BigInt? {
+        stakingState(stakingData: stakingData).flatMap(getFullStakingBalance(state:))
     }
-    var unstakeTime: Date? {
-        stakingState.flatMap(getUnstakeTime(state:))
+    func unstakeTime(stakingData: MStakingData?) -> Date? {
+        stakingState(stakingData: stakingData).flatMap(getUnstakeTime(state:))
     }
-    var readyToUnstakeAmount: BigInt? {
-        if let amount = stakingState?.unstakeRequestAmount, amount > 0, let unstakeTime, unstakeTime <= Date() {
+    func readyToUnstakeAmount(stakingData: MStakingData?) -> BigInt? {
+        if let amount = stakingState(stakingData: stakingData)?.unstakeRequestAmount,
+           amount > 0,
+           let unstakeTime = unstakeTime(stakingData: stakingData),
+           unstakeTime <= Date() {
             return amount
         }
         return nil

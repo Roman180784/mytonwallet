@@ -40,6 +40,7 @@ export const CLAIM_MINTLESS_AMOUNT = 20000000n; // 0.02 TON
 export const NFT_TRANSFER_AMOUNT = 100000000n; // 0.1 TON
 export const NFT_TRANSFER_REAL_AMOUNT = 5000000n; // 0.005 TON
 export const NFT_TRANSFER_FORWARD_AMOUNT = 1n; // 0.000000001 TON
+
 /**
  * When the NFT contract handles the payload we send, it simply adds its data to the payload. If the resulting payload
  * size becomes greater than the cell capacity, the contract fails to send the NFT. To avoid that, we keep some free
@@ -185,6 +186,11 @@ export enum OtherOpCode {
   TokenBridgePaySwap = 0x8,
 }
 
+export enum BidaskOpCode {
+  Swap = 0xc09da84e,
+  NativeTransferNotification = 0x6edd65f0,
+}
+
 export enum ContractType {
   Wallet = 'wallet',
   Staking = 'staking',
@@ -202,6 +208,7 @@ export const EXCESS_OP_CODES = [
   JettonOpCode.Excesses,
   TeleitemOpCode.Ok,
   0x80f4c55b, // StormTrade excess
+  0x76dbd306, // Stonfi excess
 ];
 
 export const DNS_CATEGORY_HASH_MAP = {

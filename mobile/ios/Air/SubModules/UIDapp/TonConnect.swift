@@ -1,7 +1,6 @@
 
 import SwiftUI
 import UIKit
-import UIPasscode
 import UIComponents
 import WalletCore
 import WalletContext
@@ -19,11 +18,12 @@ public let TonConnectErrorCodes: [Int: String] = [
 private let log = Log("TonConnect")
 
 
-public final class TonConnect: WalletCoreData.EventsObserver {
+@MainActor public final class TonConnect: WalletCoreData.EventsObserver {
     
     public static let shared = TonConnect()
     
     private weak var placeholderNc: WNavigationController?
+    private weak var lastPresented: UIViewController?
     
     init() {
         WalletCoreData.add(eventObserver: self)
@@ -36,6 +36,7 @@ public final class TonConnect: WalletCoreData.EventsObserver {
     public func handleDeeplink(_ url: String) {
         Task { @MainActor in
             do {
+                showOverlayIfNeeded()
                 let identifier = "\(Date().timeIntervalSince1970)"
                 let returnStrategy = try await Api.startSseConnection(params: ApiSseConnectionParams(
                         url: url,
@@ -43,9 +44,13 @@ public final class TonConnect: WalletCoreData.EventsObserver {
                         identifier: identifier
                     )
                 )
+                
                 if returnStrategy == .empty {
                     return
-                } else if let returnStrategy, case .url(var str) = returnStrategy {
+                }
+                
+                dismissOverlayIfNeeded()
+                if let returnStrategy, case .url(var str) = returnStrategy {
                     if !str.contains("://") {
                         str = "https://" + str
                     }
@@ -57,7 +62,8 @@ public final class TonConnect: WalletCoreData.EventsObserver {
                 }
             } catch {
                 log.error("failed to handle deeplink: \(error, .public)")
-                topViewController()?.showAlert(error: error)
+                dismissOverlayIfNeeded()
+                AppActions.showError(error: error)
             }
         }
     }
@@ -83,7 +89,28 @@ public final class TonConnect: WalletCoreData.EventsObserver {
         }
     }
     
+    @MainActor func showOverlayIfNeeded() {
+        guard lastPresented == nil else { return }
+        guard let window = UIApplication.shared.sceneKeyWindow, !window.subviews.any({ $0 is TonConnectOverlayView }) else { return }
+        let overlay = TonConnectOverlayView()
+        window.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: window.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: window.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: window.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: window.trailingAnchor),
+        ])
+    }
+    
+    @MainActor func dismissOverlayIfNeeded() {
+        if let window = UIApplication.shared.sceneKeyWindow, let overlay = window.subviews.compactMap({ $0 as? TonConnectOverlayView }).first {
+            overlay.isUserInteractionEnabled = false
+            overlay.dismissSelf()
+        }
+    }
+    
     @MainActor func handleLoading(update: ApiUpdate.DappLoading) async {
+        dismissOverlayIfNeeded()
         if let accountId = update.accountId {
             await switchAccountIfNeeded(accountId: accountId)
         }
@@ -98,10 +125,11 @@ public final class TonConnect: WalletCoreData.EventsObserver {
         }
         let nc = WNavigationController(rootViewController: vc)
         self.placeholderNc = nc
-        topViewController()?.present(nc, animated: true)
+        presentAndRecord(nc)
     }
     
     @MainActor func handleConnect(update: ApiUpdate.DappConnect) async {
+        dismissOverlayIfNeeded()
         await switchAccountIfNeeded(accountId: update.accountId)
         if let vc = placeholderNc?.visibleViewController as? ConnectDappVC {
             vc.replacePlaceholder(
@@ -116,26 +144,33 @@ public final class TonConnect: WalletCoreData.EventsObserver {
                 onConfirm: { [weak self] accountId, password in self?.confirmConnect(request: update, accountId: accountId, passcode: password) },
                 onCancel: { [weak self] in self?.cancelConnect(request: update) }
             )
-            topViewController()?.present(vc, animated: true)
+            presentAndRecord(vc)
         }
     }
     
     func confirmConnect(request: ApiUpdate.DappConnect, accountId: String, passcode: String) {
         Task {
             do {
-                var result: ApiSignTonProofResult?
+                var signatures: [String]? = nil
                 if let proof = request.proof {
-                    result = try await Api.signTonProof(
+                    let account = AccountStore.get(accountId: accountId)
+                    let tonAddress = account.getAddress(chain: .ton) ?? ""
+                    let dappChains = [
+                        ApiDappSessionChain(chain: .ton, address: tonAddress, network: account.network),
+                    ]
+                    let result = try await Api.signDappProof(
+                        dappChains: dappChains,
                         accountId: accountId,
                         proof: proof,
                         password: passcode
                     )
+                    signatures = result.signatures
                 }
                 try await Api.confirmDappRequestConnect(
                     promiseId: request.promiseId,
                     data: .init(
                         accountId: accountId,
-                        proofSignature: result?.signature
+                        proofSignatures: signatures
                     )
                 )
             } catch {
@@ -154,7 +189,8 @@ public final class TonConnect: WalletCoreData.EventsObserver {
         }
     }
     
-    @MainActor  func handleSendTransactions(update: MDappSendTransactions) async {
+    @MainActor  func handleSendTransactions(update: ApiUpdate.DappSendTransactions) async {
+        dismissOverlayIfNeeded()
         await switchAccountIfNeeded(accountId: update.accountId)
         if let vc = placeholderNc?.visibleViewController as? SendDappVC {
             vc.replacePlaceholder(
@@ -173,20 +209,26 @@ public final class TonConnect: WalletCoreData.EventsObserver {
             if let sheet = nc.sheetPresentationController {
                 sheet.detents = [.large()]
             }
-            topViewController()?.present(nc, animated: true)
+            presentAndRecord(nc)
         }
     }
     
-    func confirmSendTransactions(request: MDappSendTransactions, password: String?) {
+    func confirmSendTransactions(request: ApiUpdate.DappSendTransactions, password: String?) {
         Task {
             do {
-                let signedMessages = try await Api.signTransfers(
+                let account = AccountStore.get(accountId: request.accountId)
+                let chain = request.operationChain
+                let address = account.getAddress(chain: chain) ?? ""
+                let dappChain = ApiDappSessionChain(chain: chain, address: address, network: account.network)
+                let signedMessages = try await Api.signDappTransfers(
+                    dappChain: dappChain,
                     accountId: request.accountId,
                     messages: request.transactions.map(ApiTransferToSign.init),
                     options: .init(
                         password: password,
                         vestingAddress: request.vestingAddress,
                         validUntil: request.validUntil,
+                        isLegacyOutput: request.isLegacyOutput,
                     )
                 )
                 try await Api.confirmDappRequestSendTransaction(
@@ -199,7 +241,7 @@ public final class TonConnect: WalletCoreData.EventsObserver {
         }
     }
     
-    func cancelSendTransactions(request: MDappSendTransactions) {
+    func cancelSendTransactions(request: ApiUpdate.DappSendTransactions) {
         Task {
             do {
                 try await Api.cancelDappRequest(promiseId: request.promiseId, reason: lang("Canceled by the user"))
@@ -210,6 +252,7 @@ public final class TonConnect: WalletCoreData.EventsObserver {
     }
     
     @MainActor func handleSignData(update: ApiUpdate.DappSignData) async {
+        dismissOverlayIfNeeded()
         await switchAccountIfNeeded(accountId: update.accountId)
         if let vc = placeholderNc?.visibleViewController as? SignDataVC {
             vc.replacePlaceholder(
@@ -225,16 +268,25 @@ public final class TonConnect: WalletCoreData.EventsObserver {
                 onCancel: { self.cancelSignData(update: update) }
             )
             let nc = WNavigationController(rootViewController: vc)
-            topViewController()?.present(nc, animated: true)
+            presentAndRecord(nc)
         }
     }
     
     func confirmSignData(update: ApiUpdate.DappSignData, password: String?) {
         Task {
             do {
-                let result = try await Api.signData(accountId: update.accountId, dappUrl: update.dapp.url, payloadToSign: update.payloadToSign, password: password)
-                let dict = try (result as? [String: Any]).orThrow()
-                try await Api.confirmDappRequestSignData(promiseId: update.promiseId, data: AnyEncodable(dict: dict))
+                let account = AccountStore.get(accountId: update.accountId)
+                let chain = update.operationChain
+                let address = account.getAddress(chain: chain) ?? ""
+                let dappChain = ApiDappSessionChain(chain: chain, address: address, network: account.network)
+                let result = try await Api.signDappData(
+                    dappChain: dappChain,
+                    accountId: update.accountId,
+                    dappUrl: update.dapp.url,
+                    payloadToSign: update.payloadToSign,
+                    password: password
+                )
+                try await Api.confirmDappRequestSignData(promiseId: update.promiseId, data: AnyEncodable(result))
             } catch {
                 log.error("confirmSignData: \(error)")
             }
@@ -259,5 +311,10 @@ public final class TonConnect: WalletCoreData.EventsObserver {
         } catch {
             log.fault("failed to switch to account \(accountId, .public) error:\(error, .public)")
         }
+    }
+    
+    @MainActor func presentAndRecord(_ vc: UIViewController) {
+        self.lastPresented = vc
+        topViewController()?.present(vc, animated: true)
     }
 }

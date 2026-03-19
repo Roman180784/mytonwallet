@@ -6,6 +6,7 @@ import OrderedCollections
 import SwiftUI
 import UIKit
 import UIComponents
+import Perception
 
 private let START_STEPS: OrderedDictionary<StepId, StepStatus> = [
     .connect: .current,
@@ -14,9 +15,11 @@ private let START_STEPS: OrderedDictionary<StepId, StepStatus> = [
 ]
 private let log = Log("LedgerAddAccountModel")
 
-@MainActor public final class LedgerAddAccountModel: LedgerBaseModel, @unchecked Sendable, ObservableObject {
+@MainActor
+@Perceptible
+public final class LedgerAddAccountModel: LedgerBaseModel, Sendable {
     
-    struct DiscoveredWallet: Identifiable, @unchecked Sendable {
+    struct DiscoveredWallet: Identifiable, Sendable {
         var id: Int
         var displayName: String?
         var address: String
@@ -30,9 +33,10 @@ private let log = Log("LedgerAddAccountModel")
         }
     }
     
+    @PerceptionIgnored
     var currentWalletAddresses: Set<String> = []
-    @Published var discoveredWallets: [DiscoveredWallet] = []
-    @Published var isLoadingMore: Bool = false
+    var discoveredWallets: [DiscoveredWallet] = []
+    var isLoadingMore: Bool = false
     
     var selectedCount: Int { discoveredWallets.count(where: { $0.status == .selected }) }
     var canContinue: Bool { discoveredWallets.any { $0.status == .selected } }
@@ -41,7 +45,7 @@ private let log = Log("LedgerAddAccountModel")
         await super.init(steps: START_STEPS)
     }
     
-    deinit {
+    isolated deinit {
         log.info("deinit")
         task?.cancel()
     }
@@ -71,7 +75,7 @@ private let log = Log("LedgerAddAccountModel")
     func _discoverAccountsImpl() async throws {
         
         currentWalletAddresses = Set(
-            AccountStore.accountsById.values.filter(\.isHardware).compactMap(\.tonAddress)
+            AccountStore.accountsById.values.filter(\.isHardware).compactMap { $0.getAddress(chain: .ton) }
         )
         await requestMoreWallets() // request first batch before pushing
     }
@@ -95,7 +99,7 @@ private let log = Log("LedgerAddAccountModel")
 
         let newWallets: [DiscoveredWallet] = newWallets.enumerated().map { (idx, walletInfo) in
             let alreadyImported = currentWalletAddresses.contains(walletInfo.wallet.address)
-            let title = AccountStore.accountsById.values.first(where: { $0.tonAddress == walletInfo.wallet.address })?.title
+            let title = AccountStore.accountsById.values.first(where: { $0.getAddress(chain: .ton) == walletInfo.wallet.address })?.title
             return DiscoveredWallet(
                 id: startIndex + walletInfo.wallet.index,
                 displayName: title,
@@ -131,6 +135,6 @@ private let log = Log("LedgerAddAccountModel")
         if let firstId {
             _ = try await AccountStore.activateAccount(accountId: firstId)
         }
-        await onDone?()
+        onDone?()
     }
 }

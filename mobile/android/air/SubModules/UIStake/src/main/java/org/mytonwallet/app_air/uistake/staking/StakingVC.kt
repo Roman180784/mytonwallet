@@ -34,6 +34,7 @@ import org.mytonwallet.app_air.uistake.staking.views.StakeDetailView
 import org.mytonwallet.app_air.uistake.staking.views.StakeInputView
 import org.mytonwallet.app_air.uistake.staking.views.UnstakeDetailView
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.models.MBaseCurrency
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
@@ -44,6 +45,9 @@ import org.mytonwallet.app_air.walletcontext.utils.CoinUtils
 import org.mytonwallet.app_air.walletcontext.utils.PriceConversionUtils
 import org.mytonwallet.app_air.walletcore.TONCOIN_SLUG
 import org.mytonwallet.app_air.walletcore.WalletCore
+import org.mytonwallet.app_air.walletcore.WalletEvent
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
+import org.mytonwallet.app_air.walletcore.moshi.MApiTransaction
 import org.mytonwallet.app_air.walletcore.moshi.StakingState
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
@@ -56,7 +60,8 @@ class StakingVC(
     context: Context,
     tokenSlug: String,
     mode: StakingViewModel.Mode,
-) : WViewControllerWithModelStore(context) {
+) : WViewControllerWithModelStore(context), WalletCore.EventObserver {
+    override val TAG = "Staking"
 
     private val viewmodelFactory = AddStakeViewModelFactory(tokenSlug, mode)
     private val stakingViewModel by lazy {
@@ -131,6 +136,8 @@ class StakingVC(
     override fun setupViews() {
         super.setupViews()
 
+        WalletCore.registerObserver(this)
+
         setNavTitle(
             if (stakingViewModel.isStake()) LocaleController.getString("Add Stake")
             else LocaleController.getString("\$unstake_action")
@@ -170,7 +177,7 @@ class StakingVC(
             topToTop(
                 bottomReversedCornerViewUpsideDown,
                 stakeButton,
-                -20f - ViewConstants.BIG_RADIUS
+                -ViewConstants.GAP - ViewConstants.BLOCK_RADIUS
             )
             toBottom(bottomReversedCornerViewUpsideDown)
         }
@@ -329,13 +336,13 @@ class StakingVC(
                 val state = stakingViewModel.stakingState
 
                 fun show() {
-                    detailHeader.fadeIn { }
-                    unstakingDetailView.fadeIn { }
+                    detailHeader.fadeIn()
+                    unstakingDetailView.fadeIn()
                 }
 
                 fun hide() {
-                    detailHeader.fadeOut { }
-                    unstakingDetailView.fadeOut { }
+                    detailHeader.fadeOut()
+                    unstakingDetailView.fadeOut()
                 }
 
                 when (state) {
@@ -380,20 +387,6 @@ class StakingVC(
         }
     }
 
-    private fun updateFieldValue() {
-        val fieldValue =
-            if (stakingViewModel.switchedToBaseCurrencyInput) stakingViewModel.amountInBaseCurrency else stakingViewModel.amount
-        stakeInputView.setAssetAsBaseCurrency(
-            stakingViewModel.fieldMaximumFraction,
-            if (fieldValue > BigInteger.valueOf(0)) fieldValue.toString(
-                stakingViewModel.fieldMaximumFraction,
-                "",
-                stakingViewModel.fieldMaximumFraction,
-                false
-            ) else ""
-        )
-    }
-
     private fun onMaxBalanceButtonClicked() {
         val maxBalance = stakingViewModel.tokenBalance
 
@@ -418,15 +411,19 @@ class StakingVC(
         stakeInputView.amountEditText.setSelection(stakeInputView.amountEditText.text?.length ?: 0)
     }
 
-    private fun handleViewModelEvent(events: StakingViewModel.VmToVcEvents) {
-        when (events) {
+    private fun handleViewModelEvent(event: StakingViewModel.VmToVcEvents) {
+        when (event) {
             is StakingViewModel.VmToVcEvents.SubmitSuccess -> {
-                onDone()
+                Logger.d(Logger.LogTag.STAKING, "handleViewModelEvent: SubmitSuccess activityId=${event.activityId}")
+                MBlockchain.ton.idToTxHash(event.activityId)?.let {
+                    onDone(it)
+                }
             }
 
             is StakingViewModel.VmToVcEvents.SubmitFailure -> {
+                Logger.d(Logger.LogTag.STAKING, "handleViewModelEvent: SubmitFailure error=${event.error?.parsed}")
                 pop()
-                showError(events.error?.parsed)
+                showError(event.error?.parsed)
             }
 
             else -> {}
@@ -434,6 +431,8 @@ class StakingVC(
     }
 
     private fun pushConfirmView() {
+        val mode = if (stakingViewModel.isStake()) "stake" else "unstake"
+        Logger.d(Logger.LogTag.STAKING, "pushConfirmView: mode=$mode tokenSlug=${stakingViewModel.tokenSlug}")
         view.hideKeyboard()
         val passcodeConfirmVC = PasscodeConfirmVC(
             context = context,
@@ -465,7 +464,7 @@ class StakingVC(
         spacerView.setBackgroundColor(WColor.SecondaryBackground.color)
         detailHeader.setBackgroundColor(
             WColor.Background.color,
-            ViewConstants.BIG_RADIUS.dp,
+            ViewConstants.BLOCK_RADIUS.dp,
             0f
         )
         detailHeader.setTextColor(WColor.PrimaryText.color)
@@ -474,7 +473,7 @@ class StakingVC(
                 stakingDetailView.setBackgroundColor(
                     WColor.Background.color,
                     0f,
-                    ViewConstants.BIG_RADIUS.dp
+                    ViewConstants.BLOCK_RADIUS.dp
                 )
             }
 
@@ -482,14 +481,14 @@ class StakingVC(
                 unstakingDetailView.setBackgroundColor(
                     WColor.Background.color,
                     0f,
-                    ViewConstants.BIG_RADIUS.dp
+                    ViewConstants.BLOCK_RADIUS.dp
                 )
             }
         }
         stakeInputView.setBackgroundColor(
             WColor.Background.color,
-            ViewConstants.TOP_RADIUS.dp,
-            ViewConstants.BIG_RADIUS.dp
+            ViewConstants.TOOLBAR_RADIUS.dp,
+            ViewConstants.BLOCK_RADIUS.dp
         )
     }
 
@@ -511,11 +510,19 @@ class StakingVC(
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        WalletCore.unregisterObserver(this)
+    }
+
     private fun confirmHardware() {
+        val mode = if (stakingViewModel.isStake()) "stake" else "unstake"
+        Logger.d(Logger.LogTag.STAKING, "confirmHardware: mode=$mode tokenSlug=${stakingViewModel.tokenSlug}")
         view.lockView()
         val account = AccountStore.activeAccount!!
         val ledgerConnectVC = LedgerConnectVC(
-            context, LedgerConnectVC.Mode.ConnectToSubmitTransfer(
+            context,
+            mode = LedgerConnectVC.Mode.ConnectToSubmitTransfer(
                 account.tonAddress!!,
                 LedgerConnectVC.SignData.Staking(
                     isStaking = stakingViewModel.isStake(),
@@ -524,18 +531,70 @@ class StakingVC(
                     stakingState = stakingViewModel.stakingState!!,
                     realFee = stakingViewModel.realFee,
                 ),
-            ) {
-                onDone()
-            }, headerView = confirmHeaderView
+                onDone = {
+                    // Handled in LedgerConnect
+                }),
+            headerView = confirmHeaderView
         )
         push(ledgerConnectVC, onCompletion = {
             view.unlockView()
         })
     }
 
-    private fun onDone() {
-        navigationController?.window?.dismissLastNav()
-        // TODO display success alert
+    private var stakedActivityId: String? = null
+    private var receivedLocalActivities: ArrayList<MApiTransaction>? = null
+    private fun checkReceivedActivity(receivedActivity: MApiTransaction) {
+        if (stakedActivityId == null) {
+            // Staking in-progress, cached received local activity to process on staking api callback is called
+            if (receivedActivity.isLocal()) {
+                if (receivedLocalActivities == null)
+                    receivedLocalActivities = ArrayList()
+                receivedLocalActivities?.add(receivedActivity)
+            }
+            return
+        }
+
+        val txMatch =
+            receivedActivity is MApiTransaction.Transaction && stakedActivityId == receivedActivity.getTxHash()
+        if (!txMatch) {
+            return
+        }
+
+        stakedActivityId = null
+        WalletCore.unregisterObserver(this)
+        if (window?.topNavigationController != navigationController) {
+            window?.dismissNav(navigationController)
+            return
+        }
+        window?.dismissLastNav {
+            //WalletCore.notifyEvent(WalletEvent.OpenActivity(receivedActivity))
+        }
+    }
+
+    private fun onDone(stakedActivityId: String) {
+        this.stakedActivityId = stakedActivityId
+        // Wait for Pending Activity event...
+        receivedLocalActivities?.firstOrNull { it.getTxHash() == stakedActivityId }?.let {
+            checkReceivedActivity(it)
+        }
+    }
+
+    override fun onWalletEvent(walletEvent: WalletEvent) {
+        when (walletEvent) {
+            is WalletEvent.NewLocalActivities -> {
+                walletEvent.localActivities?.forEach { receivedActivity ->
+                    checkReceivedActivity(receivedActivity)
+                }
+            }
+
+            is WalletEvent.ReceivedPendingActivities -> {
+                walletEvent.pendingActivities?.forEach { receivedActivity ->
+                    checkReceivedActivity(receivedActivity)
+                }
+            }
+
+            else -> {}
+        }
     }
 
     private val confirmHeaderView: View

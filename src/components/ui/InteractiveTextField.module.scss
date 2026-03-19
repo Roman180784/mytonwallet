@@ -1,3 +1,5 @@
+@use "../../styles/mixins";
+
 .wrapper {
   flex-shrink: 0;
 
@@ -24,10 +26,7 @@
     cursor: default;
   }
 
-  &:active {
-    // Optimization
-    transition: none;
-  }
+  @include mixins.active-transition-optimization();
 
   &:focus-visible,
   &:hover {
@@ -134,11 +133,25 @@
   color: var(--color-black);
 }
 
+.menuAvatar {
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+  margin-inline-end: 0.5rem;
+  font-size: 0.75rem !important;
+}
+
 .menuIcon {
   &:global(.icon-star),
   &:global(.icon-star-filled) {
     margin-top: -0.125rem;
   }
+}
+
+.menuIconChevronRight {
+  order: 5;
+  margin: 0 -0.5rem 0 auto;
+  padding-left: 0.5rem;
+  font-size: 1rem !important;
 }
 
 .menuIcon,

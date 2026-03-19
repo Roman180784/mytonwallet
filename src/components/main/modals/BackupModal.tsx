@@ -5,7 +5,7 @@ import { getActions, withGlobal } from '../../../global';
 
 import { IS_CAPACITOR, MNEMONIC_COUNT } from '../../../config';
 import { selectMnemonicForCheck } from '../../../global/actions/api/auth';
-import { selectCurrentAccountState } from '../../../global/selectors';
+import { selectCurrentAccountId, selectCurrentAccountState } from '../../../global/selectors';
 import { getDoesUsePinPad } from '../../../util/biometrics';
 import buildClassName from '../../../util/buildClassName';
 import { vibrateOnError, vibrateOnSuccess } from '../../../util/haptics';
@@ -59,8 +59,6 @@ function BackupModal({
   const [error, setError] = useState<string | undefined>();
 
   const mnemonicRef = useRef<string[] | undefined>(undefined);
-  const noResetFullNativeOnBlur = currentSlide === SLIDES.confirm || currentSlide === SLIDES.password;
-
   useEffect(() => {
     mnemonicRef.current = undefined;
   }, [isOpen]);
@@ -75,7 +73,8 @@ function BackupModal({
     mnemonicRef.current = await callApi('fetchMnemonic', currentAccountId!, password);
 
     if (!mnemonicRef.current) {
-      setError('Wrong password, please try again.');
+      const error = getDoesUsePinPad() ? 'Wrong passcode, please try again.' : 'Wrong password, please try again.';
+      setError(error);
       setIsLoading(false);
       void vibrateOnError();
       return;
@@ -144,6 +143,7 @@ function BackupModal({
               withCloseButton={IS_CAPACITOR}
               submitLabel={lang('$back_up_auth')}
               cancelLabel={lang('Cancel')}
+              noAutoConfirm
               onSubmit={handlePasswordSubmit}
               onCancel={onClose}
               onUpdate={handleBackupErrorUpdate}
@@ -186,9 +186,6 @@ function BackupModal({
       isOpen={isOpen}
       hasCloseButton
       dialogClassName={styles.modalDialog}
-      nativeBottomSheetKey="backup"
-      forceFullNative={currentSlide === SLIDES.password}
-      noResetFullNativeOnBlur={noResetFullNativeOnBlur}
       onClose={onClose}
       onCloseAnimationEnd={handleModalClose}
     >
@@ -207,5 +204,5 @@ function BackupModal({
 
 export default memo(withGlobal<OwnProps>((global): StateProps => {
   const { isBackupRequired } = selectCurrentAccountState(global) || {};
-  return { currentAccountId: global.currentAccountId, isBackupRequired };
+  return { currentAccountId: selectCurrentAccountId(global), isBackupRequired };
 })(BackupModal));

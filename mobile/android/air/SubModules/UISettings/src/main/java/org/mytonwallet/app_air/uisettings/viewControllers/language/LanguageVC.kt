@@ -3,7 +3,6 @@ package org.mytonwallet.app_air.uisettings.viewControllers.language
 import android.content.Context
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.RecyclerView
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.base.WViewController
@@ -24,27 +23,26 @@ import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.WalletContextManager
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
+import org.mytonwallet.app_air.walletcore.pushNotifications.AirPushNotifications
 import java.lang.ref.WeakReference
 
 class LanguageVC(context: Context) : WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource {
+    override val TAG = "Language"
 
     companion object {
         val languages = arrayOf(
             WLanguage.ENGLISH,
-            WLanguage.RUSSIAN,
-
-            /*WLanguage.CHINESE_SIMPLIFIED,
-            WLanguage.CHINESE_TRADITIONAL,
-            WLanguage.ENGLISH,
-            WLanguage.GERMAN,
-            WLanguage.PERSIAN,
-            WLanguage.POLISH,
-            WLanguage.RUSSIAN,
             WLanguage.SPANISH,
-            WLanguage.THAI,
+            WLanguage.RUSSIAN,
+            WLanguage.CHINESE_SIMPLIFIED,
+            WLanguage.CHINESE_TRADITIONAL,
             WLanguage.TURKISH,
-            WLanguage.UKRAINIAN,*/
+            WLanguage.GERMAN,
+            WLanguage.THAI,
+            WLanguage.UKRAINIAN,
+            WLanguage.POLISH,
+            //WLanguage.PERSIAN,
         )
 
         val HEADER_CELL = WCell.Type(1)
@@ -129,14 +127,12 @@ class LanguageVC(context: Context) : WViewController(context),
             HEADER_CELL -> {
                 HeaderCell(
                     context,
+                    20f
                 )
             }
 
             else -> {
-                TitleSubtitleSelectionCell(
-                    context,
-                    ConstraintLayout.LayoutParams(MATCH_PARENT, 72.dp)
-                )
+                TitleSubtitleSelectionCell(context)
             }
         }
     }
@@ -150,7 +146,7 @@ class LanguageVC(context: Context) : WViewController(context),
             0 -> {
                 (cellHolder.cell as HeaderCell).configure(
                     title = LocaleController.getString("Language"),
-                    titleColor = WColor.Tint.color
+                    titleColor = WColor.Tint
                 )
             }
 
@@ -164,11 +160,13 @@ class LanguageVC(context: Context) : WViewController(context),
                     isLast = indexPath.row == languages.size - 1
                 ) {
                     WGlobalStorage.setLangCode(language.langCode)
+                    AirPushNotifications.refreshSubscriptions()
                     switchLanguageIfRequired(language)
-                    LocaleController.init(context, WGlobalStorage.getLangCode())
-                    WalletContextManager.delegate?.restartApp()
-                    WBaseStorage.setActiveLanguage(language.langCode)
-                    WidgetsConfigurations.reloadWidgets(context)
+                    if (LocaleController.init(context, WGlobalStorage.getLangCode())) {
+                        WalletContextManager.delegate?.restartApp()
+                        WBaseStorage.setActiveLanguage(language.langCode)
+                        WidgetsConfigurations.reloadWidgets(context)
+                    }
                 }
             }
         }

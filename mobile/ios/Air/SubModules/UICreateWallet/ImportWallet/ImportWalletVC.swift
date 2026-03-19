@@ -11,13 +11,29 @@ import UIComponents
 import WalletCore
 import WalletContext
 
-public class ImportWalletVC: WViewController {
+public class ImportWalletVC: CreateWalletBaseVC {
 
     private let introModel: IntroModel
-    
-    private var scrollView: UIScrollView!
-    private var wordInputs: [WWordInput]!
-    private var suggestionsView: WSuggestionsView!
+    private let scrollView = UIScrollView()
+    private var wordInputs: [WWordInput] = []
+    private let suggestionsView = WSuggestionsView()
+    private var isSubmitting = false
+    private lazy var headerView = HeaderView(
+        animationName: "animation_snitch",
+        animationPlaybackMode: .once,
+        title: lang("Enter Secret Words"),
+        description: lang("$auth_import_mnemonic_description", arg1: langJoin(["12", "24"], .or)),
+        animationSize: 96,
+    )
+    private lazy var bottomActionsView = BottomActionsView(
+        primaryAction: BottomAction(
+            title: lang("Continue"),
+            onPress: { [weak self] in
+                self?.continuePressed(scrollToBottom: false)
+            }
+        ),
+        reserveSecondaryActionHeight: false
+    )
 
     public init(introModel: IntroModel) {
         self.introModel = introModel
@@ -33,8 +49,13 @@ public class ImportWalletVC: WViewController {
         setupViews()
     }
 
-    private var headerView: HeaderView!
-    private var bottomActionsView: BottomActionsView!
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if !isLoading {
+            isSubmitting = false
+            textChanged()
+        }
+    }
 
     func setupViews() {
         addNavigationBar(
@@ -43,7 +64,6 @@ public class ImportWalletVC: WViewController {
             addBackButton: (navigationController?.viewControllers.count ?? 1) > 1 ? weakifyGoBack() : nil
         )
 
-        scrollView = UIScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.delegate = self
 
@@ -61,14 +81,6 @@ public class ImportWalletVC: WViewController {
             scrollView.contentLayoutGuide.widthAnchor.constraint(equalTo: view.widthAnchor),
         ])
 
-        // header
-        headerView = HeaderView(
-            animationName: "animation_snitch",
-            animationPlaybackMode: .once,
-            title: lang("Enter Secret Words"),
-            description: lang("$auth_import_mnemonic_description"),
-            animationSize: 96,
-        )
         scrollView.addSubview(headerView)
         NSLayoutConstraint.activate([
             headerView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 0),
@@ -87,8 +99,6 @@ public class ImportWalletVC: WViewController {
             pasteButton.leftAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leftAnchor, constant: 48),
             pasteButton.rightAnchor.constraint(equalTo: scrollView.contentLayoutGuide.rightAnchor, constant: -48)
         ])
-
-        suggestionsView = WSuggestionsView()
 
         // 24 word inputs
         let wordsStackView1 = UIStackView()
@@ -116,8 +126,6 @@ public class ImportWalletVC: WViewController {
         ])
         let fieldsCount = 24
         
-        wordInputs = [
-        ]
         for i in 0 ..< fieldsCount {
             let wordInput = WWordInput(
                 index: i,
@@ -139,15 +147,6 @@ public class ImportWalletVC: WViewController {
             wordInputs.append(wordInput)
         }
         
-        // bottom action
-        let continueAction = BottomAction(
-            title: lang("Continue"),
-            onPress: {
-                self.continuePressed(scrollToBottom: false)
-            }
-        )
-
-        bottomActionsView = BottomActionsView(primaryAction: continueAction, reserveSecondaryActionHeight: false)
         view.addSubview(bottomActionsView)
         NSLayoutConstraint.activate([
             bottomActionsView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
@@ -189,8 +188,8 @@ public class ImportWalletVC: WViewController {
     @objc func pasteFromClipboard() {
         if UIPasteboard.general.hasStrings, let value = UIPasteboard.general.string, !value.isEmpty {
             let words = value.split(omittingEmptySubsequences: true, whereSeparator: { $0.isWhitespace }).map(String.init)
-            if words.count != 24 && words.count != 12 {
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            if !isValidImportWords(words) {
+                Haptics.play(.error)
                 if #available(iOS 17.0, *), let target = wordInputs.first?.frame(in: scrollView) {
                      scrollView.scrollRectToVisible(target, animated: true)
                 }
@@ -198,28 +197,26 @@ public class ImportWalletVC: WViewController {
             wordInputs.first?.textField.distributeWords(words)
             textChanged()
         } else {
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-            showToast(message: lang("Clipboard empty"))
+            Haptics.play(.lightTap)
+            AppActions.showToast(message: lang("Clipboard empty"))
         }
         
     }
 
-    private var words: [String] = []
     func continuePressed(scrollToBottom: Bool = true) {
+        guard !isSubmitting, !isLoading else { return }
+        isSubmitting = true
         view.endEditing(true)
         if scrollToBottom {
             scrollView.scrollToBottom(animated: true)
         }
 
-        // check if all the words are in the possibleWordList
-        words = [String]()
-        for wordInput in wordInputs {
-            guard let word = wordInput.trimmedText else { break }
-            words.append(word)
-        }
+        let words = enteredWords()
         
-        if words.count != 24 && words.count != 12 {
+        if !isValidImportWords(words) {
+            isSubmitting = false
             showMnemonicAlert()
+            return
         }
 
         validateWords(enteredWords: words)
@@ -227,8 +224,8 @@ public class ImportWalletVC: WViewController {
 
     private func showMnemonicAlert() {
         // a word is incorrect.
-        showAlert(title: lang("Wrong Phrase"),
-                  text: lang("Looks like you entered an invalid mnemonic phrase."),
+        showAlert(title: nil,
+                  text: lang("InvalidMnemonic"),
                   button: lang("OK"))
     }
 
@@ -252,6 +249,11 @@ public class ImportWalletVC: WViewController {
     // MARK: Validate words
     
     func validateWords(enteredWords: [String]) {
+        if let privateKeyWords = normalizeMnemonicPrivateKey(enteredWords) {
+            goNext(didImport: false, wordsToImport: privateKeyWords)
+            return
+        }
+
         Task { @MainActor in
             do {
                 isLoading = true
@@ -293,6 +295,20 @@ public class ImportWalletVC: WViewController {
             showAlert(error: failure)
         }
         isLoading = false
+        isSubmitting = false
+    }
+    
+    private func enteredWords() -> [String] {
+        var words = [String]()
+        for wordInput in wordInputs {
+            guard let word = wordInput.trimmedText else { break }
+            words.append(word)
+        }
+        return words
+    }
+    
+    private func isValidImportWords(_ words: [String]) -> Bool {
+        words.count == 12 || words.count == 24 || isMnemonicPrivateKey(words)
     }
 }
 
@@ -308,12 +324,14 @@ extension ImportWalletVC: WKeyboardObserverDelegate {
 
 extension ImportWalletVC: WWordInputDelegate {
     public func resignedFirstResponder() {
-        continuePressed()
+        DispatchQueue.main.async { [weak self] in
+            self?.continuePressed(scrollToBottom: false)
+        }
     }
     
     public func textChanged() {
-        let wordCount = wordInputs.count(where: { $0.trimmedText?.isEmpty == false })
-        bottomActionsView.primaryButton.isEnabled = wordCount == 12 || wordCount == 24
+        let enteredWords = enteredWords()
+        bottomActionsView.primaryButton.isEnabled = isValidImportWords(enteredWords)
     }
 }
 
@@ -331,7 +349,7 @@ extension ImportWalletVC: UIScrollViewDelegate {
 #if DEBUG
 @available(iOS 18.0, *)
 #Preview {
-    let model = IntroModel(password: nil)
+    let model = IntroModel(network: .mainnet, password: nil)
     WNavigationController(rootViewController: ImportWalletVC(introModel: model))
 }
 #endif

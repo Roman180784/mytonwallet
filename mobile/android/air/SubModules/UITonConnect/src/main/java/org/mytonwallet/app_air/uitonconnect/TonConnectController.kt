@@ -37,20 +37,10 @@ class TonConnectController(private val window: WWindow) : WalletCore.UpdatesObse
     }
 
     fun connectStart(link: String) {
-        if (AccountStore.activeAccount?.accountType == MAccount.AccountType.VIEW) {
-            window.topViewController?.showAlert(
-                LocaleController.getString("Error"),
-                LocaleController.getString("Action is not possible on a view-only wallet.")
-            )
-            return
-        }
         WalletCore.call(
-            ApiMethod.DApp.StartSseConnection(
-                ApiMethod.DApp.StartSseConnection.Request(
-                    url = link,
-                    identifier = TonConnectHelper.generateId(),
-                    deviceInfo = TonConnectHelper.deviceInfo
-                )
+            ApiMethod.DApp.TonConnectHandleDeepLink(
+                url = link,
+                identifier = TonConnectHelper.generateId()
             )
         ) { _, _ -> }
     }
@@ -58,9 +48,6 @@ class TonConnectController(private val window: WWindow) : WalletCore.UpdatesObse
     override fun onBridgeUpdate(update: ApiUpdate) {
         when (update) {
             is ApiUpdate.ApiUpdateDappConnect -> {
-                if (AccountStore.activeAccount?.accountType == MAccount.AccountType.VIEW) {
-                    return
-                }
                 window.doOnWalletReady {
                     val loadingVC = loadingConnectRequestViewController?.get()
                     if (loadingVC?.isDisappeared == false) {

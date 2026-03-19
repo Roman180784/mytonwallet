@@ -1,15 +1,15 @@
 package org.mytonwallet.app_air.uicomponents.commonViews
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Paint
 import android.text.InputType
 import android.text.TextPaint
 import android.text.TextUtils
 import android.text.method.DigitsKeyListener
-import android.util.TypedValue
 import android.view.Gravity
-import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.content.ContextCompat
+import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.drawable.SeparatorBackgroundDrawable
 import org.mytonwallet.app_air.uicomponents.drawable.counter.Counter
 import org.mytonwallet.app_air.uicomponents.extensions.dp
@@ -24,14 +24,15 @@ import org.mytonwallet.app_air.uicomponents.widgets.WTokenSymbolIconView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcore.moshi.IApiToken
 
+@SuppressLint("ViewConstructor")
 class TokenAmountInputView(
     context: Context,
+    private val isFirstItem: Boolean,
 ) : WView(context), Counter.Callback, WThemedView {
 
     data class State(
@@ -58,15 +59,13 @@ class TokenAmountInputView(
         }
     }
 
-    private val titleTextView = AppCompatTextView(context).apply {
+    private val titleTextView = HeaderCell(context, 20f).apply {
         id = generateViewId()
-        isSingleLine = true
-        ellipsize = TextUtils.TruncateAt.END
-        text =
-            LocaleController.getString("Amount")
-        typeface = WFont.Medium.typeface
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
+        configure(
+            title = LocaleController.getString("Amount"),
+            titleColor = WColor.Tint,
+            topRounding = HeaderCell.TopRounding.NORMAL
+        )
     }
 
     private val maxBalanceButton = WTokenMaxButton(context).apply {
@@ -132,7 +131,7 @@ class TokenAmountInputView(
             tokenSelectorView,
             LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
         )
-        addView(amountEditText, LayoutParams(LayoutParams.MATCH_CONSTRAINT, 48.dp))
+        addView(amountEditText, LayoutParams(LayoutParams.MATCH_CONSTRAINT, 44.dp))
         addView(
             equivalentTextView,
             LayoutParams(LayoutParams.WRAP_CONTENT, WCounterButton.Companion.HEIGHT.dp)
@@ -143,24 +142,24 @@ class TokenAmountInputView(
         )
 
         setConstraints {
-            toStart(titleTextView, 20f)
-            toTop(titleTextView, 16f)
+            toStart(titleTextView)
+            toTop(titleTextView)
             endToStart(titleTextView, maxBalanceButton, 6f)
-            toTop(maxBalanceButton, 18f)
-            toEnd(maxBalanceButton, 20f - WTokenMaxButton.Companion.PADDING_HORIZONTAL)
+            toTop(maxBalanceButton, 16f)
+            toEnd(maxBalanceButton, 20f - WTokenMaxButton.PADDING_HORIZONTAL)
 
             toStart(amountEditText, 20f)
             centerYToCenterY(amountEditText, tokenSelectorView)
             endToStart(amountEditText, tokenSelectorView)
             toEnd(tokenSelectorView, 16f)
-            toTop(tokenSelectorView, 52f)
+            toTop(tokenSelectorView, 44f)
 
             topToBottom(equivalentTextView, tokenSelectorView, 12f)
-            toStart(equivalentTextView, 20f - WCounterButton.Companion.PADDING_HORIZONTAL)
+            toStart(equivalentTextView, 20f - WCounterButton.PADDING_HORIZONTAL)
             toBottom(equivalentTextView, 16f)
 
             topToBottom(feeTextView, tokenSelectorView, 12f)
-            toEnd(feeTextView, 20f - WCounterButton.Companion.PADDING_HORIZONTAL)
+            toEnd(feeTextView, 20f - WCounterButton.PADDING_HORIZONTAL)
             toBottom(feeTextView, 16f)
         }
 
@@ -168,7 +167,7 @@ class TokenAmountInputView(
     }
 
     fun set(state: State, isFeeDetailed: Boolean) {
-        titleTextView.text = state.title
+        titleTextView.setTitle(state.title ?: "")
         maxBalanceButton.setAmount(state.balance)
         tokenSelectorView.setAsset(state.token)
         tokenSelectorView.setBaseCurrIndicatorEnabled(state.fiatMode)
@@ -237,15 +236,11 @@ class TokenAmountInputView(
     }
 
     override fun updateTheme() {
-        if (ThemeManager.uiMode.hasRoundedCorners) {
-            setBackgroundColor(
-                WColor.Background.color, ViewConstants.BIG_RADIUS.dp
-            )
-        } else {
-            background = separatorBackgroundDrawable
-            separatorBackgroundDrawable.invalidateSelf()
-        }
-        titleTextView.setTextColor(WColor.PrimaryText.color)
+        setBackgroundColor(
+            WColor.Background.color,
+            (if (isFirstItem) ViewConstants.TOOLBAR_RADIUS else ViewConstants.BLOCK_RADIUS).dp,
+            ViewConstants.BLOCK_RADIUS.dp
+        )
     }
 
     override fun onCounterAppearanceChanged(counter: Counter, sizeChanged: Boolean) {

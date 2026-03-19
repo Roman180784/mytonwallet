@@ -61,6 +61,14 @@
 .slide {
   overflow: hidden;
   overflow-y: scroll;
+
+  &.noScroll {
+    overflow: initial;
+  }
+}
+
+.nftsContainer {
+  scrollbar-width: none !important;
 }
 
 .landscapeContentPanel {
@@ -86,6 +94,11 @@
 /* Layout-specific overrides grouped for readability */
 .portraitContainer {
   min-height: calc(var(--vh, 1vh) * 100 - var(--safe-area-top) - #{v.$portraitHeaderHeight});
+
+  /* For preventing z-index issues. Other components (like PortrainActions or Card) may overlap over inner backdrop */
+  :global(html:not(.with-menu-backdrop-rendered)) &:not(.portraitContainerIsStuck) {
+    z-index: var(--z-container);
+  }
 
   .assetsPanel {
     width: 100%;

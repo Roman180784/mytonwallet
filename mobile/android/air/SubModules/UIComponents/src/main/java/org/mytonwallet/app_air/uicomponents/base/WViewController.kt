@@ -33,20 +33,28 @@ import org.mytonwallet.app_air.uicomponents.widgets.fadeOut
 import org.mytonwallet.app_air.uicomponents.widgets.hideKeyboard
 import org.mytonwallet.app_air.uicomponents.widgets.material.bottomSheetBehavior.BottomSheetBehavior
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.uicomponents.widgets.updateThemeForChildren
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.logger.Logger
+import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
+import org.mytonwallet.app_air.walletcore.WalletCore
+import org.mytonwallet.app_air.walletcore.WalletEvent
+import org.mytonwallet.app_air.walletcore.api.activateAccount
 import org.mytonwallet.app_air.walletcore.models.MBridgeError
+import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import java.lang.ref.WeakReference
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 
-open class WViewController(val context: Context) : WThemedView, WProtectedView {
+abstract class WViewController(val context: Context) : WThemedView, WProtectedView {
+    abstract val TAG: String
 
     // Available configurations //////////////////////
     open var title: String? = null
@@ -73,10 +81,21 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
     }
 
     open val protectFromScreenRecord = false
+
+    // App will switch to displayed account id whenever screen is appeared
+    data class DisplayedAccount(val accountId: String?, val isPushedTemporary: Boolean) {
+        val network: MBlockchainNetwork
+            get() {
+                return accountId?.let { MBlockchainNetwork.ofAccountId(it) }
+                    ?: MBlockchainNetwork.MAINNET
+            }
+    }
+
+    open val displayedAccount: DisplayedAccount? = null
     //////////////////////////////////////////////////
 
     // ContainerView /////////////////////////////////
-    val view: ContainerView by lazy {
+    open val view: ContainerView by lazy {
         ContainerView(WeakReference(this)).apply {
         }
     }
@@ -102,15 +121,11 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
     private var isViewAppearanceAnimationInProgress = false
 
     @SuppressLint("ViewConstructor")
-    class ContainerView(val viewController: WeakReference<WViewController>) :
-        WView(viewController.get()!!.context), WThemedView, WProtectedView {
+    open class ContainerView(val viewController: WeakReference<WViewController>) :
+        WView(viewController.get()!!.context), WProtectedView {
         override fun setupViews() {
             super.setupViews()
             viewController.get()?.setupViews()
-        }
-
-        override fun updateTheme() {
-            viewController.get()?.updateTheme()
         }
 
         override fun updateProtectedView() {
@@ -165,6 +180,10 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
                                     isScrollingVertical = false
                                 else if (diffY > 10)
                                     isScrollingVertical = true
+                                if (isScrollingVertical != null) {
+                                    initialX = it.x
+                                    initialY = it.y
+                                }
                             }
                             when (isScrollingVertical) {
                                 false -> {
@@ -261,7 +280,7 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
                     if (frameDropRate > 2.0f) {
                         Logger.w(
                             Logger.LogTag.FPS_PERFORMANCE,
-                            "Poor session performance: ${frameDropRate}% drops"
+                            "onPerformanceSummary: Poor performance dropRate=${frameDropRate}%"
                         )
                     }
                 }
@@ -281,7 +300,7 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
         if (isSevere) {
             Logger.w(
                 Logger.LogTag.FPS_PERFORMANCE,
-                "Serious performance issue detected!"
+                "onFramePerformanceIssue: Serious performance issue detected!"
             )
         }
     }
@@ -335,6 +354,8 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
         }
         if (isViewConfigured) {
             isDisappeared = false
+            if (pendingThemeChange)
+                notifyThemeChanged()
             return
         }
         isViewConfigured = true
@@ -352,21 +373,47 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
     }
 
     open fun viewWillAppear() {
+        Logger.d(Logger.LogTag.SCREEN, "VCWillAppear: $TAG hash=${hashCode()}")
+        if (!isDisappeared)
+            return
         isDisappeared = false
+        if (pendingThemeChange)
+            notifyThemeChanged()
         insetsUpdated()
+        topReversedCornerView?.resumeBlurring()
         bottomReversedCornerView?.resumeBlurring()
         isViewAppearanceAnimationInProgress = true
     }
 
+    // Called when view-controller appears (NOT called when overlay navigation controller dismissed)
     open fun viewDidAppear() {
+        Logger.d(Logger.LogTag.SCREEN, "VCDidAppear: $TAG hash=${hashCode()}")
         isViewAppearanceAnimationInProgress = false
         frameMonitor?.startMonitoring()
+        viewDidEnterForeground()
+    }
+
+    // Called when view-controller becomes top view (Called EVEN WHEN overlay navigation controller dismissed)
+    open fun viewDidEnterForeground() {
+        WalletCore.doOnBridgeReady {
+            switchToDisplayedAccountId()
+        }
     }
 
     // Called when user pushes a new view controller, pops view controller (goes back) or finishes the window (activity)!
-    var isDisappeared = false
+    var isDisappeared = true
     var isDestroyed = false
+        private set
+
+    // Called when:
+    //  - Navigation-controller will push another view-controller over it
+    //  - Navigation-controller will pop the view-controller
+    //  - Another navigation-controller is completely presented over it.
+    //  - Window will replace it with another navigation controller
     open fun viewWillDisappear() {
+        Logger.i(Logger.LogTag.SCREEN, "VCWillDisappear: $TAG ${hashCode()}")
+        if (isDisappeared)
+            return
         view.hideKeyboard()
         isDisappeared = true
         frameMonitor?.stopMonitoring()
@@ -416,32 +463,49 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
     }
     //////////////////////////////////////////////////
 
-    override fun updateTheme() {
-        topReversedCornerView?.let { topReversedCornerView ->
-            view.setConstraints {
-                toTop(
-                    topReversedCornerView,
-                )
-                (topBlurViewGuideline ?: navigationBar)?.let {
-                    bottomToBottom(
+    var pendingThemeChange = false
+    private var _isDarkThemeApplied: Boolean? = null
+    open fun notifyThemeChanged() {
+        if (isDisappeared) {
+            pendingThemeChange = true
+            return
+        }
+        val themeChanged = ThemeManager.isDark != _isDarkThemeApplied || pendingThemeChange
+        _isDarkThemeApplied = ThemeManager.isDark
+        pendingThemeChange = false
+        if (themeChanged || isTinted)
+            updateTheme()
+        updateThemeForChildren(view, onlyTintedViews = !themeChanged)
+        if (themeChanged) {
+            topReversedCornerView?.let { topReversedCornerView ->
+                view.setConstraints {
+                    toTop(
                         topReversedCornerView,
-                        it,
-                        -ViewConstants.BAR_ROUNDS
                     )
-                    return@setConstraints
+                    (topBlurViewGuideline ?: navigationBar)?.let {
+                        bottomToBottom(
+                            topReversedCornerView,
+                            it,
+                            -ViewConstants.TOOLBAR_RADIUS
+                        )
+                        return@setConstraints
+                    }
                 }
             }
+            if (bottomReversedCornerView?.parent != null)
+                bottomReversedCornerView?.updateLayoutParams {
+                    height = ViewConstants.TOOLBAR_RADIUS.dp.roundToInt() +
+                        (navigationController?.getSystemBars()?.bottom ?: 0)
+                }
         }
-        if (bottomReversedCornerView?.parent != null)
-            bottomReversedCornerView?.updateLayoutParams {
-                height = ViewConstants.BAR_ROUNDS.dp.roundToInt() +
-                    (navigationController?.getSystemBars()?.bottom ?: 0)
-            }
+    }
+
+    override fun updateTheme() {
     }
 
     override fun updateProtectedView() {}
 
-    fun setupNavBar(shouldShow: Boolean, isThin: Boolean = false) {
+    fun setupNavBar(shouldShow: Boolean, defaultHeight: Int = WNavigationBar.DEFAULT_HEIGHT) {
         if (navigationController == null)
             throw Exception()
         if (shouldShow) {
@@ -449,7 +513,7 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
                 navigationBar =
                     WNavigationBar(
                         this,
-                        if (isThin) WNavigationBar.DEFAULT_HEIGHT_THIN else WNavigationBar.DEFAULT_HEIGHT
+                        defaultHeight
                     )
                 view.addView(navigationBar, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             }
@@ -535,7 +599,7 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
                 bottomToBottom(
                     topReversedCornerView!!,
                     it,
-                    -ViewConstants.BAR_ROUNDS
+                    -ViewConstants.TOOLBAR_RADIUS
                 )
                 return@setConstraints
             }
@@ -553,7 +617,7 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
             bottomReversedCornerView,
             ConstraintLayout.LayoutParams(
                 MATCH_PARENT,
-                ViewConstants.BAR_ROUNDS.dp.roundToInt() +
+                ViewConstants.TOOLBAR_RADIUS.dp.roundToInt() +
                     (navigationController?.getSystemBars()?.bottom ?: 0)
             )
         )
@@ -570,17 +634,16 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
         val topOffset =
             if (computedOffset >= 0) computedOffset else computedOffset + scrollView.paddingTop
         val isOnTop = topOffset <= 0
-        if (scrollView.canScrollVertically(1) &&
-            !isOnTop
-        ) {
+        if (!isOnTop) {
             topReversedCornerView?.resumeBlurring()
             topReversedCornerView?.setBlurAlpha((topOffset / 20f.dp).coerceIn(0f, 1f))
             bottomReversedCornerView?.resumeBlurring()
             navigationController?.tabBarController?.resumeBlurring()
         } else {
-            topReversedCornerView?.pauseBlurring(!isOnTop)
+            topReversedCornerView?.pauseBlurring(false)
             bottomReversedCornerView?.pauseBlurring()
-            navigationController?.tabBarController?.pauseBlurring()
+            if (navigationController?.tabBarController?.activeNavigationController == navigationController)
+                navigationController?.tabBarController?.pauseBlurring()
         }
     }
 
@@ -594,25 +657,27 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
         return null
     }
 
-    var modalExpandOffset: Int? = null
-    var modalExpandProgress: Float? = null
+    protected var modalExpandOffset: Int? = null
+    protected var modalExpandProgress: Float? = null
     open fun onModalSlide(expandOffset: Int, expandProgress: Float) {
         modalExpandOffset = expandOffset
         modalExpandProgress = expandProgress
-        val topBarAlpha = expandProgress
-        navigationBar?.expansionValue = topBarAlpha
+        navigationBar?.expansionValue = expandProgress
         topReversedCornerView?.translationZ = navigationBar?.translationZ ?: 0f
         if (expandProgress < 1) {
+            // Use fixed radius when Rounded Corners is off, otherwise use BLOCK_RADIUS
+            val halfExpandedRadius =
+                if (ViewConstants.BLOCK_RADIUS == 0f) 24f.dp else ViewConstants.BLOCK_RADIUS.dp
             topReversedCornerView?.setBackgroundColor(
                 Color.TRANSPARENT,
-                min(1f, ((1 - expandProgress) * 5)) * ViewConstants.BIG_RADIUS.dp,
+                min(1f, ((1 - expandProgress) * 5)) * halfExpandedRadius,
                 0f,
                 true
             )
         } else {
             topReversedCornerView?.background = null
         }
-        val contentTranslationY = ((1 - topBarAlpha) * (navigationBar?.height ?: 0))
+        val contentTranslationY = ((1 - expandProgress) * (navigationBar?.height ?: 0))
         contentTranslationY.let {
             view.apply {
                 clipChildren = false
@@ -647,6 +712,41 @@ open class WViewController(val context: Context) : WThemedView, WProtectedView {
             return
         isHeavyAnimationIsProgress = false
         WGlobalStorage.decDoNotSynchronize()
+    }
+
+    private fun switchToDisplayedAccountId() {
+        val displayedAccount = this@WViewController.displayedAccount ?: return
+        val displayedAccountId = displayedAccount.accountId ?: return
+        // Check if displayed account will be activated
+        if (WalletCore.nextAccountId == displayedAccountId)
+            return
+        // Check if displayed account is already activated
+        if (WalletCore.nextAccountId == null && AccountStore.activeAccountId == displayedAccountId)
+            return
+        if (!WGlobalStorage.accountExists(displayedAccountId)) {
+            if (WGlobalStorage.accountIds().isEmpty()) {
+                // Resetting accounts is in progress; should not pop.
+                return
+            }
+            // Account doesn't exist anymore, pop to the previous screen.
+            pop()
+            return
+        }
+        Logger.d(Logger.LogTag.ACCOUNT, "switchToDisplayedAccountId: account=$displayedAccountId")
+        WalletCore.activateAccount(
+            displayedAccountId,
+            notifySDK = true,
+            isPushedTemporary = displayedAccount.isPushedTemporary
+        ) { activeAccount, err ->
+            if (activeAccount == null || err != null) {
+                throw Error()
+            }
+            WalletCore.notifyEvent(
+                WalletEvent.AccountChangedInApp(
+                    persistedAccountsModified = false
+                )
+            )
+        }
     }
 }
 

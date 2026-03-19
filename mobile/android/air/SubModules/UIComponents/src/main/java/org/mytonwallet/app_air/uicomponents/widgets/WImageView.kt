@@ -6,7 +6,7 @@ import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.drawable.Drawable
-import android.net.Uri
+import androidx.core.net.toUri
 import com.facebook.drawee.backends.pipeline.Fresco
 import com.facebook.drawee.generic.GenericDraweeHierarchyBuilder
 import com.facebook.drawee.generic.RoundingParams
@@ -40,7 +40,7 @@ class WImageView(
     fun loadUrl(imageUrl: String) {
         hierarchy.actualImageScaleType =
             com.facebook.drawee.drawable.ScalingUtils.ScaleType.CENTER_CROP
-        val imageRequest = ImageRequestBuilder.newBuilderWithSource(Uri.parse(imageUrl))
+        val imageRequest = ImageRequestBuilder.newBuilderWithSource(imageUrl.toUri())
             .build()
         val draweeController: DraweeController = Fresco.newDraweeControllerBuilder()
             .setImageRequest(imageRequest)
@@ -50,7 +50,7 @@ class WImageView(
 
     fun loadRes(resId: Int) {
         hierarchy.actualImageScaleType =
-            com.facebook.drawee.drawable.ScalingUtils.ScaleType.CENTER
+            com.facebook.drawee.drawable.ScalingUtils.ScaleType.CENTER_CROP
         val imageRequest =
             ImageRequestBuilder.newBuilderWithResourceId(resId)
                 .build()
@@ -58,21 +58,6 @@ class WImageView(
             .setImageRequest(imageRequest)
             .build()
         setController(draweeController)
-    }
-
-    fun crossFadeImage(newDrawable: Drawable) {
-        val fadeOut = ObjectAnimator.ofFloat(this, "alpha", 1f, 0f)
-        fadeOut.duration = if (drawable == null) 0 else AnimationConstants.VERY_QUICK_ANIMATION / 2
-        val fadeIn = ObjectAnimator.ofFloat(this, "alpha", 0f, 1f)
-        fadeIn.duration = AnimationConstants.VERY_QUICK_ANIMATION / 2
-
-        fadeOut.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                setImageDrawable(newDrawable)
-                fadeIn.start()
-            }
-        })
-        fadeOut.start()
     }
 
     override fun updateTheme() {

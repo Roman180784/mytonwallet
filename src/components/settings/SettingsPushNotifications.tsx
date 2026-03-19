@@ -4,10 +4,9 @@ import { getActions, withGlobal } from '../../global';
 import type { Account, AccountSettings, AccountType, GlobalState } from '../../global/types';
 
 import { MAX_PUSH_NOTIFICATIONS_ACCOUNT_COUNT } from '../../config';
-import { selectNetworkAccounts } from '../../global/selectors';
-import { getMainAccountAddress } from '../../util/account';
+import { selectOrderedAccounts } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import { isKeyCountGreater } from '../../util/isEmptyObject';
+import { getChainConfig } from '../../util/chain';
 
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useLang from '../../hooks/useLang';
@@ -29,7 +28,7 @@ interface OwnProps {
 }
 
 interface StateProps {
-  accounts?: Record<string, Account>;
+  orderedAccounts: Array<[string, Account]>;
   canPlaySounds?: boolean;
   settingsByAccountId?: Record<string, AccountSettings>;
   pushNotifications: GlobalState['pushNotifications'];
@@ -38,7 +37,7 @@ interface StateProps {
 function SettingsPushNotifications({
   isActive,
   handleBackClick,
-  accounts,
+  orderedAccounts,
   canPlaySounds,
   pushNotifications: {
     enabledAccounts,
@@ -50,9 +49,9 @@ function SettingsPushNotifications({
   const lang = useLang();
 
   const { toggleNotifications, toggleNotificationAccount, toggleCanPlaySounds } = getActions();
-  const iterableAccounts = useMemo(() => Object.entries(accounts || {}), [accounts]);
-  const arePushNotificationsEnabled = Boolean(Object.keys(enabledAccounts).length);
+  const arePushNotificationsEnabled = enabledAccounts.length > 0;
   const headerTitle = arePushNotificationsAvailable ? lang('Notifications & Sounds') : lang('Sounds');
+  const enabledAccountsSet = useMemo(() => new Set(enabledAccounts), [enabledAccounts]);
 
   const handlePushNotificationsToggle = useLastCallback(() => {
     toggleNotifications({ isEnabled: !arePushNotificationsEnabled });
@@ -78,32 +77,35 @@ function SettingsPushNotifications({
     accountType: AccountType,
     title?: string,
   ) {
-    const onClick = !byChain.ton ? undefined : () => {
+    const hasSupportedChain = useMemo(() => {
+      return (Object.keys(byChain) as (keyof typeof byChain)[])
+        .some((chain) => getChainConfig(chain).doesSupportPushNotifications);
+    }, [byChain]);
+
+    const onClick = !hasSupportedChain ? undefined : () => {
       toggleNotificationAccount({ accountId });
     };
 
     const { cardBackgroundNft } = settingsByAccountId?.[accountId] || {};
-    const address = getMainAccountAddress(byChain) ?? '';
 
-    const isDisabled = enabledAccounts
-      && !enabledAccounts[accountId]
-      && isKeyCountGreater(enabledAccounts, MAX_PUSH_NOTIFICATIONS_ACCOUNT_COUNT - 1);
+    const isActive = enabledAccountsSet.has(accountId);
+    const isDisabled = !isActive && enabledAccounts.length >= MAX_PUSH_NOTIFICATIONS_ACCOUNT_COUNT;
 
     return (
       <AccountButton
+        key={accountId}
+        accountId={accountId}
+        byChain={byChain}
+        title={title}
         className={buildClassName(
           styles.account,
           isDisabled ? styles.accountDisabled : undefined,
         )}
-        key={accountId}
-        accountId={accountId}
-        address={address}
-        title={title}
-        ariaLabel={lang('Switch Account')}
+        titleClassName={styles.pushAccountName}
         accountType={accountType}
         withCheckbox
         isLoading={isDisabled}
-        isActive={Boolean(enabledAccounts && enabledAccounts[accountId])}
+        isActive={isActive}
 
         onClick={onClick}
         cardBackgroundNft={cardBackgroundNft}
@@ -114,10 +116,10 @@ function SettingsPushNotifications({
   function renderAccounts() {
     return (
       <AccountButtonWrapper
-        accountLength={iterableAccounts.length}
+        accountLength={orderedAccounts.length}
         className={styles.settingsBlock}
       >
-        {iterableAccounts.map(
+        {orderedAccounts.map(
           ([accountId, { title, byChain, type }]) => {
             return renderAccount(accountId, byChain, type, title);
           },
@@ -188,9 +190,10 @@ function SettingsPushNotifications({
 }
 
 export default memo(withGlobal<OwnProps>((global): StateProps => {
-  const accounts = selectNetworkAccounts(global);
+  const orderedAccounts = selectOrderedAccounts(global);
+
   return {
-    accounts,
+    orderedAccounts,
     canPlaySounds: global.settings.canPlaySounds,
     pushNotifications: global.pushNotifications,
     settingsByAccountId: global.settings.byAccountId,

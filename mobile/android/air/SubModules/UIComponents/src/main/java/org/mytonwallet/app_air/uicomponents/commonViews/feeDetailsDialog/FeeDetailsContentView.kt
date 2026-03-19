@@ -16,6 +16,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.smartDecimalsCount
@@ -25,7 +26,6 @@ import org.mytonwallet.app_air.walletbasecontext.utils.toString
 import org.mytonwallet.app_air.walletcore.models.MFee
 import org.mytonwallet.app_air.walletcore.models.explainedFee.IExplainedFee
 import org.mytonwallet.app_air.walletcore.moshi.IApiToken
-import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import java.math.BigInteger
 import kotlin.math.max
 
@@ -38,12 +38,12 @@ class FeeDetailsContentView(
 ) : WView(context), WThemedView {
 
     private val finalFeeLabel = WLabel(context).apply {
-        setStyle(14f, WFont.Bold)
+        setStyle(14f, WFont.SemiBold)
         text = LocaleController.getString("Final Fee")
     }
 
     private val excessFeeLabel = WLabel(context).apply {
-        setStyle(14f, WFont.Bold)
+        setStyle(14f, WFont.SemiBold)
         text = LocaleController.getString("Excess")
     }
 
@@ -175,7 +175,7 @@ class FeeDetailsContentView(
         val nativeToken = token.nativeToken
         val symbol = nativeToken?.symbol?.uppercase() ?: ""
         val chain = LocaleController.getFormattedString(
-            "in %1$@",
+            "%1$@",
             listOf(nativeToken?.chain?.uppercase() ?: "")
         )
 

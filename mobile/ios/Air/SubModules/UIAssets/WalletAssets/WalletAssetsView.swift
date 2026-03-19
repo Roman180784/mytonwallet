@@ -9,29 +9,35 @@ import UIKit
 import SwiftUI
 import UIComponents
 import WalletContext
-import WalletCore
 
-class WalletAssetsView: WTouchPassView, WThemedView {
-    
+final class WalletAssetsView: WTouchPassView, WThemedView {
     var bottomConstraint: NSLayoutConstraint!
-    
-    let walletTokensView: WalletTokensView
+
+    let walletTokensVC: WalletTokensVC
     let walletCollectiblesView: NftsVC
-    
+
     lazy var contentVcs: [any WSegmentedControllerContent] = [
-        walletTokensView,
+        walletTokensVC,
         walletCollectiblesView
     ]
     lazy var contentItems: [SegmentedControlItem] = [
-        .init(index: 0, id: "tokens", content: AnyView(Text(lang("Assets")))),
-        .init(index: 1, id: "nfts", content: AnyView(Text(lang("Collectibles")))),
+        SegmentedControlItem(
+            id: "tokens_placeholder",
+            title: lang("Assets"),
+            viewController: walletTokensVC
+        ),
+        SegmentedControlItem(
+            id: "nfts_placeholder",
+            title: lang("Collectibles"),
+            viewController: walletCollectiblesView
+        ),
     ]
-    
+
     var onScrollingOffsetChanged: ((CGFloat) -> Void)?
     var scrollProgress: CGFloat = 0
-    
-    init(walletTokensView: WalletTokensView, walletCollectiblesView: NftsVC, onScrollingOffsetChanged:  ((CGFloat) -> Void)?) {
-        self.walletTokensView = walletTokensView
+
+    init(walletTokensVC: WalletTokensVC, walletCollectiblesView: NftsVC, onScrollingOffsetChanged: ((CGFloat) -> Void)?) {
+        self.walletTokensVC = walletTokensVC
         self.walletCollectiblesView = walletCollectiblesView
         self.onScrollingOffsetChanged = onScrollingOffsetChanged
         super.init(frame: .zero)
@@ -43,14 +49,12 @@ class WalletAssetsView: WTouchPassView, WThemedView {
     }
     
     lazy var segmentedController = WSegmentedController(
-        viewControllers: contentVcs,
         items: contentItems,
         goUnderNavBar: false,
         animationSpeed: .medium,
-        constraintToTopSafeArea: false,
         delegate: self
     )
-
+    
     private func setupViews() {
         translatesAutoresizingMaskIntoConstraints = false
         segmentedController.translatesAutoresizingMaskIntoConstraints = false
@@ -72,18 +76,13 @@ class WalletAssetsView: WTouchPassView, WThemedView {
     func updateTheme() {
         backgroundColor = WTheme.accentButton.background
     }
-        
+    
     var selectedIndex: Int {
         get { segmentedController.selectedIndex ?? 0 }
         set {
             segmentedController.scrollView.contentOffset = CGPoint(x: CGFloat(newValue) * segmentedController.scrollView.frame.width, y: 0)
-            segmentedController.updatePanGesture(index: newValue)
+            segmentedController.scrollView.delegate?.scrollViewDidScroll?(segmentedController.scrollView)
         }
-    }
-
-    public var panGestureEnabled: Bool {
-        get { segmentedController.panGestureEnabled }
-        set { segmentedController.panGestureEnabled = newValue }
     }
 }
 
@@ -91,9 +90,5 @@ extension WalletAssetsView: WSegmentedController.Delegate {
     func segmentedController(scrollOffsetChangedTo progress: CGFloat) {
         self.scrollProgress = progress
         onScrollingOffsetChanged?(progress)
-    }
-    func segmentedControllerDidStartDragging() {
-    }
-    func segmentedControllerDidEndScrolling() {
     }
 }

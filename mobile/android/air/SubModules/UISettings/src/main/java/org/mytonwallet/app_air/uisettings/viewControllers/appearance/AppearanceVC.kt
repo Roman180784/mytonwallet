@@ -15,7 +15,6 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WViewController
-import org.mytonwallet.app_air.uicomponents.base.showAlert
 import org.mytonwallet.app_air.uicomponents.commonViews.KeyValueRowView
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.SwitchCell
 import org.mytonwallet.app_air.uicomponents.extensions.dp
@@ -24,15 +23,16 @@ import org.mytonwallet.app_air.uicomponents.helpers.FontManager
 import org.mytonwallet.app_air.uicomponents.widgets.WEditableItemView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
+import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup.BackgroundStyle
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.uisettings.R
-import org.mytonwallet.app_air.uisettings.viewControllers.appearance.views.palette.AppearancePaletteItemView
-import org.mytonwallet.app_air.uisettings.viewControllers.appearance.views.palette.AppearancePaletteView
+import org.mytonwallet.app_air.uisettings.viewControllers.appearance.views.palette.AppearancePaletteAndCardView
 import org.mytonwallet.app_air.uisettings.viewControllers.appearance.views.theme.AppearanceAppThemeView
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.cells.SettingsItemCell
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.models.SettingsItem
+import org.mytonwallet.app_air.uisettings.viewControllers.walletCustomization.WalletCustomizationVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
@@ -43,6 +43,7 @@ import org.mytonwallet.app_air.walletcore.WalletEvent
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 
 class AppearanceVC(context: Context) : WViewController(context), WalletCore.EventObserver {
+    override val TAG = "Appearance"
 
     override val shouldDisplayBottomBar = true
 
@@ -54,7 +55,7 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
                 title = LocaleController.getString("Switch to Legacy Version"),
                 hasTintColor = false
             ),
-            value = null,
+            subtitle = null,
             isFirst = false,
             isLast = true,
             onTap = {
@@ -69,39 +70,17 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
         v
     }
 
-    private val appPaletteView: AppearancePaletteView by lazy {
-        AppearancePaletteView(context).apply {
-            updatePaletteView()
-            onPaletteSelected = { nftAccentId, state, nft ->
-                when (state) {
-                    AppearancePaletteItemView.State.LOCKED -> {
-                        showAlert(
-                            LocaleController.getString("Unlock New Palettes"),
-                            LocaleController.getString("Get a unique MyTonWallet Card to unlock new palettes.")
-                        )
-                    }
-
-                    AppearancePaletteItemView.State.AVAILABLE -> {
-                        nftAccentId?.let {
-                            WGlobalStorage.setNftAccentColor(
-                                AccountStore.activeAccountId!!,
-                                nftAccentId,
-                                nft?.toDictionary()
-                            )
-                        } ?: run {
-                            WGlobalStorage.setNftAccentColor(
-                                AccountStore.activeAccountId!!,
-                                null,
-                                null
-                            )
-                        }
-                        WalletContextManager.delegate?.themeChanged()
-                        appPaletteView.reloadViews()
-                    }
-
-                    else -> {}
-                }
+    private val appPaletteView: AppearancePaletteAndCardView by lazy {
+        AppearancePaletteAndCardView(context).apply {
+            onCustomizePressed = {
+                navigationController?.push(
+                    WalletCustomizationVC(
+                        context,
+                        AccountStore.activeAccountId!!
+                    )
+                )
             }
+            configure(AccountStore.activeAccount)
         }
     }
 
@@ -128,10 +107,6 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
                     listOf(
                         FontFamily.ROBOTO,
                         FontFamily.MISANS,
-                        /*FontFamily.OPENSANS,
-                        FontFamily.NOTOSANS,
-                        FontFamily.NUNITOSANS,
-                        FontFamily.VAZIR*/
                     ).map {
                         WMenuPopup.Item(
                             null,
@@ -139,6 +114,7 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
                             false
                         ) {
                             if (FontManager.activeFont != it) {
+                                Logger.d(Logger.LogTag.SETTINGS, "appFontView: fontChanged=${it.displayName}")
                                 FontManager.setActiveFont(context, it)
                                 appFontDropdownView.setText(it.displayName)
                                 // Font changes require app restart to refresh all cached typefaces
@@ -147,7 +123,11 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
                         }
                     },
                     popupWidth = WRAP_CONTENT,
-                    aboveView = false
+                    positioning = WMenuPopup.Positioning.BELOW,
+                    windowBackgroundStyle = BackgroundStyle.Cutout.fromView(
+                        appFontDropdownView,
+                        roundRadius = 16f.dp
+                    )
                 )
             }
         }
@@ -158,28 +138,53 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
         v
     }*/
 
+    private val roundedCornersRow = SwitchCell(
+        context,
+        title = LocaleController.getString("Rounded Corners"),
+        isChecked = WGlobalStorage.getAreRoundedCornersActive(),
+        isFirst = true,
+        onChange = { isChecked ->
+            Logger.d(Logger.LogTag.SETTINGS, "roundedCornersRow: isChecked=$isChecked")
+            WGlobalStorage.setAreRoundedCornersActive(isChecked)
+            if (isChecked) {
+                // Re-enable and turn on dependent settings
+                roundedToolbarsRow.isEnabled = true
+                sideGuttersRow.isEnabled = true
+                if (!roundedToolbarsRow.isChecked) roundedToolbarsRow.isChecked = true
+                if (!sideGuttersRow.isChecked) sideGuttersRow.isChecked = true
+            } else {
+                ViewConstants.BLOCK_RADIUS = 0f
+                ViewConstants.BLOCK_RADIUS = 0f
+                // Turn off and disable dependent settings
+                if (roundedToolbarsRow.isChecked) roundedToolbarsRow.isChecked = false
+                roundedToolbarsRow.isEnabled = false
+                if (sideGuttersRow.isChecked) sideGuttersRow.isChecked = false
+                sideGuttersRow.isEnabled = false
+            }
+            pendingThemeChange = true
+            WalletContextManager.delegate?.themeChanged()
+        }
+    )
+
     private var radiusAnimator: ValueAnimator? = null
     private val roundedToolbarsRow = SwitchCell(
         context,
         title = LocaleController.getString("Rounded Toolbars"),
-        isChecked = ThemeManager.uiMode == ThemeManager.UIMode.BIG_RADIUS,
-        isFirst = true,
+        isChecked = WGlobalStorage.getAreRoundedToolbarsActive(),
         onChange = { isChecked ->
-            val uiMode = if (isChecked) {
-                ThemeManager.UIMode.BIG_RADIUS
-            } else {
-                ThemeManager.UIMode.COMPOUND
-            }
+            Logger.d(Logger.LogTag.SETTINGS, "roundedToolbarsRow: isChecked=$isChecked")
             val prevBarRounds = topReversedCornerView?.cornerRadius ?: 0f
-            WGlobalStorage.setActiveUiMode(uiMode)
-            ThemeManager.uiMode = uiMode
+            WGlobalStorage.setAreRoundedToolbarsActive(isChecked)
+            ViewConstants.TOOLBAR_RADIUS = if (isChecked) 24f else 0f
+            ViewConstants.TOOLBAR_RADIUS = if (isChecked) 24f else 0f
+            pendingThemeChange = true
             WalletContextManager.delegate?.themeChanged()
             topReversedCornerView?.animateRadius(
                 prevBarRounds,
-                ViewConstants.BAR_ROUNDS.dp
+                ViewConstants.TOOLBAR_RADIUS.dp
             )
             radiusAnimator?.cancel()
-            radiusAnimator = ValueAnimator.ofFloat(prevBarRounds, ViewConstants.BAR_ROUNDS.dp)
+            radiusAnimator = ValueAnimator.ofFloat(prevBarRounds, ViewConstants.TOOLBAR_RADIUS.dp)
                 .apply {
                     duration = AnimationConstants.QUICK_ANIMATION
                     interpolator = AccelerateDecelerateInterpolator()
@@ -189,7 +194,7 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
                         switchToLegacyCell.setBackgroundColor(
                             WColor.Background.color,
                             radius,
-                            ViewConstants.BIG_RADIUS.dp,
+                            ViewConstants.BLOCK_RADIUS.dp,
                         )
                     }
 
@@ -209,7 +214,9 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
         context,
         title = LocaleController.getString("Side Gutters"),
         isChecked = ViewConstants.HORIZONTAL_PADDINGS > 0,
+        isLast = true,
         onChange = { isChecked ->
+            Logger.d(Logger.LogTag.SETTINGS, "sideGuttersRow: isChecked=$isChecked")
             WGlobalStorage.setAreSideGuttersActive(isChecked)
             ViewConstants.HORIZONTAL_PADDINGS = if (isChecked) 10 else 0
             sideGuttersAnimator?.cancel()
@@ -237,13 +244,38 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
         }
     )
 
+    private val blurRow = SwitchCell(
+        context,
+        title = LocaleController.getString("Enable Blur"),
+        isChecked = WGlobalStorage.isBlurEnabled(),
+        isFirst = true,
+        onChange = { isChecked ->
+            Logger.d(Logger.LogTag.SETTINGS, "blurRow: isChecked=$isChecked")
+            WGlobalStorage.setBlurEnabled(isChecked)
+            pendingThemeChange = true
+            WalletContextManager.delegate?.themeChanged()
+        }
+    )
+
     private val animationsRow = SwitchCell(
         context,
         title = LocaleController.getString("Enable Animations"),
         isChecked = WGlobalStorage.getAreAnimationsActive(),
+        onChange = { isChecked ->
+            Logger.d(Logger.LogTag.SETTINGS, "animationsRow: isChecked=$isChecked")
+            WGlobalStorage.setAreAnimationsActive(isChecked)
+        }
+    )
+
+    private val seasonalThemingRow = SwitchCell(
+        context,
+        title = LocaleController.getString("Enable Seasonal Theming"),
+        isChecked = !WGlobalStorage.getIsSeasonalThemingDisabled(),
         isLast = true,
         onChange = { isChecked ->
-            WGlobalStorage.setAreAnimationsActive(isChecked)
+            Logger.d(Logger.LogTag.SETTINGS, "seasonalThemingRow: isChecked=$isChecked")
+            WGlobalStorage.setIsSeasonalThemingDisabled(!isChecked)
+            WalletCore.notifyEvent(WalletEvent.SeasonalThemeChanged)
         }
     )
 
@@ -252,10 +284,18 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
         v.addView(switchToLegacyCell, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         v.addView(appThemeView, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         v.addView(appPaletteView, ConstraintLayout.LayoutParams(0, WRAP_CONTENT))
-        v.addView(appFontView, ConstraintLayout.LayoutParams(0, 56.dp))
-        v.addView(roundedToolbarsRow, ConstraintLayout.LayoutParams(0, 56.dp))
-        v.addView(sideGuttersRow, ConstraintLayout.LayoutParams(0, 56.dp))
-        v.addView(animationsRow, ConstraintLayout.LayoutParams(0, 56.dp))
+        v.addView(roundedCornersRow, ConstraintLayout.LayoutParams(0, 50.dp))
+        v.addView(roundedToolbarsRow, ConstraintLayout.LayoutParams(0, 50.dp))
+        v.addView(sideGuttersRow, ConstraintLayout.LayoutParams(0, 50.dp))
+        v.addView(blurRow, ConstraintLayout.LayoutParams(0, 50.dp))
+        v.addView(animationsRow, ConstraintLayout.LayoutParams(0, 50.dp))
+        v.addView(seasonalThemingRow, ConstraintLayout.LayoutParams(0, 50.dp))
+        v.addView(appFontView, ConstraintLayout.LayoutParams(0, 50.dp))
+        // Set initial enabled state based on roundedCornersRow
+        if (!roundedCornersRow.isChecked) {
+            roundedToolbarsRow.isEnabled = false
+            sideGuttersRow.isEnabled = false
+        }
         v.setConstraints {
             toTop(switchToLegacyCell)
             toCenterX(switchToLegacyCell)
@@ -263,15 +303,24 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
             toCenterX(appThemeView)
             topToBottom(appPaletteView, appThemeView, ViewConstants.GAP.toFloat())
             toCenterX(appPaletteView)
-            topToBottom(appFontView, appPaletteView, ViewConstants.GAP.toFloat())
-            toCenterX(appFontView)
-            topToBottom(roundedToolbarsRow, appFontView, ViewConstants.GAP.toFloat())
+            // Group 1: Rounded Corners, Rounded Toolbars, Side Gutters
+            topToBottom(roundedCornersRow, appPaletteView, ViewConstants.GAP.toFloat())
+            toCenterX(roundedCornersRow)
+            topToBottom(roundedToolbarsRow, roundedCornersRow)
             toCenterX(roundedToolbarsRow)
             topToBottom(sideGuttersRow, roundedToolbarsRow)
             toCenterX(sideGuttersRow)
-            topToBottom(animationsRow, sideGuttersRow)
+            // Group 2: Enable Blur, Enable Animations
+            topToBottom(blurRow, sideGuttersRow, ViewConstants.GAP.toFloat())
+            toCenterX(blurRow)
+            topToBottom(animationsRow, blurRow)
             toCenterX(animationsRow)
-            toBottomPx(animationsRow, (navigationController?.getSystemBars()?.bottom ?: 0))
+            topToBottom(seasonalThemingRow, animationsRow)
+            toCenterX(seasonalThemingRow)
+            // Group 3: App Font
+            topToBottom(appFontView, seasonalThemingRow, ViewConstants.GAP.toFloat())
+            toCenterX(appFontView)
+            toBottomPx(appFontView, (navigationController?.getSystemBars()?.bottom ?: 0))
         }
         v
     }
@@ -309,9 +358,8 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
             toBottom(scrollView)
         }
 
-        WalletCore.registerObserver(this)
-
         updateTheme()
+        WalletCore.registerObserver(this)
     }
 
     override fun viewDidAppear() {
@@ -322,30 +370,31 @@ class AppearanceVC(context: Context) : WViewController(context), WalletCore.Even
     override fun updateTheme() {
         super.updateTheme()
 
-        appFontView.setBackgroundColor(WColor.Background.color, ViewConstants.BIG_RADIUS.dp)
+        appFontView.setBackgroundColor(WColor.Background.color, ViewConstants.BLOCK_RADIUS.dp)
 
         view.setBackgroundColor(WColor.SecondaryBackground.color)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            scrollView.setOnScrollChangeListener(null)
-        }
-        animationsRow.setOnClickListener(null)
-        appPaletteView.onPaletteSelected = null
         WalletCore.unregisterObserver(this)
+        scrollView.setOnScrollChangeListener(null)
+        animationsRow.setOnClickListener(null)
+        appPaletteView.onCustomizePressed = null
     }
 
     override fun onWalletEvent(walletEvent: WalletEvent) {
         when (walletEvent) {
-            WalletEvent.NftsUpdated, WalletEvent.ReceivedNewNFT -> {
-                appPaletteView.updatePaletteView()
+            is WalletEvent.AccountChanged -> {
+                appPaletteView.configure(AccountStore.activeAccount)
+            }
+
+            WalletEvent.NftCardUpdated -> {
+                appPaletteView.configure(AccountStore.activeAccount)
             }
 
             else -> {}
         }
     }
-
 
 }

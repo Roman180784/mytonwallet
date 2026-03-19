@@ -1,31 +1,49 @@
 package org.mytonwallet.app_air.walletcore.models
 
+import android.net.Uri
 import com.squareup.moshi.JsonClass
 import org.json.JSONObject
 import org.mytonwallet.app_air.walletbasecontext.utils.doubleAbsRepresentation
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcore.DEFAULT_SHOWN_TOKENS
-import org.mytonwallet.app_air.walletcore.MAIN_NETWORK
-import org.mytonwallet.app_air.walletcore.WalletCore
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
+import org.mytonwallet.app_air.walletcore.moshi.inject.ApiDappSessionChain
 import org.mytonwallet.app_air.walletcore.stores.BalanceStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
+import org.mytonwallet.app_air.walletcore.utils.sortedByBalance
 
 @JsonClass(generateAdapter = true)
 class MAccount(
     var accountId: String,
-    val byChain: Map<String, AccountChain>,
+    var byChain: Map<String, AccountChain>,
     var name: String,
     var accountType: AccountType,
     var importedAt: Long?,
+    var isTemporary: Boolean,
 ) {
+
+    override fun equals(other: Any?): Boolean {
+        return other is MAccount && other.accountId == this.accountId
+    }
+
+    override fun hashCode(): Int = accountId.hashCode()
 
     @JsonClass(generateAdapter = true)
     data class AccountChain(
         val address: String,
         val domain: String? = null,
         val isMultisig: Boolean? = null,
-        var ledgerIndex: Int? = null,
-    )
+    ) {
+        val jsonObject: JSONObject
+            get() {
+                return JSONObject().apply {
+                    put("address", address)
+                    put("domain", domain)
+                    put("isMultisig", isMultisig)
+                }
+            }
+    }
 
     @JsonClass(generateAdapter = false)
     enum class AccountType(val value: String) {
@@ -36,15 +54,6 @@ class MAccount(
         companion object {
             fun fromValue(value: String): AccountType? = entries.find { it.value == value }
         }
-
-        val badge: String?
-            get() {
-                return when (this) {
-                    MNEMONIC -> null
-                    HARDWARE -> "LEDGER"
-                    VIEW -> "VIEW"
-                }
-            }
     }
 
     val isViewOnly: Boolean
@@ -65,6 +74,8 @@ class MAccount(
         )
     }
 
+    val network: MBlockchainNetwork = MBlockchainNetwork.ofAccountId(accountId)
+
     init {
         if (name.isEmpty()) {
             name = WGlobalStorage.getAccountName(accountId) ?: ""
@@ -77,6 +88,7 @@ class MAccount(
         globalJSON.optString("title"),
         AccountType.fromValue(globalJSON.optString("type"))!!,
         globalJSON.optLong("importedAt"),
+        globalJSON.optBoolean("isTemporary"),
     )
 
     companion object {
@@ -89,10 +101,22 @@ class MAccount(
                     domain = chainData.optString("domain").takeIf { it.isNotEmpty() },
                     isMultisig = chainData.optBoolean("isMultisig")
                         .takeIf { chainData.has("isMultisig") },
-                    ledgerIndex = chainData.optInt("ledgerIndex")
                 )
             }
             return result
+        }
+
+        fun byChainToJson(byChain: Map<String, AccountChain>): JSONObject {
+            val json = JSONObject()
+            byChain.forEach { (chainName, accountChain) ->
+                val chain = JSONObject().apply {
+                    put("address", accountChain.address)
+                    accountChain.domain?.let { put("domain", it) }
+                    accountChain.isMultisig?.let { put("isMultisig", it) }
+                }
+                json.put(chainName, chain)
+            }
+            return json
         }
     }
 
@@ -134,12 +158,12 @@ class MAccount(
 
     val supportsSwap: Boolean
         get() {
-            return WalletCore.activeNetwork == MAIN_NETWORK && accountType == AccountType.MNEMONIC
+            return network == MBlockchainNetwork.MAINNET && accountType == AccountType.MNEMONIC
         }
 
     val supportsBuyWithCard: Boolean
         get() {
-            return WalletCore.activeNetwork == MAIN_NETWORK && accountType != AccountType.VIEW
+            return network == MBlockchainNetwork.MAINNET && accountType != AccountType.VIEW
         }
 
     val supportsBuyWithCrypto: Boolean
@@ -155,10 +179,53 @@ class MAccount(
     val isNew: Boolean
         get() {
             val balances = BalanceStore.getBalances(accountId) ?: return false
-            return balances.size <= DEFAULT_SHOWN_TOKENS.size && balances.filter {
+            val defaultTokens = DEFAULT_SHOWN_TOKENS[network]
+            return balances.filter { defaultTokens?.contains(it.key) != true }.isEmpty() && balances.filter {
                 val token = TokenStore.getToken(it.key) ?: return@filter false
                 return@filter token.priceUsd *
                     it.value.doubleAbsRepresentation(token.decimals) >= 0.01
             }.isEmpty()
         }
+
+    val firstChain: MBlockchain?
+        get() {
+            return MBlockchain.supportedChains.firstOrNull { addressByChain.contains(it.name) }
+        }
+
+    val shareLink: String
+        get() {
+            return Uri.Builder()
+                .scheme("https")
+                .authority("my.tt")
+                .path("view/")
+                .apply {
+                    sortedChains().forEach { (chain, chainAccount) ->
+                        appendQueryParameter(chain, chainAccount.address)
+                    }
+
+                    if (network == MBlockchainNetwork.TESTNET) {
+                        appendQueryParameter("testnet", "true")
+                    }
+                }
+                .build()
+                .toString()
+        }
+
+    fun isChainSupported(chain: String): Boolean {
+        return byChain.containsKey(chain)
+    }
+
+    fun dappChain(chain: String): ApiDappSessionChain? {
+        val address = byChain[chain]?.address ?: return null
+        return ApiDappSessionChain(
+            chain = chain,
+            address = address,
+            network = network.value
+        )
+    }
+
+    fun sortedChains(): List<Map.Entry<String, AccountChain>> {
+        val perChainBalance = BalanceStore.totalBalanceInBaseCurrencyPerChain(accountId)
+        return byChain.sortedByBalance(perChainBalance)
+    }
 }

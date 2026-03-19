@@ -26,12 +26,12 @@ export type StorageKey = 'accounts'
   | 'currentAccountId'
   | 'clientId'
   | 'referrer'
+  | 'langCode'
   // For extension
   | 'dapps'
   | 'dappMethods:lastAccountId'
   | 'windowId'
   | 'windowState'
-  | 'isTonMagicEnabled'
   | 'isTonProxyEnabled'
   | 'isDeeplinkHookEnabled'
   // For TonConnect SSE

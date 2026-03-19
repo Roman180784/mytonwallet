@@ -4,7 +4,7 @@
   scrollbar-width: none !important;
 
   position: absolute;
-  z-index: 2;
+  z-index: var(--z-suggestions);
   left: 0;
 
   overflow: auto;
@@ -30,6 +30,10 @@
 
   &.top {
     bottom: calc(100% + 0.5rem);
+  }
+
+  &.hidden {
+    visibility: hidden;
   }
 
   &::-webkit-scrollbar {

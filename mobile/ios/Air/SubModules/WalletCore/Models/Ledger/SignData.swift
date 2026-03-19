@@ -4,13 +4,13 @@ import UIKit
 import SwiftUI
 
 
-public enum SignData: @unchecked Sendable {
+public enum SignData: Sendable {
     case signTransfer(
         transferOptions: ApiSubmitTransferOptions
     )
 
      case signDappTransfers(
-         update: MDappSendTransactions
+         update: ApiUpdate.DappSendTransactions
      )
 
      case signLedgerProof(
@@ -19,11 +19,13 @@ public enum SignData: @unchecked Sendable {
      )
 
      case signNftTransfer(
+         chain: ApiChain,
          accountId: String,
          nft: ApiNft,
          toAddress: String,
          comment: String?,
-         realFee: BigInt?
+         realFee: BigInt?,
+         isNftBurn: Bool?,
      )
     
     case staking(

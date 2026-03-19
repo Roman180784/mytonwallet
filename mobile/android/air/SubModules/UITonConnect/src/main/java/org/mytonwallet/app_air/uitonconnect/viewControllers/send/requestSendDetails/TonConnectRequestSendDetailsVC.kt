@@ -21,6 +21,8 @@ class TonConnectRequestSendDetailsVC(
     context: Context,
     private val items: List<BaseListItem>
 ) : WViewController(context) {
+    override val TAG = "TonConnectRequestSendDetails"
+
     private val rvAdapter = Adapter()
 
     override val shouldDisplayBottomBar = true
@@ -38,7 +40,7 @@ class TonConnectRequestSendDetailsVC(
         super.setupViews()
 
         setupNavBar(true)
-        setNavTitle(LocaleController.getString("Transaction Details"), false)
+        setNavTitle(LocaleController.getString("Transfer Info"), false)
 
         navigationBar?.addCloseButton()
 

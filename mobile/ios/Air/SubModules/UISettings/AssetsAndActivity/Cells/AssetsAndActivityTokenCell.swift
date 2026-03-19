@@ -11,8 +11,7 @@ import UIComponents
 import WalletCore
 import WalletContext
 
-class AssetsAndActivityTokenCell: UITableViewCell {
-    
+final class AssetsAndActivityTokenCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupViews()
@@ -100,22 +99,27 @@ class AssetsAndActivityTokenCell: UITableViewCell {
     private var token: ApiToken? = nil
     private var ignoreUpdatesForSlug: String? = nil
     
-    func configure(with token: ApiToken, balance: BigInt, importedSlug: Bool, onTokenVisibilityChange: @escaping (String, Bool) -> Void) {
+    func configure(with token: ApiToken,
+                   isStaking: Bool,
+                   balance: BigInt,
+                   importedSlug: Bool,
+                   isHidden: Bool,
+                   onTokenVisibilityChange: @escaping (String, Bool) -> Void) {
         if token.slug == ignoreUpdatesForSlug { return }
         let tokenChanged = self.token != token
         self.token = token
         self.onTokenVisibilityChange = onTokenVisibilityChange
         iconImageView.config(with: token, shouldShowChain: AccountStore.account?.isMultichain == true)
-        titleLabel.text = token.name
+        titleLabel.text = MTokenBalance.displayName(apiToken: token, isStaking: isStaking)
         symbolLabel.text = token.symbol
         if !tokenChanged {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if let token = self.token {
-                    self.showTokenSwitch.setOn(!token.isHidden, animated: true)
+                if self.token != nil {
+                    self.showTokenSwitch.setOn(!isHidden, animated: true)
                 }
             }
         } else {
-            showTokenSwitch.isOn = !token.isHidden
+            showTokenSwitch.isOn = !isHidden
         }
     }
     
@@ -125,15 +129,5 @@ class AssetsAndActivityTokenCell: UITableViewCell {
     
     @objc private func showTokenSwitched() {
         onTokenVisibilityChange?(token!.slug, showTokenSwitch.isOn)
-    }
-}
-
-
-extension ApiToken {
-    fileprivate var isHidden: Bool {
-        if let data = BalanceStore.currentAccountBalanceData {
-            return data.walletTokens.contains { $0.tokenSlug == slug } == false
-        }
-        return true
     }
 }

@@ -6,7 +6,7 @@
 //
 
 
-public struct Language: Equatable, Identifiable {
+public struct Language: Equatable, Identifiable, Sendable {
     public let langCode: String
     public let name: String
     public let nativeName: String
@@ -115,6 +115,14 @@ public struct Language: Equatable, Identifiable {
     
     public static let supportedLanguages: [Language] = [
         .en,
+        .es,
         .ru,
+        .zhHans,
+        .zhHant,
+        .tr,
+        .de,
+        .th,
+        .uk,
+        .pl,
     ]
 }

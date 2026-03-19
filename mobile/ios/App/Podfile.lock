@@ -16,14 +16,14 @@ PODS:
     - Capacitor
   - CapacitorHaptics (7.0.1):
     - Capacitor
-  - CapacitorKeyboard (7.0.1):
+  - CapacitorKeyboard (7.0.3):
     - Capacitor
-  - CapacitorMlkitBarcodeScanning (7.2.1):
+  - CapacitorMlkitBarcodeScanning (7.3.0):
     - Capacitor
     - GoogleMLKit/BarcodeScanning (= 7.0.0)
   - CapacitorNativeSettings (7.0.1):
     - Capacitor
-  - CapacitorPluginSafeArea (4.0.0):
+  - CapacitorPluginSafeArea (4.0.2):
     - Capacitor
   - CapacitorPushNotifications (7.0.1):
     - Capacitor
@@ -62,7 +62,6 @@ PODS:
     - GoogleUtilities/Reachability (~> 8.0)
     - GoogleUtilities/UserDefaults (~> 8.0)
     - nanopb (~> 3.30910.0)
-  - FloatingPanel (2.8.8)
   - GoogleDataTransport (10.1.0):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
@@ -124,9 +123,6 @@ PODS:
     - Capacitor
   - MytonwalletCapacitorUsbHid (0.0.1):
     - Capacitor
-  - MytonwalletNativeBottomSheet (0.0.2):
-    - Capacitor
-    - FloatingPanel
   - nanopb (3.30910.0):
     - nanopb/decode (= 3.30910.0)
     - nanopb/encode (= 3.30910.0)
@@ -158,11 +154,9 @@ DEPENDENCIES:
   - "CapgoNativeAudio (from `../../../node_modules/@capgo/native-audio`)"
   - CordovaPlugins (from `../capacitor-cordova-ios-plugins`)
   - FirebaseMessaging
-  - FloatingPanel (from `https://github.com/mytonwalletorg/FloatingPanel`, commit `477fd70521abbb12eb7f069f0220660c172dc936`)
   - "MauricewegnerCapacitorNavigationBar (from `../../../node_modules/@mauricewegner/capacitor-navigation-bar`)"
   - MytonwalletAirAppLauncher (from `../../plugins/air-app-launcher`)
   - "MytonwalletCapacitorUsbHid (from `../../../node_modules/@mytonwallet/capacitor-usb-hid`)"
-  - MytonwalletNativeBottomSheet (from `../../plugins/native-bottom-sheet`)
 
 SPEC REPOS:
   trunk:
@@ -226,22 +220,12 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@capgo/native-audio"
   CordovaPlugins:
     :path: "../capacitor-cordova-ios-plugins"
-  FloatingPanel:
-    :commit: 477fd70521abbb12eb7f069f0220660c172dc936
-    :git: https://github.com/mytonwalletorg/FloatingPanel
   MauricewegnerCapacitorNavigationBar:
     :path: "../../../node_modules/@mauricewegner/capacitor-navigation-bar"
   MytonwalletAirAppLauncher:
     :path: "../../plugins/air-app-launcher"
   MytonwalletCapacitorUsbHid:
     :path: "../../../node_modules/@mytonwallet/capacitor-usb-hid"
-  MytonwalletNativeBottomSheet:
-    :path: "../../plugins/native-bottom-sheet"
-
-CHECKOUT OPTIONS:
-  FloatingPanel:
-    :commit: 477fd70521abbb12eb7f069f0220660c172dc936
-    :git: https://github.com/mytonwalletorg/FloatingPanel
 
 SPEC CHECKSUMS:
   Capacitor: 03bc7cbdde6a629a8b910a9d7d78c3cc7ed09ea7
@@ -253,10 +237,10 @@ SPEC CHECKSUMS:
   CapacitorDialog: 128228f7256464205eba2479629f2c00743f39a5
   CapacitorFilesystem: e6261c410436f54908c11f94336c5b58286b1db0
   CapacitorHaptics: 1f1e17041f435d8ead9ff2a34edd592c6aa6a8d6
-  CapacitorKeyboard: 09fd91dcde4f8a37313e7f11bde553ad1ed52036
-  CapacitorMlkitBarcodeScanning: 147c172f6e423618b156e050f715cfb963680ef4
+  CapacitorKeyboard: 62f36104f26d53d8b3a2a43f2a69fe714f1777d5
+  CapacitorMlkitBarcodeScanning: 05b2dfc7a70099f6d4594365c521534d79a17b1d
   CapacitorNativeSettings: bef37b3c7e2184da7416a3f162c71de19fd27593
-  CapacitorPluginSafeArea: 22031c3436269ca80fac90ec2c94bc7c1e59a81d
+  CapacitorPluginSafeArea: d6b696287c91ab0e790d01213124a3cdba97dc43
   CapacitorPushNotifications: 6a2794788c583dd89215f1805ca4bced1b13dbdf
   CapacitorSecureStoragePlugin: 450d402026ee3bcc018fa206504d9c0572fee78d
   CapacitorShare: e573823f511f260f598d0423c33b1e3d7bbe5fd1
@@ -269,7 +253,6 @@ SPEC CHECKSUMS:
   FirebaseCoreInternal: 154779013b85b4b290fdba38414df475f42e3096
   FirebaseInstallations: c76d4931a485fc0cc2dc1d62d3ed0369846ea4b8
   FirebaseMessaging: 07e196b68580e68104df5c1c1b09ac26d04b24ea
-  FloatingPanel: c1973def78278d14bce0deb998f450494685ca5b
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleMLKit: eff9e23ec1d90ea4157a1ee2e32a4f610c5b3318
   GoogleToolboxForMac: d1a2cbf009c453f4d6ded37c105e2f67a32206d8
@@ -282,11 +265,10 @@ SPEC CHECKSUMS:
   MLKitVision: 45e79d68845a2de77e2dd4d7f07947f0ed157b0e
   MytonwalletAirAppLauncher: 2c1fa32c7af426d414d1dfcae4eb070e1ac98d34
   MytonwalletCapacitorUsbHid: d37d8e638a45d54b9c08c90be9478cdad33603ef
-  MytonwalletNativeBottomSheet: 72009d621d5f73e950499f1d5efafa12636396de
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   SwiftKeychainWrapper: 807ba1d63c33a7d0613288512399cd1eda1e470c
 
-PODFILE CHECKSUM: 0a3caec2eb3f27ddcfb10b51f255f8ba4cdd0da1
+PODFILE CHECKSUM: a69e7fb51feef247a8cea960b015f7e5b9b1c4b7
 
 COCOAPODS: 1.16.2

@@ -12,19 +12,21 @@ import android.os.Looper
 import android.view.ViewGroup
 import androidx.core.view.isVisible
 import com.squareup.moshi.Moshi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.mytonwallet.app_air.walletbasecontext.logger.LogMessage
 import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.models.MBaseCurrency
+import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager.setDefaultAccentColor
 import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager.setNftAccentColor
-import org.mytonwallet.app_air.walletbasecontext.theme.WColor
-import org.mytonwallet.app_air.walletbasecontext.theme.color
-import org.mytonwallet.app_air.walletcontext.WalletContextManager
 import org.mytonwallet.app_air.walletcontext.cacheStorage.WCacheStorage
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcontext.secureStorage.WSecureStorage
+import org.mytonwallet.app_air.walletcontext.utils.ensureMainThread
 import org.mytonwallet.app_air.walletcore.api.activateAccount
 import org.mytonwallet.app_air.walletcore.api.requestDAppList
-import org.mytonwallet.app_air.walletcore.helpers.PoisoningCacheHelper
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.models.MAssetsAndActivityData
 import org.mytonwallet.app_air.walletcore.moshi.MoshiBuilder
@@ -53,17 +55,42 @@ const val STAKE_SLUG = "ton-eqcqc6ehrj"
 const val STAKED_MYCOIN_SLUG = "ton-eqcbzvsfwq"
 const val STAKED_USDE_SLUG = "ton-eqdq5uuyph"
 const val TON_USDT_SLUG = "ton-eqcxe6mutq"
+const val TON_USDT_TESTNET_SLUG = "ton-kqd0gkbm8z"
 const val TRON_SLUG = "trx"
 const val TRON_USDT_SLUG = "tron-tr7nhqjekq"
 const val TRON_USDT_TESTNET_SLUG = "tron-tg3xxyexbk"
-const val MAIN_NETWORK = "mainnet"
-const val TEST_NETWORK = "testnet"
-const val BURN_ADDRESS = "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ"
+const val SOLANA_SLUG = "sol"
+const val SOLANA_USDT_SLUG = "solana-es9vmfrzac"
+const val SOLANA_USDC_SLUG = "solana-epjfwdd5au"
+const val VIRTUAL_STAKING_SLUG_PREFIX = "staking-"
 const val TON_DNS_COLLECTION = "EQC3dNlesgVD8YbAazcauIrXBPfiVhMMr5YYk2in0Mtsz0Bz"
+const val MTW_CARDS_COLLECTION = "EQCQE2L9hfwx1V8sgmF9keraHx1rNK9VmgR1ctVvINBGykyM"
 
 val STAKING_SLUGS = listOf(
     STAKE_SLUG, STAKED_MYCOIN_SLUG, STAKED_USDE_SLUG
 )
+
+fun tokenSlugToStakingSlug(slug: String): String? {
+    return when (slug) {
+        TONCOIN_SLUG -> STAKE_SLUG
+        MYCOIN_SLUG -> STAKED_MYCOIN_SLUG
+        USDE_SLUG -> STAKED_USDE_SLUG
+        else -> null
+    }
+}
+
+fun stakingSlugToTokenSlug(stakingSlug: String): String? {
+    return when (stakingSlug) {
+        STAKE_SLUG, TONCOIN_SLUG -> TONCOIN_SLUG
+        STAKED_MYCOIN_SLUG, MYCOIN_SLUG -> MYCOIN_SLUG
+        STAKED_USDE_SLUG, USDE_SLUG -> USDE_SLUG
+        else -> null
+    }
+}
+
+fun buildVirtualStakingSlug(baseSlug: String): String {
+    return "$VIRTUAL_STAKING_SLUG_PREFIX$baseSlug"
+}
 
 val POPULAR_WALLET_VERSIONS = listOf(
     "v3R1", "v3R2", "v4R2", "W5"
@@ -81,25 +108,50 @@ val PRICELESS_TOKEN_HASHES = setOf(
     "ddf80de336d580ab3c11d194f189c362e2ca1225cae224ea921deeaba7eca818", // tsUSDe EQDQ5UUyPHrLcQJlPAczd_fjxn8SLrlNQwolBznxCdSlfQwr
 )
 
-val ALWAYS_SHOWN_TOKENS = setOf(
-    TONCOIN_SLUG,
-    TON_USDT_SLUG,
-    TRON_SLUG,
-    TRON_USDT_TESTNET_SLUG,
+val DEFAULT_SHOWN_TOKENS = mapOf(
+    MBlockchainNetwork.MAINNET to setOf(
+        TONCOIN_SLUG,
+        TON_USDT_SLUG,
+        TRON_SLUG,
+        TRON_USDT_SLUG,
+        SOLANA_SLUG,
+        SOLANA_USDT_SLUG,
+        SOLANA_USDC_SLUG,
+    ),
+    MBlockchainNetwork.TESTNET to setOf(
+        TONCOIN_SLUG,
+        TON_USDT_TESTNET_SLUG,
+        TRON_SLUG,
+        TRON_USDT_TESTNET_SLUG,
+        SOLANA_SLUG,
+    ),
 )
 
-val DEFAULT_SHOWN_TOKENS = setOf(
-    TONCOIN_SLUG,
-    TON_USDT_SLUG,
-    TRON_SLUG,
-    TRON_USDT_TESTNET_SLUG,
-    TRON_USDT_SLUG,
+val TRUSTED_USDT_TOKENS = mapOf(
+    MBlockchainNetwork.MAINNET to setOf(
+        TON_USDT_SLUG,
+        TRON_USDT_SLUG,
+        SOLANA_USDT_SLUG,
+        SOLANA_USDC_SLUG,
+    ),
+    MBlockchainNetwork.TESTNET to setOf(
+        TON_USDT_TESTNET_SLUG,
+        TRON_USDT_TESTNET_SLUG,
+    ),
 )
+
+fun getTrustedUsdtTokens(network: MBlockchainNetwork?): Set<String> {
+    return network?.let {
+        TRUSTED_USDT_TOKENS[it]
+    } ?: TRUSTED_USDT_TOKENS.values.flatten().toSet()
+}
 
 val DEFAULT_SWAP_VERSION = 3
 val MAX_PRICE_IMPACT_VALUE = 5.0
 
 object WalletCore {
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     val moshi: Moshi by lazy {
         MoshiBuilder.build()
     }
@@ -111,8 +163,8 @@ object WalletCore {
 
     var bridge: JSWebViewBridge? = null
         private set
-    var activeNetwork = "mainnet"
-    var isMultichain = false
+    var nextAccountId: String? = null
+    var nextAccountIsPushedTemporary: Boolean? = null
 
     var baseCurrency = MBaseCurrency.valueOf(WGlobalStorage.getBaseCurrency())
 
@@ -139,13 +191,13 @@ object WalletCore {
     // Notify observers ////////////////////////////////////////////////////////////////////////////
     private val expiredItems = ArrayList<WeakReference<EventObserver>>()
     fun notifyEvent(walletEvent: WalletEvent) {
-        Handler(Looper.getMainLooper()).post {
+        ensureMainThread {
             lock = true
             for (eventObserver in eventObservers) {
                 if (eventObserver.get() == null)
                     expiredItems.add(eventObserver)
             }
-            if (expiredItems.size > 0) {
+            if (expiredItems.isNotEmpty()) {
                 eventObservers.removeAll(expiredItems.toSet())
                 expiredItems.clear()
             }
@@ -155,23 +207,32 @@ object WalletCore {
         }
     }
 
-    fun notifyAccountChanged(activeAccount: MAccount) {
+    fun notifyAccountChanged(activeAccount: MAccount, fromHome: Boolean) {
         val accountId = activeAccount.accountId
+        if (nextAccountIsPushedTemporary == true)
+            WGlobalStorage.setTemporaryAccountId(accountId, true)
+        else
+            WGlobalStorage.setActiveAccountId(accountId, persistInstantly = !fromHome)
+        nextAccountIsPushedTemporary = null
+        nextAccountId = null
         AccountStore.updateActiveAccount(accountId)
-        WGlobalStorage.setActiveAccountId(accountId)
-        PoisoningCacheHelper.clearPoisoningCache()
         AddressStore.loadFromCache(accountId)
         NftStore.loadCachedNfts(accountId)
         ExploreHistoryStore.loadBrowserHistory(accountId)
         AccountStore.walletVersionsData = null
-        AccountStore.updateAssetsAndActivityData(MAssetsAndActivityData(accountId), notify = false)
-        val prevAccentColor = WColor.Tint.color
-        updateAccentColor(accountId = accountId)
-        if (WColor.Tint.color != prevAccentColor) {
-            WalletContextManager.delegate?.themeChanged()
-        }
+        AccountStore.updateAssetsAndActivityData(
+            MAssetsAndActivityData(accountId),
+            notify = false,
+            saveToStorage = false
+        )
+        WalletCore.requestDAppList(accountId)
         //WalletContextManager.delegate?.protectedModeChanged()
-        notifyEvent(WalletEvent.AccountChanged(accountId = accountId))
+        notifyEvent(
+            WalletEvent.AccountChanged(
+                accountId = accountId,
+                fromHome = fromHome
+            )
+        )
     }
 
     fun updateAccentColor(accountId: String?) {
@@ -181,13 +242,15 @@ object WalletCore {
                 return
             }
         }
+        setDefaultAccentColor()
     }
 
     fun switchingToLegacy() {
-        destroyBridge()
-        WSecureStorage.clearCache()
         WGlobalStorage.setTokenInfo(TokenStore.getTokenInfo())
         WGlobalStorage.clearPriceHistory()
+        AccountStore.removeTemporaryAccounts()
+        destroyBridge()
+        WSecureStorage.clearCache()
         /*if (WGlobalStorage.getLangCode() == "fa")
             WGlobalStorage.setLangCode("en")*/
         WCacheStorage.clean(WGlobalStorage.accountIds())
@@ -372,7 +435,7 @@ object WalletCore {
     }
 
     fun <T> call(method: ApiMethod<T>, callback: (String?, T?, JSWebViewBridge.ApiError?) -> Unit) {
-        return bridge!!.callApi(method.name, method.arguments, method.type, callback)
+        bridge?.callApi(method.name, method.arguments, method.type, callback)
     }
 
     fun <T> call(method: ApiMethod<T>, callback: (T?, JSWebViewBridge.ApiError?) -> Unit) {
@@ -411,9 +474,11 @@ object WalletCore {
             }
 
             is ApiUpdate.ApiUpdateInitialActivities -> {
+                if (AccountStore.activeAccountId != update.accountId)
+                    return
                 ActivityStore.initialActivities(
-                    context = bridge!!.context,
                     accountId = update.accountId,
+                    chain = update.chain,
                     mainActivities = update.mainActivities,
                     bySlug = update.bySlug
                 )
@@ -427,6 +492,7 @@ object WalletCore {
 
             is ApiUpdate.ApiUpdateCurrencyRates -> {
                 TokenStore.updateCurrencyRates(update)
+                BalanceStore.resetBalanceInBaseCurrency()
             }
 
             is ApiUpdate.ApiUpdateUpdateAccount -> {
@@ -443,7 +509,10 @@ object WalletCore {
             }
     }
 
-    fun ensureAccountActivated(accountId: String, onCompletion: (accountChanged: Boolean) -> Unit) {
+    fun ensureAccountActivated(
+        accountId: String,
+        onCompletion: (accountChanged: Boolean) -> Unit
+    ) {
         if (AccountStore.activeAccountId == accountId) {
             onCompletion(false)
             return
@@ -458,7 +527,7 @@ object WalletCore {
                     Logger.LogTag.ACCOUNT,
                     LogMessage.Builder()
                         .append(
-                            "Activation failed: $err",
+                            "activateAccount: Failed err=$err",
                             LogMessage.MessagePartPrivacy.PUBLIC
                         ).build()
                 )

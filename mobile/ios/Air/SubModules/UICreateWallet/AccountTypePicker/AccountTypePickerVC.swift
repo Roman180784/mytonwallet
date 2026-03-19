@@ -11,15 +11,21 @@ import WalletContext
 import WalletCore
 import UIComponents
 
-public final class AccountTypePickerVC: WViewController {
+public final class AccountTypePickerVC: CreateWalletBaseVC {
     
+    var network: ApiNetwork
     var showCreateWallet: Bool
     var showSwitchToOtherVersion: Bool
     
     var hostingController: UIHostingController<AccountTypePickerView>?
     private let navHeight: CGFloat = 60
 
-    public init(showCreateWallet: Bool, showSwitchToOtherVersion: Bool) {
+    public init(
+        network: ApiNetwork,
+        showCreateWallet: Bool,
+        showSwitchToOtherVersion: Bool,
+    ) {
+        self.network = network
         self.showCreateWallet = showCreateWallet
         self.showSwitchToOtherVersion = showSwitchToOtherVersion
         super.init(nibName: nil, bundle: nil)
@@ -32,33 +38,31 @@ public final class AccountTypePickerVC: WViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         
-        addNavigationBar(
-            navHeight: navHeight,
-            title: showCreateWallet ? lang("Add Wallet") : lang("Import Wallet"),
-            closeIcon: true,
-        )
+        let title = showCreateWallet ? lang("Add Wallet") : lang("Import Wallet")
+        navigationItem.title = title
+        addCloseNavigationItemIfNeeded()
         
         hostingController = addHostingController(makeView(), constraints: .fillWithNavigationBar)
-        
-        updateTheme()
+
+        configureSheetWithOpaqueBackground(color: WTheme.sheetBackground)
+        view.backgroundColor = WTheme.sheetBackground
     }
     
     func makeView() -> AccountTypePickerView {
         AccountTypePickerView(
+            network: network,
             showCreateWallet: showCreateWallet,
             showSwitchToOtherVersionIfAvailable: showSwitchToOtherVersion,
             onHeightChange: { [weak self] height in self?.onHeightChange(height) }
         )
     }
     
-    public override func updateTheme() {
-        super.updateTheme()
-        view.backgroundColor = WTheme.sheetBackground
-    }
-    
     func onHeightChange(_ height: CGFloat) {
+        let size = CGSize(width: maxContentWidth ?? 560, height: height)
+        preferredContentSize = size
+        navigationController?.preferredContentSize = size
         if let sheet = sheetPresentationController {
-            sheet.detents = [.custom(identifier: .content, resolver: { [navHeight] _ in height + navHeight })]
+            sheet.detents = [.custom(identifier: .content, resolver: { _ in height + self.navHeight })]
         }
     }
 }
@@ -71,6 +75,7 @@ private extension UISheetPresentationController.Detent.Identifier {
 @available(iOS 18, *)
 #Preview {
     AccountTypePickerVC(
+        network: .mainnet,
         showCreateWallet: true,
         showSwitchToOtherVersion: true
     )

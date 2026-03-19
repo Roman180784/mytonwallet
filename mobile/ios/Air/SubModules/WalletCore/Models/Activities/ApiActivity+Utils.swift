@@ -14,6 +14,14 @@ public struct ApiTransactionTypeTitles: ExpressibleByArrayLiteral {
     }
 }
 
+public enum ActivityAccessoryStatus: Sendable {
+    case pending
+    case pendingTrusted
+    case failed
+    case hold
+    case expired
+}
+
 public extension ApiActivity {
     var displayTitle: ApiTransactionTypeTitles {
         let base: ApiTransactionTypeTitles = switch type {
@@ -62,8 +70,67 @@ public extension ApiActivity {
     
     var displayTitleResolved: String {
         let displayTitle = self.displayTitle
-        let isPending = isLocal || getIsActivityPending(self) || swap?.status == .expired || swap?.status == .failed || swap?.status == .pending
-        return isPending ? displayTitle.inProgress : displayTitle.complete
+        let resolved = if swap?.status == .expired || swap?.status == .failed || transaction?.status == .failed {
+            displayTitle.future
+        } else if isLocal || getIsActivityPending(self) || swap?.status == .pending || swap?.status == .pendingTrusted {
+            displayTitle.inProgress
+        } else {
+            displayTitle.complete
+        }
+        return resolved
+    }
+
+    var displayTitleResolvedOptimistic: String {
+        let displayTitle = self.displayTitle
+        let resolved = if swap?.status == .expired || swap?.status == .failed || transaction?.status == .failed {
+            displayTitle.future
+        } else {
+            displayTitle.complete
+        }
+//        return "\(abs(id.hashValue) % 1000) " + resolved + " " + (transaction?.status.rawValue ?? "")
+        return resolved
+    }
+}
+
+public func activityAccessoryStatus(for activity: ApiActivity) -> ActivityAccessoryStatus? {
+    if activity.isLocal {
+        return .pendingTrusted
+    }
+    switch activity {
+    case .transaction(let tx):
+        switch tx.status {
+        case .pending:
+            return tx.isIncoming ? .pending : .pendingTrusted
+        case .pendingTrusted:
+            return .pendingTrusted
+        case .failed:
+            return .failed
+        case .completed, .confirmed:
+            return nil
+        }
+    case .swap(let swap):
+        if let cexStatus = swap.cex?.status {
+            switch cexStatus {
+            case .hold:
+                return .hold
+            case .expired, .overdue:
+                return .expired
+            case .failed:
+                return .failed
+            default:
+                break
+            }
+        }
+        switch swap.status {
+        case .pending, .pendingTrusted:
+            return .pendingTrusted
+        case .failed:
+            return .failed
+        case .expired:
+            return .expired
+        case .completed, .confirmed:
+            return nil
+        }
     }
 }
 
@@ -195,7 +262,7 @@ public extension ApiActivity {
     }
     
     var addressToShow: String {
-        return transaction?.metadata?.name ?? (transaction?.isIncoming == true ? transaction?.fromAddress : transaction?.toAddress) ?? " "
+        return transaction?.addressToShow ?? " "
     }
     
     var peerAddress: String? {
@@ -228,13 +295,16 @@ public extension ApiActivity {
         }
         switch self {
         case .transaction(let transaction):
-            if type != nil || transaction.nft != nil {
+            if transaction.nft != nil {
                 return false
             }
+            
+            let isOutgoingBouncedSpam = type == .bounced && !transaction.isIncoming
+            if type != nil && !isOutgoingBouncedSpam {
+                return false
+            }
+            
             guard let token = TokenStore.tokens[slug] else {
-                return false
-            }
-            if token.isPricelessToken {
                 return false
             }
             return abs(bigIntToDouble(amount: transaction.amount, decimals: token.decimals)) * (token.priceUsd ?? 0) < TINY_TRANSFER_MAX_COST
@@ -290,7 +360,7 @@ public extension ApiActivity {
     /** "Our" is staking that can be controlled with MyTonWallet app */
     var isOurStakingTransaction: Bool {
         if case .transaction(let tx) = self {
-            return isStakingTransaction && ALL_STAKING_POOLS.contains(tx.isIncoming ? tx.fromAddress : tx.toAddress ?? "")
+            return isStakingTransaction && ALL_STAKING_POOLS.contains(tx.isIncoming ? tx.fromAddress ?? "" : tx.toAddress ?? "")
         }
         return false
     }

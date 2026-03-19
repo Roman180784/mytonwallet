@@ -1,15 +1,15 @@
 import React, {
-  type ElementRef,
-  memo, useMemo, useRef, useState,
+  memo, useEffect, useMemo, useRef, useState,
 } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type { ApiNft } from '../../../../api/types';
-import type { ObserveFn } from '../../../../hooks/useIntersectionObserver';
+import type { AppTheme } from '../../../../global/types';
 import { type IAnchorPosition } from '../../../../global/types';
 
 import { TON_DNS_RENEWAL_NFT_WARNING_DAYS } from '../../../../config';
 import buildClassName from '../../../../util/buildClassName';
+import { getChainTitle } from '../../../../util/chain';
 import { getCountDaysToDate } from '../../../../util/dateFormat';
 import { stopEvent } from '../../../../util/domEvents';
 import { vibrate } from '../../../../util/haptics';
@@ -18,7 +18,6 @@ import { IS_ANDROID, IS_IOS } from '../../../../util/windowEnvironment';
 
 import useContextMenuHandlers from '../../../../hooks/useContextMenuHandlers';
 import useFlag from '../../../../hooks/useFlag';
-import { useIsIntersecting } from '../../../../hooks/useIntersectionObserver';
 import useLang from '../../../../hooks/useLang';
 import useLastCallback from '../../../../hooks/useLastCallback';
 import useShowTransition from '../../../../hooks/useShowTransition';
@@ -31,12 +30,16 @@ import NftMenu from './NftMenu';
 
 import styles from './Nft.module.scss';
 
+import noImageSrcDark from '../../../../assets/nftNoImageDark.svg';
+import noImageSrcLight from '../../../../assets/nftNoImageLight.svg';
+
 interface OwnProps {
   nft: ApiNft;
-  selectedAddresses?: string[];
-  observeIntersection: ObserveFn;
+  appTheme: AppTheme;
+  selectedNfts?: ApiNft[];
   tonDnsExpiration?: number;
   isViewAccount?: boolean;
+  style: string;
 }
 
 interface UseLottieReturnType {
@@ -47,41 +50,60 @@ interface UseLottieReturnType {
   unmarkHover?: NoneToVoidFunction;
 }
 
+const NFT_NUMBER_REGEX = /^(.*\S)\s*([#№][\d\\/]+)$/;
+
 function Nft({
   nft,
-  selectedAddresses,
+  appTheme,
+  selectedNfts,
   tonDnsExpiration,
-  observeIntersection,
   isViewAccount,
+  style,
 }: OwnProps) {
-  const {
-    selectNfts,
-    clearNftSelection,
-    openDomainRenewalModal,
-    openNftAttributesModal,
-  } = getActions();
+  const { selectNfts, clearNftSelection, openDomainRenewalModal, openNftAttributesModal } = getActions();
 
   const lang = useLang();
-
   const ref = useRef<HTMLDivElement>();
-
-  const {
-    isLottie, shouldPlay, noLoop, markHover, unmarkHover,
-  } = useLottie(nft, ref, observeIntersection);
-
+  const { isLottie, shouldPlay, noLoop, markHover, unmarkHover } = useLottie(nft);
+  const [hasImage, markHasImage, unmarkHasImage] = useFlag(Boolean(nft.thumbnail));
   const [menuAnchor, setMenuAnchor] = useState<IAnchorPosition>();
-  const isSelectionEnabled = !!selectedAddresses && selectedAddresses.length > 0;
-  const isSelected = useMemo(() => selectedAddresses?.includes(nft.address), [selectedAddresses, nft.address]);
+  const isSelected = useMemo(() => selectedNfts?.some((e) => e.address === nft.address), [selectedNfts, nft.address]);
+
   const isMenuOpen = Boolean(menuAnchor);
   const dnsExpireInDays = tonDnsExpiration ? getCountDaysToDate(tonDnsExpiration) : undefined;
   const isDnsExpireSoon = dnsExpireInDays !== undefined ? dnsExpireInDays <= TON_DNS_RENEWAL_NFT_WARNING_DAYS : false;
-  const {
-    shouldRender: shouldRenderWarning,
-    ref: warningRef,
-  } = useShowTransition({
-    isOpen: isSelectionEnabled && nft.isOnSale,
+  const isSelectionEnabled = !!selectedNfts && selectedNfts.length > 0;
+  const isSelectionEnabledForCurrentNft = isSelectionEnabled && selectedNfts[0].chain === nft.chain;
+  const isCrossChainBlocked = isSelectionEnabled && !isSelectionEnabledForCurrentNft;
+  const { shouldRender: shouldRenderWarning, ref: warningRef } = useShowTransition({
+    isOpen: isSelectionEnabled && nft.isOnSale && !isCrossChainBlocked,
     withShouldRender: true,
   });
+  const { shouldRender: shouldRenderCrossChainWarning, ref: crossChainWarningRef } = useShowTransition({
+    isOpen: isCrossChainBlocked,
+    withShouldRender: true,
+  });
+  const hasCollectionName = Boolean(nft.collectionName);
+
+  const { name: nftName, nftNumber } = useMemo(() => {
+    const fullName = (nft.name || '').trim();
+    const match = fullName.match(NFT_NUMBER_REGEX);
+
+    if (match) {
+      return {
+        name: match[1],
+        nftNumber: match[2],
+      };
+    }
+
+    return { name: fullName };
+  }, [nft.name]);
+
+  useEffect(() => {
+    if (nft.thumbnail) {
+      markHasImage();
+    }
+  }, [nft.thumbnail]);
 
   const {
     isContextMenuOpen,
@@ -98,15 +120,15 @@ function Nft({
     styles.item,
     !isSelectionEnabled && nft.isOnSale && styles.item_onSale,
     isMenuOpen && styles.itemWithMenu,
-    isSelectionEnabled && nft.isOnSale && styles.nonInteractive,
+    (isCrossChainBlocked || (isSelectionEnabled && nft.isOnSale)) && styles.nonInteractive,
   );
 
   function handleClick() {
-    if (isSelectionEnabled) {
+    if (isSelectionEnabledForCurrentNft) {
       if (isSelected) {
         clearNftSelection({ address: nft.address });
       } else {
-        selectNfts({ addresses: [nft.address] });
+        selectNfts({ nfts: [nft] });
       }
       return;
     }
@@ -143,6 +165,58 @@ function Nft({
     }
   }, [isContextMenuOpen]);
 
+  function renderVisualContent() {
+    if (!hasImage) {
+      return (
+        <div className={buildClassName(styles.imageWrapper, styles.imageWrapperNoData, 'rounded-font')}>
+          <img src={appTheme === 'dark' ? noImageSrcDark : noImageSrcLight} alt="" className={styles.noImage} />
+          <span className={styles.noImageText}>{lang('No Image')}</span>
+        </div>
+      );
+    }
+
+    return (
+      isLottie ? (
+        <div className={styles.imageWrapper}>
+          <AnimatedIconWithPreview
+            shouldStretch
+            play={shouldPlay}
+            noLoop={noLoop}
+            tgsUrl={nft.metadata.lottie}
+            previewUrl={nft.thumbnail}
+            noPreviewTransition
+            className={buildClassName(
+              styles.image,
+              isSelected && styles.imageSelected,
+            )}
+          />
+          {isDnsExpireSoon && renderDnsExpireWarning()}
+        </div>
+      ) : (
+        <Image
+          url={nft.thumbnail}
+          className={styles.imageWrapper}
+          imageClassName={buildClassName(
+            styles.image,
+            isSelected && styles.imageSelected,
+          )}
+          onError={unmarkHasImage}
+        >
+          {isDnsExpireSoon && renderDnsExpireWarning()}
+        </Image>
+      )
+    );
+  }
+
+  function renderChainIcon() {
+    return (
+      <i
+        className={buildClassName(styles.chainIcon, `icon-chain-${nft.chain.toLowerCase()}`)}
+        aria-label={getChainTitle(nft.chain)}
+      />
+    );
+  }
+
   function renderDnsExpireWarning() {
     return (
       <button
@@ -161,22 +235,18 @@ function Nft({
     <div
       key={nft.address}
       ref={ref}
+      style={style}
       className={fullClassName}
-      onMouseEnter={markHover}
-      onMouseLeave={unmarkHover}
-      onClick={!isSelectionEnabled || !nft.isOnSale ? handleClick : undefined}
+      onMouseEnter={isSelectionEnabledForCurrentNft ? markHover : undefined}
+      onMouseLeave={isSelectionEnabledForCurrentNft ? unmarkHover : undefined}
+      onClick={!(isSelectionEnabledForCurrentNft) || !nft.isOnSale ? handleClick : undefined}
       onMouseDown={handleBeforeContextMenu}
       onContextMenu={handleContextMenu}
     >
-      {isSelectionEnabled && !nft.isOnSale && (
-        <Radio
-          isChecked={isSelected}
-          name="nft"
-          value={nft.address}
-          className={styles.radio}
-        />
+      {isSelectionEnabled && isSelectionEnabledForCurrentNft && !nft.isOnSale && (
+        <Radio isChecked={isSelected} name="nft" value={nft.address} className={styles.radio} />
       )}
-      {!isSelectionEnabled && (
+      {!isSelectionEnabled && !isSelectionEnabledForCurrentNft && (
         <NftMenu
           nft={nft}
           isContextMenuMode={Boolean(contextMenuAnchor)}
@@ -187,69 +257,53 @@ function Nft({
           onCloseAnimationEnd={handleContextMenuHide}
         />
       )}
-      {isLottie ? (
-        <div
-          className={styles.imageWrapper}
-        >
-          <AnimatedIconWithPreview
-            shouldStretch
-            play={shouldPlay}
-            noLoop={noLoop}
-            tgsUrl={nft.metadata.lottie}
-            previewUrl={nft.thumbnail}
-            noPreviewTransition
-            className={buildClassName(styles.image, isSelected && styles.imageSelected)}
-          />
-          {isDnsExpireSoon && renderDnsExpireWarning()}
-        </div>
-      ) : (
-        <Image
-          url={nft.thumbnail}
-          className={styles.imageWrapper}
-          imageClassName={buildClassName(styles.image, isSelected && styles.imageSelected)}
-        >
-          {isDnsExpireSoon && renderDnsExpireWarning()}
-        </Image>
-      )}
+      {renderVisualContent()}
       {shouldRenderWarning && (
         <div ref={warningRef} className={styles.warning}>
           {lang('For sale. Cannot be sent and burned')}
         </div>
       )}
-      <div className={styles.infoWrapper}>
-        <b className={styles.title}>{nft.name || shortenAddress(nft.address, 4)}</b>
+      {shouldRenderCrossChainWarning && (
+        <div ref={crossChainWarningRef} className={styles.warning}>
+          {lang('Different blockchain. Cannot be selected')}
+        </div>
+      )}
+      <div className={styles.infoWrapper} title={nft.name}>
+        {!hasCollectionName && renderChainIcon()}
+        <b className={styles.title}>{nftName || shortenAddress(nft.address, 4)}</b>
+        {nftNumber && <span className={styles.number}>{nftNumber}</span>}
       </div>
-      <div className={styles.collection}>{nft.collectionName}</div>
+      {hasCollectionName && (
+        <div className={styles.collection}>
+          {renderChainIcon()}
+          {nft.collectionName}
+        </div>
+      )}
     </div>
   );
 }
 
 export default memo(Nft);
 
-function useLottie(
-  nft: ApiNft,
-  ref: ElementRef<HTMLDivElement>,
-  observeIntersection: ObserveFn,
-): UseLottieReturnType {
+function useLottie(nft: ApiNft): UseLottieReturnType {
   const isLottie = Boolean(nft.metadata?.lottie);
 
-  const isIntersecting = useIsIntersecting(ref, isLottie ? observeIntersection : undefined);
   const [isHover, markHover, unmarkHover] = useFlag();
 
   if (!isLottie) {
     return { isLottie };
   }
 
-  const shouldPlay = isIntersecting || isHover;
+  const shouldPlay = isHover;
   const noLoop = !isHover;
 
   return {
     isLottie,
     shouldPlay,
     noLoop,
-    ...!(IS_IOS || IS_ANDROID) && {
+    ...(!(IS_IOS || IS_ANDROID) && {
       markHover,
       unmarkHover,
-    },
+    }),
   };
 }

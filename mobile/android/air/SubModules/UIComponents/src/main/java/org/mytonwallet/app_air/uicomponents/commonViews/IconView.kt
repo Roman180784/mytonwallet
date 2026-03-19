@@ -2,8 +2,10 @@ package org.mytonwallet.app_air.uicomponents.commonViews
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import androidx.annotation.DrawableRes
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.toColorInt
@@ -17,15 +19,12 @@ import org.mytonwallet.app_air.uicomponents.image.WActivityImageView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.utils.gradientColors
-import org.mytonwallet.app_air.walletcore.STAKE_SLUG
-import org.mytonwallet.app_air.walletcore.TONCOIN_SLUG
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.models.MToken
 import org.mytonwallet.app_air.walletcore.models.MTokenBalance
 import org.mytonwallet.app_air.walletcore.moshi.ApiTransactionStatus
 import org.mytonwallet.app_air.walletcore.moshi.ApiTransactionType
 import org.mytonwallet.app_air.walletcore.moshi.MApiTransaction
-import org.mytonwallet.app_air.walletcore.stores.TokenStore
 
 @Deprecated("use WCustomImageView")
 @SuppressLint("ViewConstructor")
@@ -36,7 +35,7 @@ class IconView(
 ) : WView(context) {
 
     private val activityImageView: WActivityImageView by lazy {
-        WActivityImageView(context).apply {
+        WActivityImageView(context, viewSize).apply {
             chainSize = this@IconView.chainSize
         }
     }
@@ -46,11 +45,17 @@ class IconView(
     private val swapGradientCache = mutableMapOf<MApiTransaction.UIStatus, GradientDrawable>()
     private var failedTransactionDrawable: GradientDrawable? = null
 
+    private var abbreviationText: String = ""
+    private var currentSize: Int = viewSize
+    private val textPaint = AccountAvatarRenderer.createTextPaint(
+        AccountAvatarRenderer.getTextSizeForViewSize(viewSize)
+    )
+
     init {
         isFocusable = false
         isClickable = false
 
-        addView(activityImageView, LayoutParams(viewSize, viewSize))
+        addView(activityImageView, LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
         setConstraints {
             toTop(activityImageView)
@@ -58,55 +63,69 @@ class IconView(
             toBottom(activityImageView)
         }
 
+        setWillNotDraw(false)
         updateTheme()
     }
 
     fun setSize(size: Int) {
-        activityImageView.layoutParams.apply {
-            width = size
-            height = size
-        }
-
+        currentSize = size
+        activityImageView.setSize(size)
+        textPaint.textSize = AccountAvatarRenderer.getTextSizeForViewSize(size)
         requestLayout()
     }
 
     fun updateTheme() {
+        AccountAvatarRenderer.updatePaintTheme(textPaint)
         clearCache()
     }
 
-    fun config(account: MAccount, padding: Int = 10.dp) {
+    fun config(account: MAccount, abbreviationTextSize: Float = 18f.dp) {
         val address = account.firstAddress ?: ""
         activityImageView.imageView.background = getCachedGradientDrawable(address.gradientColors)
+        activityImageView.imageView.setPadding(0)
+        activityImageView.imageView.setImageDrawable(null)
 
-        activityImageView.imageView.setPadding(padding)
-        activityImageView.imageView.setImageDrawable(
-            ContextCompat.getDrawable(
-                context,
-                R.drawable.ic_address
+        abbreviationText = account.abbreviation
+        textPaint.textSize = abbreviationTextSize
+
+        invalidate()
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (abbreviationText.isNotEmpty()) {
+            AccountAvatarRenderer.drawCenteredText(
+                canvas,
+                abbreviationText,
+                activityImageView.left + activityImageView.width / 2f,
+                activityImageView.top + activityImageView.height / 2f,
+                textPaint
             )
-        )
+        }
     }
 
     fun config(transaction: MApiTransaction.Transaction) {
+        abbreviationText = ""
         val iconRes = transaction.type?.getIcon() ?: if (transaction.isIncoming) {
             org.mytonwallet.app_air.walletcontext.R.drawable.ic_act_received
         } else {
             org.mytonwallet.app_air.walletcontext.R.drawable.ic_act_sent
         }
+        val subImageAnimation =
+            if ((transaction.isLocal() && transaction.status != ApiTransactionStatus.CONFIRMED) ||
+                transaction.isPending()
+            ) {
+                when {
+                    !transaction.isIncoming ->
+                        if (ThemeManager.isDark) R.raw.clock_dark_blue else R.raw.clock_light_blue
 
-        val subImageAnimation = if (transaction.isLocal() || transaction.isPending()) {
-            if (transaction.isIncoming) {
-                if (ThemeManager.isDark)
-                    R.raw.clock_dark_orange
-                else
-                    R.raw.clock_light_orange
-            } else {
-                if (ThemeManager.isDark)
-                    R.raw.clock_dark_gray
-                else
-                    R.raw.clock_light_gray
-            }
-        } else 0
+                    transaction.isTrustedPending() || transaction.isStaking ->
+                        if (ThemeManager.isDark) R.raw.clock_dark_gray else R.raw.clock_light_gray
+
+                    else ->
+                        if (ThemeManager.isDark) R.raw.clock_dark_orange else R.raw.clock_light_orange
+                }
+            } else 0
 
         activityImageView.set(
             Content(
@@ -127,6 +146,7 @@ class IconView(
     }
 
     fun config(swap: MApiTransaction.Swap) {
+        abbreviationText = ""
         val subImageAnimation = if (swap.isInProgress) {
             if (ThemeManager.isDark)
                 R.raw.clock_dark_gray
@@ -150,25 +170,30 @@ class IconView(
 
     fun config(
         walletToken: MTokenBalance,
-        alwaysShowChain: Boolean = false,
+        showChain: Boolean = false,
         showPercentBadge: Boolean = false
     ) {
+        abbreviationText = ""
         activityImageView.imageView.setPadding(0)
-        val token = TokenStore.getToken(walletToken.token)
 
-        if (token != null) {
-            val correctTokenToShow =
-                if (token.slug == STAKE_SLUG)
-                    TokenStore.getToken(TONCOIN_SLUG) ?: token else token
-            activityImageView.set(Content.of(correctTokenToShow, alwaysShowChain, showPercentBadge))
-        } else {
-            activityImageView.clear()
-        }
+        activityImageView.set(
+            Content.of(
+                walletToken,
+                showChain,
+                showPercentBadge
+            )
+        )
     }
 
-    fun config(token: MToken?, alwaysShowChain: Boolean = true) {
+    fun config(token: MToken?, showChain: Boolean = true) {
+        abbreviationText = ""
         if (token != null) {
-            activityImageView.set(Content.of(token, alwaysShowChain))
+            activityImageView.set(
+                Content.of(
+                    token,
+                    showChain
+                )
+            )
         } else {
             activityImageView.clear()
         }
@@ -179,6 +204,7 @@ class IconView(
         gradientStartColor: String?,
         gradientEndColor: String?,
     ) {
+        abbreviationText = ""
         activityImageView.imageView.setPadding(17.dp)
 
         iconDrawableRes?.let { res ->
@@ -192,6 +218,7 @@ class IconView(
     }
 
     fun setImageDrawable(drawable: Drawable?, padding: Int = 0) {
+        abbreviationText = ""
         activityImageView.imageView.setPadding(padding)
         activityImageView.imageView.setImageDrawable(drawable)
         activityImageView.imageView.background = null

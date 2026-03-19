@@ -3,21 +3,19 @@ import React, {
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import {
-  ANIMATED_STICKER_SMALL_SIZE_PX, IS_BIP39_MNEMONIC_ENABLED, MNEMONIC_COUNT, MNEMONIC_COUNTS, PRIVATE_KEY_HEX_LENGTH,
-} from '../../config';
+import { ANIMATED_STICKER_SMALL_SIZE_PX, MNEMONIC_COUNT, MNEMONIC_COUNTS, PRIVATE_KEY_HEX_LENGTH } from '../../config';
 import renderText from '../../global/helpers/renderText';
 import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
 import { readClipboardContent } from '../../util/clipboard';
 import isMnemonicPrivateKey from '../../util/isMnemonicPrivateKey';
 import { compact } from '../../util/iteratees';
+import { formatEnumeration } from '../../util/langProvider';
 import { IS_CLIPBOARDS_SUPPORTED } from '../../util/windowEnvironment';
 import { callApi } from '../../api';
 import { ANIMATED_STICKERS_PATHS } from '../ui/helpers/animatedAssets';
 
 import useClipboardPaste from '../../hooks/useClipboardPaste';
-import { useDeviceScreen } from '../../hooks/useDeviceScreen';
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
@@ -51,7 +49,7 @@ const AuthImportMnemonic = ({ isActive, isLoading, error }: OwnProps & StateProp
     afterImportMnemonic,
     resetAuth,
     cleanAuthError,
-    showNotification,
+    showToast,
   } = getActions();
 
   const lang = useLang();
@@ -59,7 +57,6 @@ const AuthImportMnemonic = ({ isActive, isLoading, error }: OwnProps & StateProp
   const headerRef = useRef<HTMLDivElement>();
   const [shouldRenderPasteButton, setShouldRenderPasteButton] = useState(IS_CLIPBOARDS_SUPPORTED);
   const [mnemonic, setMnemonic] = useState<Record<number, string>>({});
-  const { isPortrait } = useDeviceScreen();
 
   const {
     isAtEnd: noButtonsSeparator,
@@ -115,7 +112,7 @@ const AuthImportMnemonic = ({ isActive, isLoading, error }: OwnProps & StateProp
         handlePasteMnemonic(newValue);
       }
     } catch (err: any) {
-      showNotification({ message: lang('Error reading clipboard') });
+      showToast({ message: lang('Error reading clipboard') });
       setShouldRenderPasteButton(false);
     }
   });
@@ -149,7 +146,10 @@ const AuthImportMnemonic = ({ isActive, isLoading, error }: OwnProps & StateProp
   const handleSubmit = useLastCallback(async () => {
     if (isSubmitDisabled) return;
 
-    const mnemonicValues = compact(Object.values(mnemonic));
+    const mnemonicValues = compact(Object.values(mnemonic))
+      .map((word) => word.trim().toLowerCase())
+      .filter(Boolean);
+
     if (mnemonicValues.length === 12) {
       const isShortMnemonicValid = await callApi('validateMnemonic', mnemonicValues);
       if (!isShortMnemonicValid) return;
@@ -197,9 +197,9 @@ const AuthImportMnemonic = ({ isActive, isLoading, error }: OwnProps & StateProp
           {lang('Enter Secret Words')}
         </div>
         <div className={buildClassName(styles.info, styles.infoSmallFont, styles.infoPull)}>
-          {renderText(lang(IS_BIP39_MNEMONIC_ENABLED
-            ? '$auth_import_mnemonic_description'
-            : '$auth_import_24_mnemonic_description'))}
+          {renderText(lang('$auth_import_mnemonic_description', {
+            counts: formatEnumeration(lang, [...MNEMONIC_COUNTS], 'or', true),
+          }))}
         </div>
 
         {shouldRenderPasteButton && (
@@ -218,7 +218,6 @@ const AuthImportMnemonic = ({ isActive, isLoading, error }: OwnProps & StateProp
               nextId={id + 1 < MNEMONIC_COUNT ? `import-mnemonic-${id + 1}` : undefined}
               labelText={label}
               value={mnemonic[id]}
-              suggestionsPosition={getSuggestPosition(id, isPortrait)}
               inputArg={id}
               onInput={handleSetWord}
               onEnter={i === MNEMONIC_COUNT - 1 ? handleSubmit : undefined}
@@ -261,14 +260,7 @@ function parsePastedText(str = '') {
   return str
     .replace(/(?:\r\n)+|[\r\n\s;,\t]+/g, ' ')
     .trim()
+    .toLowerCase()
     .split(' ')
     .map((w) => w.slice(0, MAX_LENGTH));
-}
-
-function getSuggestPosition(id: number, isPortrait: boolean = false) {
-  if (isPortrait) {
-    return 'top';
-  }
-
-  return ((id > 5 && id < 8) || (id > 13 && id < 16) || id > 21) ? 'top' : undefined;
 }

@@ -1,3 +1,8 @@
+import type {
+  ActivitiesUpdate,
+  NewActivitiesCallback,
+  WalletWatcherInternal,
+} from '../../../common/websocket/abstractWsClient';
 import type { ApiActivity, ApiNetwork } from '../../../types';
 import type {
   AccountStateChangeSocketMessage,
@@ -7,22 +12,24 @@ import type {
   ClientSocketMessage,
   JettonChangeSocketMessage,
   ServerSocketMessage,
+  SocketFinality,
   SocketSubscriptionEvent,
+  StatusSocketMessage,
 } from './types';
 
 import { TONCENTER_ACTIONS_VERSION } from '../../../../config';
-import ReconnectingWebSocket, { type InMessageCallback } from '../../../../util/reconnectingWebsocket';
+import { logDebug } from '../../../../util/logs';
+import { type InMessageCallback } from '../../../../util/reconnectingWebsocket';
 import safeExec from '../../../../util/safeExec';
-import { forbidConcurrency, setCancellableTimeout, throttle } from '../../../../util/schedulers';
+import { forbidConcurrency, setCancellableTimeout } from '../../../../util/schedulers';
 import withCache from '../../../../util/withCache';
 import { areAddressesEqual, toBase64Address } from '../util/tonCore';
 import { getNftSuperCollectionsByCollectionAddress } from '../../../common/addresses';
 import { addBackendHeadersToSocketUrl } from '../../../common/backend';
+import { AbstractWebsocketClient } from '../../../common/websocket/abstractWsClient';
 import { SEC } from '../../../constants';
 import { NETWORK_CONFIG } from '../constants';
 import { parseActions } from './actions';
-
-const ACTUALIZATION_DELAY = 10;
 
 // Toncenter closes the socket after 30 seconds of inactivity
 const PING_INTERVAL = 20 * SEC;
@@ -31,203 +38,73 @@ const PING_INTERVAL = 20 * SEC;
 // Disconnecting manually if there is no response for "ping".
 const PONG_TIMEOUT = 5 * SEC;
 
-export interface WalletWatcher {
-  /** Whether the socket is connected and subscribed to the given wallets */
-  readonly isConnected: boolean;
-  /** Removes the watcher and cleans the memory */
-  destroy(): void;
-}
-
-interface WalletWatcherInternal extends WalletWatcher {
-  id: number;
-  addresses: string[];
-  isConnected: boolean;
-  /**
-   * Called when new activities (either regular or pending) arrive into one of the listened address.
-   *
-   * Called only when `isConnected` is true. Therefore, when the socket reconnects, the users should synchronize,
-   * otherwise the activities arriving during the reconnect will miss.
-   */
-  onNewActivities?: NewActivitiesCallback;
-  /**
-   * Called when a balance changes (either TON or token) in one of the listened address.
-   *
-   * Called only when `isConnected` is true. Therefore, when the socket reconnects, the users should synchronize,
-   * otherwise the balances changed during the reconnect will be outdated.
-   */
-  onBalanceUpdate?: BalanceUpdateCallback;
-  /** Called when isConnected turns true */
-  onConnect?: NoneToVoidFunction;
-  /** Called when isConnected turns false */
-  onDisconnect?: NoneToVoidFunction;
-}
-
-export type NewActivitiesCallback = (update: ActivitiesUpdate) => void;
-
-export interface ActivitiesUpdate {
-  address: string;
-  /**
-   * Multiple events with the same normalized hash can arrive. Every time it happens, the new event data must replace
-   * the previous event data in the app state. If the `activities` array is empty, the actions with that normalized hash
-   * must be removed from the app state. Pending actions are eventually either removed or replaced with confirmed actions.
-   */
-  messageHashNormalized: string;
-  /** Pending actions are not confirmed by the blockchain yet */
-  arePending: boolean;
-  /** The activities may be unsorted */
-  activities: ApiActivity[];
-}
-
-export type BalanceUpdateCallback = (update: BalanceUpdate) => void;
-
-export interface BalanceUpdate {
-  address: string;
-  /** `undefined` for TON */
-  tokenAddress?: string;
-  balance: bigint;
-}
-
 /**
  * Connects to Toncenter to passively listen to updates.
  */
-class ToncenterSocket {
+class ToncenterSocket extends AbstractWebsocketClient<ClientSocketMessage, ServerSocketMessage> {
   #network: ApiNetwork;
-
-  #socket?: ReconnectingWebSocket<ClientSocketMessage, ServerSocketMessage>;
 
   /** See #rememberAddressesOfNormalizedHash */
   #addressesByHash: Record<string, string[]> = {};
-
-  #walletWatchers: WalletWatcherInternal[] = [];
-
-  /**
-   * A shared incremental counter for various unique ids. The fact that it's incremental is used to tell what actions
-   * happened earlier or later than others.
-   */
-  #currentUniqueId = 0;
 
   #stopPing?: NoneToVoidFunction;
   #cancelReconnect?: NoneToVoidFunction;
 
   constructor(network: ApiNetwork) {
+    super(getSocketUrl(network));
     this.#network = network;
   }
 
-  public watchWallets(
-    addresses: string[],
-    {
-      onNewActivities,
-      onBalanceUpdate,
-      onConnect,
-      onDisconnect,
-    }: Pick<WalletWatcherInternal, 'onNewActivities' | 'onBalanceUpdate' | 'onConnect' | 'onDisconnect'> = {},
-  ): WalletWatcher {
-    const id = this.#currentUniqueId++;
-    const watcher: WalletWatcherInternal = {
-      id,
-      addresses,
-      // The status will turn to `true` via `#actualizeSocket` → `#sendWatchedWalletsToSocket` → socket request → socket response → `#handleSubscriptionSet`
-      isConnected: false,
-      onNewActivities,
-      onBalanceUpdate,
-      onConnect,
-      onDisconnect,
-      destroy: this.#destroyWalletWatcher.bind(this, id),
-    };
-    this.#walletWatchers.push(watcher);
-    this.#actualizeSocket();
-    return watcher;
-  }
-
-  /** Removes the given watcher and unsubscribes from its wallets. Brings the sockets to the proper state. */
-  #destroyWalletWatcher(watcherId: number) {
-    const index = this.#walletWatchers.findIndex((watcher) => watcher.id === watcherId);
-    if (index >= 0) {
-      this.#walletWatchers.splice(index, 1);
-      this.#actualizeSocket();
-    }
-  }
-
-  /**
-   * Creates or destroys the given socket (if needed) and subscribes to the watched wallets.
-   *
-   * The method is throttled in order to:
-   *  - Avoid sending too many requests when the watched addresses change many times in a short time range.
-   *  - Avoid reconnecting the socket when watched addresses arrive shortly after stopping watching all addresses.
-   */
-  #actualizeSocket = throttle(() => {
-    if (this.#doesHaveWatchedAddresses()) {
-      this.#socket ??= this.#createSocket();
-      if (this.#socket.isConnected) {
-        this.#sendWatchedWalletsToSocket();
-      } // Otherwise, the addresses will be sent when the socket gets connected
-    } else {
-      this.#socket?.close();
-      this.#socket = undefined;
-    }
-  }, ACTUALIZATION_DELAY, false);
-
-  #createSocket() {
-    const url = getSocketUrl(this.#network);
-    const socket = new ReconnectingWebSocket<ClientSocketMessage, ServerSocketMessage>(url);
-    socket.onMessage(this.#handleSocketMessage);
-    socket.onConnect(this.#handleSocketConnect);
-    socket.onDisconnect(this.#handleSocketDisconnect);
-    return socket;
-  }
-
-  #handleSocketMessage: InMessageCallback<ServerSocketMessage> = (message) => {
+  protected handleSocketMessage: InMessageCallback<ServerSocketMessage> = (message) => {
     this.#cancelReconnect?.();
 
     if ('status' in message) {
-      if (message.status === 'subscription_set') {
-        this.#handleSubscriptionSet(message);
+      if (message.status === 'subscribed') {
+        this.#handleSubscribed(message);
       }
+      return;
     }
 
-    if ('type' in message) {
-      if (message.type === 'trace_invalidated') {
-        message = {
-          ...message,
-          type: 'pending_actions',
+    switch (message.type) {
+      case 'trace_invalidated':
+        logDebug('toncenter: trace invalidated', { hash: message.trace_external_hash_norm });
+
+        // Notify watchers about the invalidation so they can re-fetch balances.
+        // Balance updates from `confirmed` finality level may be stale after invalidation.
+        this.#notifyTraceInvalidation(message.trace_external_hash_norm);
+
+        // Create an empty actions message to clear the activities for this trace
+        void this.#handleNewActions({
+          type: 'actions',
+          finality: 'finalized',
+          trace_external_hash_norm: message.trace_external_hash_norm,
           actions: [],
           address_book: {},
           metadata: {},
-        };
-        // Falling down to the below `switch` intentionally
-      }
-
-      switch (message.type) {
-        case 'actions':
-        case 'pending_actions':
-          void this.#handleNewActions(message);
-          break;
-        case 'account_state_change':
-          this.#handleAccountStateChange(message);
-          break;
-        case 'jettons_change':
-          this.#handleJettonChange(message);
-          break;
-      }
+        } satisfies ActionsSocketMessage);
+        break;
+      case 'actions':
+        void this.#handleNewActions(message);
+        break;
+      case 'account_state_change':
+        this.#handleAccountStateChange(message);
+        break;
+      case 'jettons_change':
+        this.#handleJettonChange(message);
+        break;
     }
   };
 
-  #handleSocketConnect = () => {
-    this.#socket?.send({
-      operation: 'configure',
-      include_address_book: true,
-      include_metadata: true,
-      supported_action_types: [TONCENTER_ACTIONS_VERSION],
-    });
-    this.#sendWatchedWalletsToSocket();
+  protected handleSocketConnect = () => {
+    this.sendWatchedWalletsToSocket();
 
     this.#startPing();
   };
 
-  #handleSocketDisconnect = () => {
+  protected handleSocketDisconnect = () => {
     this.#stopPing?.();
 
-    for (const watcher of this.#walletWatchers) {
+    for (const watcher of this.walletWatchers) {
       if (watcher.isConnected) {
         watcher.isConnected = false;
         if (watcher.onDisconnect) safeExec(watcher.onDisconnect);
@@ -235,8 +112,8 @@ class ToncenterSocket {
     }
   };
 
-  #handleSubscriptionSet(message: Extract<ServerSocketMessage, { status: any }>) {
-    for (const watcher of this.#walletWatchers) {
+  #handleSubscribed(message: StatusSocketMessage) {
+    for (const watcher of this.walletWatchers) {
       // If message id < watcher id, then the watcher was created after the subscribe request was sent, therefore
       // the socket may be not subscribed to all the watcher addresses yet.
       if (message.id && Number(message.id) < watcher.id) {
@@ -252,7 +129,11 @@ class ToncenterSocket {
 
   // Limiting the concurrency to 1 to ensure the new activities are reported in the order they were received
   #handleNewActions = forbidConcurrency(async (message: ActionsSocketMessage) => {
-    const arePending = message.type === 'pending_actions';
+    if (message.finality === 'confirmed') {
+      logDebug('toncenter: trace confirmed (shard)', { hash: message.trace_external_hash_norm });
+    } else if (message.finality === 'finalized') {
+      logDebug('toncenter: trace finalized', { hash: message.trace_external_hash_norm });
+    }
     const messageHashNormalized = message.trace_external_hash_norm;
     const activitiesByAddress = await parseSocketActions(
       this.#network,
@@ -262,24 +143,24 @@ class ToncenterSocket {
     const addressesToNotify = this.#rememberAddressesOfHash(
       messageHashNormalized,
       Object.keys(activitiesByAddress),
-      arePending,
+      message.finality,
     );
 
-    for (const watcher of this.#walletWatchers) {
-      if (!isWatcherReadyForNewActivities(watcher)) {
+    for (const watcher of this.walletWatchers) {
+      if (!this.#isWatcherReadyForNewActivities(watcher)) {
         continue;
       }
 
-      for (const address of watcher.addresses) {
-        if (!addressesToNotify.has(address)) {
+      for (const wallet of watcher.wallets) {
+        if (!addressesToNotify.has(wallet.address)) {
           continue;
         }
 
         safeExec(() => watcher.onNewActivities({
-          address,
+          address: wallet.address,
           messageHashNormalized,
-          arePending,
-          activities: activitiesByAddress[address] ?? [],
+          finality: message.finality,
+          activities: activitiesByAddress[wallet.address] ?? [],
         }));
       }
     }
@@ -290,6 +171,7 @@ class ToncenterSocket {
       message.account,
       undefined,
       BigInt(message.state.balance),
+      message.finality,
     );
   }
 
@@ -298,88 +180,124 @@ class ToncenterSocket {
       message.jetton.owner,
       toBase64Address(message.jetton.jetton, true, this.#network),
       BigInt(message.jetton.balance),
+      message.finality,
     );
   }
 
-  #notifyBalanceUpdate(rawAddress: string, tokenBase64Address: string | undefined, balance: bigint) {
-    for (const watcher of this.#walletWatchers) {
+  #notifyBalanceUpdate(
+    rawAddress: string,
+    tokenBase64Address: string | undefined,
+    balance: bigint,
+    finality: SocketFinality,
+  ) {
+    for (const watcher of this.walletWatchers) {
       const { onBalanceUpdate } = watcher;
 
-      if (!isWatcherReady(watcher) || !onBalanceUpdate) {
+      if (!this.isWatcherReady(watcher) || !onBalanceUpdate) {
         continue;
       }
 
-      for (const watchedAddress of watcher.addresses) {
-        if (!areAddressesEqual(watchedAddress, rawAddress)) {
+      for (const wallet of watcher.wallets) {
+        if (!areAddressesEqual(wallet.address, rawAddress)) {
           continue;
         }
 
         safeExec(() => onBalanceUpdate({
-          address: watchedAddress,
+          address: wallet.address,
           tokenAddress: tokenBase64Address,
           balance,
+          finality,
         }));
       }
     }
   }
 
-  #sendWatchedWalletsToSocket() {
+  #notifyTraceInvalidation(messageHashNormalized: string) {
+    const affectedAddresses = this.#addressesByHash[messageHashNormalized] ?? [];
+    if (!affectedAddresses.length) {
+      return;
+    }
+
+    for (const watcher of this.walletWatchers) {
+      const { onTraceInvalidated } = watcher;
+
+      if (!this.isWatcherReady(watcher) || !onTraceInvalidated) {
+        continue;
+      }
+
+      const hasAffectedAddress = watcher.wallets.some((watchedWallet) =>
+        affectedAddresses.some((affected) => areAddressesEqual(watchedWallet.address, affected)),
+      );
+
+      if (hasAffectedAddress) {
+        safeExec(onTraceInvalidated);
+      }
+    }
+  }
+
+  protected sendWatchedWalletsToSocket = () => {
     // It's necessary to collect the watched addresses synchronously with locking the request id.
     // It makes sure that all the watchers with ids < the response id will be subscribed.
-    const subscriptions = this.#getAddressSubscriptions();
-    const requestId = String(this.#currentUniqueId++);
+    const addresses = this.#getWatchedAddresses();
+    const requestId = String(this.currentUniqueId++);
 
-    // It's necessary to send a `set_subscription` request on every `#sendWatchedWalletsToSocket` call, even if the list
+    // It's necessary to send a `subscribe` request on every `#sendWatchedWalletsToSocket` call, even if the list
     // of addresses hasn't changed. Otherwise, the mechanism turning `isConnected` to `true` in the watchers will break
     // if a new watcher containing only existing addresses is added.
-    this.#socket!.send({
-      operation: 'set_subscription',
+    this.socket!.send({
+      operation: 'subscribe',
       id: requestId,
-      subscriptions,
+      addresses,
+      types: this.#getSubscriptionTypes(),
+      min_finality: 'pending',
+      include_address_book: true,
+      include_metadata: true,
+      supported_action_types: [TONCENTER_ACTIONS_VERSION],
     });
+  };
+
+  #getWatchedAddresses() {
+    const addresses = new Set<string>();
+    for (const watcher of this.walletWatchers) {
+      for (const wallet of watcher.wallets) {
+        addresses.add(wallet.address);
+      }
+    }
+    return [...addresses];
   }
 
-  #doesHaveWatchedAddresses() {
-    return this.#walletWatchers.some((watcher) => watcher.addresses.length);
-  }
+  /** Returns subscription types for the streaming API (uses `min_finality`) */
+  #getSubscriptionTypes() {
+    let shouldSubscribeActions = false;
+    let shouldSubscribeBalances = false;
 
-  #getAddressSubscriptions() {
-    const subscriptions: Record<string, Set<SocketSubscriptionEvent>> = {};
-
-    for (const watcher of this.#walletWatchers) {
-      for (const address of watcher.addresses) {
-        subscriptions[address] ||= new Set();
-
-        if (watcher.onNewActivities) {
-          subscriptions[address].add('actions');
-          subscriptions[address].add('pending_actions');
-        }
-
-        if (watcher.onBalanceUpdate) {
-          subscriptions[address].add('account_state_change');
-          subscriptions[address].add('jettons_change');
-        }
+    for (const watcher of this.walletWatchers) {
+      if (watcher.onNewActivities) {
+        shouldSubscribeActions = true;
+      }
+      if (watcher.onBalanceUpdate) {
+        shouldSubscribeBalances = true;
       }
     }
 
-    const preparedSubscriptions: Record<string, SocketSubscriptionEvent[]> = {};
-
-    for (const [address, events] of Object.entries(subscriptions)) {
-      if (events.size) {
-        preparedSubscriptions[address] = [...events];
-      }
+    const types: SocketSubscriptionEvent[] = [];
+    if (shouldSubscribeActions) {
+      types.push('actions');
+    }
+    if (shouldSubscribeBalances) {
+      types.push('account_state_change', 'jettons_change');
     }
 
-    return preparedSubscriptions;
+    return types;
   }
 
   #getAddressesReadyForActivities() {
     const watchedAddresses = new Set<string>();
 
-    for (const watcher of this.#walletWatchers) {
-      if (isWatcherReadyForNewActivities(watcher)) {
-        for (const address of watcher.addresses) {
-          watchedAddresses.add(address);
+    for (const watcher of this.walletWatchers) {
+      if (this.#isWatcherReadyForNewActivities(watcher)) {
+        for (const wallet of watcher.wallets) {
+          watchedAddresses.add(wallet.address);
         }
       }
     }
@@ -391,11 +309,11 @@ class ToncenterSocket {
     this.#stopPing?.();
 
     const pingIntervalId = setInterval(() => {
-      this.#socket?.send({ operation: 'ping' });
+      this.socket?.send({ operation: 'ping' });
 
       this.#cancelReconnect?.();
       this.#cancelReconnect = setCancellableTimeout(PONG_TIMEOUT, () => {
-        this.#socket?.reconnect();
+        this.socket?.reconnect();
       });
     }, PING_INTERVAL);
 
@@ -403,20 +321,21 @@ class ToncenterSocket {
   }
 
   /**
-   * When a pending action is invalidated, a message arrives with no data except the normalized hash. In order to find
+   * When a non-final trace is invalidated, a message arrives with no data except the normalized hash. In order to find
    * what addresses it belongs to and notify those addresses, we save the addresses from the previous message with the
-   * same normalized hash.
+   * same normalized hash until the trace is finalized.
    *
    * @returns The addresses that should be notified about the new actions, even if no new action belongs to the address
    */
   #rememberAddressesOfHash(
     messageHashNormalized: string,
     newActionAddresses: Iterable<string>,
-    areNewActionsPending: boolean,
+    finality: SocketFinality,
   ) {
     const prevSavedAddresses = this.#addressesByHash[messageHashNormalized] ?? [];
     const nextSavedAddresses: string[] = [];
     const addressesToNotify = new Set<string>();
+    const shouldRemember = finality !== 'finalized';
 
     // Notifying the addresses where the actions were seen at previously. It is necessary to let the addresses know that
     // the given normalized message hash is no longer in the activity history.
@@ -427,8 +346,8 @@ class ToncenterSocket {
     for (const address of newActionAddresses) {
       addressesToNotify.add(address);
 
-      // Saving the corresponding addresses only for pending actions, because confirmed actions don't change or invalidate
-      if (areNewActionsPending) {
+      // Save addresses until the trace reaches finality so invalidations can clear previous versions
+      if (shouldRemember) {
         nextSavedAddresses.push(address);
       }
     }
@@ -440,6 +359,12 @@ class ToncenterSocket {
     }
 
     return addressesToNotify;
+  }
+
+  #isWatcherReadyForNewActivities(
+    watcher: WalletWatcherInternal,
+  ): watcher is WalletWatcherInternal & { onNewActivities: NewActivitiesCallback } {
+    return this.isWatcherReady(watcher) && !!watcher.onNewActivities;
   }
 }
 
@@ -454,13 +379,13 @@ export const getToncenterSocket = withCache((network: ApiNetwork) => {
  * Returns true if the activities update is final, i.e. no other updates are expected for the corresponding message hash.
  */
 export function isActivityUpdateFinal(update: ActivitiesUpdate) {
-  return !update.arePending || !update.activities.length;
+  return update.finality === 'finalized' || !update.activities.length;
 }
 
 function getSocketUrl(network: ApiNetwork) {
   const url = new URL(NETWORK_CONFIG[network].toncenterUrl);
   url.protocol = 'wss:';
-  url.pathname = '/api/streaming/v1/ws';
+  url.pathname = '/api/streaming/v2/ws';
   addBackendHeadersToSocketUrl(url);
   return url;
 }
@@ -475,15 +400,15 @@ async function parseSocketActions(network: ApiNetwork, message: ActionsSocketMes
       continue;
     }
 
-    activitiesByAddress[address] = parseActions(
+    activitiesByAddress[address] = parseActions(actions, {
       network,
-      address,
-      actions,
-      message.address_book,
-      message.metadata,
+      walletAddress: address,
+      addressBook: message.address_book,
+      metadata: message.metadata,
       nftSuperCollectionsByCollectionAddress,
-      message.type === 'pending_actions',
-    );
+      isPending: message.finality === 'pending',
+      finality: message.finality,
+    })[0].activities;
   }
 
   return activitiesByAddress;
@@ -501,16 +426,4 @@ function groupActionsByAddress(actions: AnyAction[], addressBook: AddressBook) {
   }
 
   return byAddress;
-}
-
-function isWatcherReady(watcher: WalletWatcherInternal) {
-  // Even though the socket may already listen to some wallet addresses, we promise the class users to trigger the
-  // callbacks only in the connected state.
-  return watcher.isConnected;
-}
-
-function isWatcherReadyForNewActivities(
-  watcher: WalletWatcherInternal,
-): watcher is WalletWatcherInternal & { onNewActivities: NewActivitiesCallback } {
-  return isWatcherReady(watcher) && !!watcher.onNewActivities;
 }

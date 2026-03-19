@@ -27,7 +27,7 @@ Change: 更改密码
 "%1$d Secret Words": "%1$d 个助记词"
 Secret Words: 密语
 $auth_import_mnemonic_description: |
-  您可以通过输入创建钱包时记录的**12或24个密语**来恢复对钱包的访问。
+  您可以通过输入创建钱包时记录的**%counts%个密语**来恢复对钱包的访问。
 Let’s make sure your secrets words are recorded correctly.: 请确保您已经将助记词正确的记录至安全的地方，这将是您访问钱包的唯一凭证。
 $check_words_description: 现在让我们检查一下您是否正确写下了秘密词语。
 $mnemonic_list_description: 按**正确顺序**写下这些单词并存放在一个**安全的地方**。
@@ -36,14 +36,14 @@ $mnemonic_warning: |
   不要发送或向任何人展示，
   不要在任何地方输入。
 View Secret Words: 查看密语
-View TON Private Key: 查看TON私钥
-Can be imported to non-multichain wallets for TON.: 可以导入到不支持多链的TON钱包。
-Can be imported to any multichain wallet supporting TON.: 可以导入到任何支持TON的多链钱包。
+View %chain% Private Key: 查看%chain%私钥
+Can be imported to non-multichain wallets for %chain%.: 可以导入到不支持多链的%chain%钱包。
+Can be imported to any multichain wallet supporting %chain%.: 可以导入到任何支持%chain%的多链钱包。
 Let's Check: 再确认一次。
 Let's Check!: 请再确认一次！
 Safety Rules: 安全守则
 $safety_rules_private_key_one: |
-  在下一个屏幕中，您将看到**TON 私钥**。请正确保存并存放在**安全的地方**。
+  在下一个屏幕中，您将看到 **%chain% 私钥**。请正确保存并存放在**安全的地方**。
 $safety_rules_private_key_two: 如果您忘记密码或无法访问此设备，它可以让您**打开钱包**。
 $safety_rules_private_key_three: 如果其他人看到此私钥，您的资金可能会**被盗**。**不要发送或显示给任何人**，包括开发者或技术支持。
 $safety_rules_one: |
@@ -58,9 +58,6 @@ Search...: 搜索···
 Main menu: 主菜单
 TON Proxy: TON 代理
 Toggle TON Proxy: 切换 TON 代理
-TON Magic: TON Magic
-Toggle TON Magic: 切换 TON Magic
-Open Telegram Web: 开启 Telegram 网页
 Back Up Secret Words: 备份助记词
 Settings: 设置
 About %app_name%: 关于 %app_name%
@@ -74,10 +71,7 @@ $about_description2: 您的钱包是**非托管**且**安全**的。开发人员
 What is TON Proxy?: 什么是 TON 代理?
 $about_extension_description1: TON 代理 支持匿名访问 TON 网站 ，这创造了通往**去中心化网络**的新方式！
 More info and demo.: 更多信息和演示。
-$about_extension_description2: TON Magic 通过修补官方 Telegram 网页应用程序来整合 Telegram。
-$about_extension_description3: 打开它，将可以与任何 Telegram 用户发送和接收 Toncoin。
-$about_proxy_magic_title: 什么是 %ninja% TON 代理 和 %unicorn% TON Magic?
-$about_proxy_magic_description: 要享受去中心化网络、浏览 Ton 网站并使用 Telegram 网页应用，请安装 %extension_link% 拓展程序。
+$about_proxy_magic_description: 要享受去中心化网络和浏览 Ton 网站，请安装 %extension_link% 拓展程序。
 $about_extension_link_text: "**%app_name% 拓展程序**"
 Is it open source?: 它是开源的吗？
 $about_wallet_github: 是的，欢迎查看我们的 %github_link%
@@ -86,6 +80,8 @@ Is there a community?: 有社区吗？
 $about_wallet_community: 当然，欢迎来到我们的社区 %community_link%.
 $about_community_link_text: "**Telegram 频道**"
 Currency History: 代币历史记录
+Net Worth: 净值
+Price: 价格
 Enter Password: 输入密码
 Send: 发送
 Add Wallet: 添加钱包
@@ -93,24 +89,25 @@ Done: 完成
 Delete: 删除
 Delete Saved Address: 删除保存的地址
 Are you sure you want to remove this address from your saved ones?: 您确定要从保存的地址中删除吗？
-You will be able to save it again via Transaction Info with this address.: 您也可以通过交易记录再次保存此地址。
 Address removed from saved: 地址已从列表中删除
 Warning!: 警告！
-Log Out: 退出登录
 $logout_without_backup_warning: 您尚未备份钱包！如果您注销，您将永远丧失您的代币和 NFT ！
 $logout_accounts_without_backup_warning: 您还没有备份此账户 %links%。 如果您注销，您将永远丧失您的代币和 NFT ！
 $logout_warning: 这将从应用中移除当前钱包。请确保已备份您的**密语**。
-Your address was copied!: 您的地址已复制！
+$logout_view_mode_warning: 这将从应用中移除当前钱包。
 Create Deposit Link: 创建存款链接
 $receive_invoice_description: 您可以指定付款金额和收款地址来节省付款方的一些时间。
 Amount: 数量
 Comment: 留言
 Comment or Memo: 留言 (Memo)
 Share this URL to receive %token%: 分享此链接来接收 %token%
-Invoice link was copied!: 发票链接已复制！
+Invoice Link Copied: 发票链接已复制
 Theme: 主题
 Language: 语言
 Enable Animations: 启用动画
+Enable Seasonal Theming: 启用季节性主题
+Disable Seasonal Theming: 禁用季节性主题
+You can always enable seasonal theming again in the appearance settings.: 您随时可以在外观设置中重新启用季节性主题。
 Base Currency: 基本货币
 Investor View: 投资者见解
 Toggle Investor View: 切换投资者见解
@@ -132,16 +129,16 @@ $signature_warning: |
 Sign: 签署
 Done!: 完成!
 Signing was confirmed!: 签署已确认!
-Transaction Info: 交易资讯
-Transaction in progress: 交易进行中···
-Comment was copied!: 留言栏已复制
+Activity Details: 活动详情
+No activities found: 未找到活动
+Comment Copied: 留言栏已复制
 Sender: 发送者
 Recipient: 接收者
-Address was copied!: 地址已被复制!
+"%chain% Address Copied": "%chain% 地址已复制"
 Repeat: 重复
 Switch Account: 切换账户
 Copy wallet address: 复制钱包地址
-View address on %ton_explorer_name%: 在 %ton_explorer_name% 上查看此地址
+View address on %explorer_name%: 在 %explorer_name% 上查看此地址
 You have just created a new wallet: 您刚刚创建了一个新钱包
 You can now transfer your tokens from another wallet or exchange.: 您现在可以从另一个钱包或交易所转移您的代币
 Assets: 资产
@@ -184,22 +181,21 @@ Fee: 手续费
 Edit: 编辑
 Confirm: 确认
 Coins have been sent!: 代币已送出!
-Transaction Sent!: 交易已发送!
 Data Signed!: 数据已签名!
 Details: 明细
+View details: 查看详情
 Change password visibility: 改变密码可见
 Amount value: 资产总额
 Save Address: 储存地址
 Name: 名称
 Save: 储存
 Copy: 复制
-Remove From Saved: 从已保存中移除
+Remove from Saved: 从已保存中移除
 View on Explorer: 在浏览器中查看
 No suggestions, you're on your own!: 没有建议，请靠自己！
 Play Sounds: 播放声音
 Focus on asset value rather than current balance: 关注资产价值而非当前余额。
 $logout_confirm: 登出**所有**钱包
-$logout_warning2: 钱包位于去中心化的 TON 区块链中。如果您只是想弃用钱包，只需将所有TON转移出去即可。
 $tiny_transfers_help: 关闭此功能以显示少于 $%value% 的交易。 请注意，此类交易通常用于垃圾信息和诈骗目的。
 Today: 今天
 Yesterday: 昨天
@@ -215,14 +211,13 @@ Earn from your tokens while holding them: 从您持有的代币身上赚一笔�
 Why this is safe: 为什么这很安全
 Why is staking safe?: 为什么质押是安全的？
 $safe_staking_description1: TON 质押是**完全去中心化的**，由官方 TON Liquid Staking 智能合约运营。
-$safe_staking_description2: 作为其 **权益证明** 的一部分，您存入的 TON 将用于 TON 区块网络验证。
+$safe_staking_description2: 作为其 **权益证明** 的一部分，您存入的 TON 将用于 %chain% 区块网络验证。
 $safe_staking_description3: 您可以在 **任何时候** 解除您 TON 的质押，它会在 **36小时** 内存入您的账户。
 $safe_staking_description_jetton1: 代币质押是 **完全去中心化的**，由 %jvault_link% 开发的 **开源** 智能合约操作，并已通过 **安全审计**。
 $safe_staking_description_jetton2: 您可以在 **任何时候** 提取您的质押，并会 **立即** 存入您的账户。
 $min_value: 最小 %value%
 Est. balance in a year: 年平均预期回报
 Confirm Staking: 确认质押
-Confirm operation with your password: 使用您的密码以确认此操作
 Coins have been staked!: 代币已质押！
 View: 查看
 Stake More: 质押更多
@@ -258,14 +253,12 @@ Earning: 赚取中
 You can save this address for quick access while sending.: 您可以保存此地址以便在发送时快速访问。
 Stake Again: 再次质押
 Earned: 获得
-Connect Dapp: 连接Dapp
 Select wallet to use on this dapp: 选择在此 dapp 上使用的钱包
 Connect: 连接
 Dapp Permissions: Dapp 权限
 $dapp_can_view_balance: "%dappname% 将能够查看钱包地址和余额。"
-Send Transaction: 发送交易
 Payload: 有效载荷
-$many_transactions: "%1$d 笔交易"
+$many_transactions: "%1$d 笔转账"
 Total Amount: 总金额
 $unstaking_short: 解除质押
 Handle ton:// links: 处理 ton:// 链接
@@ -283,13 +276,11 @@ Disconnect Dapp: 断开 Dapp
 Disconnect Dapps: 断开 Dapps
 Are you sure you want to disconnect?: 您确定要断开 %dappname% 吗？
 Are you sure you want to disconnect all websites?: 您确定要断开所有网站吗？
-$dapps-description: 您可以登录支持 %app_name% 的 dapp。 它们可以查看钱包地址、余额并请求操作。
 Logged in with %app_name%: 使用 %app_name% 登录
 No active connections: 没有活动连接
 Other: 其他的
 Assets & Activity: 资产 & 活动记录
 Token Settings: 代币设置
-My Tokens: 我的代币
 Add Token: 添加令牌
 Delete Token: 删除令牌
 Are you sure you want to delete?: 您确定要删除 %token% 吗？
@@ -308,11 +299,9 @@ Driver: 司机
 Unlock it and open the %chain% App: 解锁并打开 %chain% 应用
 Maybe you need to check the password or change the driver.: 也许您需要检查密码或更改驱动程序。
 Confirm via Ledger: 通过账本确认
-Please confirm transaction on your Ledger: 请在您的账本上确认交易
 Declined: 谢绝
 Switch to the newly opened tab to connect Ledger.: 切换到新打开的标签页以连接 Ledger。
 Once connected, switch back to this window to proceed.: 连接成功后，请切换回此窗口以继续。
-Not all transactions were sent successfully: 并非所有交易都成功发送
 The time on your device is incorrect, sync it and try again: 您设备上的时间不正确，请同步并重试
 Name or Address...: 姓名或地址...
 Such error, many tabs: 这样的错误，很多标签
@@ -320,12 +309,11 @@ $many_tabs_error_description: |
   %app_name% 仅支持该应用程序的一个活动选项卡。
   请重新加载此页面以继续使用此选项卡或将其关闭。
 Reload App: 重新加载应用程序
-Please confirm operation on your Ledger: 请确认您在Ledger上的操作
 Token Not Found: 找不到令牌
 Try another keyword or address.: 尝试其他关键字或地址。
 Decrypt: 解密
 Encrypted Message: 加密消息
-Message is encrypted.: 消息已加密。
+Message is encrypted: 消息已加密
 Agree: 同意
 $swap_action: 交换
 Swap: 交换
@@ -390,18 +378,17 @@ Your address on another blockchain: 您在另一个区块链上的地址
 Please provide an address of your wallet in %blockchain% blockchain to receive bought tokens.: 请提供您在%blockchain%区块链中的钱包地址，以接收购买的代币。
 The time for sending coins is over.: 发送硬币的时间已结束。
 You have not sent the coins to the specified address.: 您尚未将硬币发送到指定地址。
-$swap_changelly_to_ton_description1: 您必须在 %time% 内将 %value% 发送到此地址 在 %blockchain% 区块链中
+$swap_changelly_to_wallet_description1: 您必须在 %time% 内将 %value% 发送到此地址 在 %blockchain% 区块链中
 Exchange failed and coins were refunded to your wallet.: 交换失败，硬币已退还到您的钱包。
 $swap_changelly_kyc_security: 请联系**%email%**并提供**交易ID**以通过KYC程序：
 Swap Expired: 交换已过期
 Address for %blockchain% transfer: "%blockchain% 传输地址"
 Cross-chain exchange provided by Changelly: 由Changelly提供的跨链交换
-$swap_changelly_agreement_message: 继续操作，即表示您同意 %terms% 和 %policy%，并理解该交易可能会触发根据 %kyc% 进行的验证。
 $swap_changelly_terms_of_use: 使用条款
 $swap_changelly_privacy_policy: 隐私政策
 Password must contain %length% digits.: 密码必须包含%length%位数字。
 Deposit Link: 充值链接
-$swap_changelly_from_ton_description: 代币将很快发送到您在%blockchain%区块链中的地址：
+$swap_changelly_from_wallet_description: 代币将很快发送到您在%blockchain%区块链中的地址：
 Please note that it may take up to a few hours for tokens to appear in your wallet.: 请注意，代币显示在您的钱包中可能需要几个小时。
 Minimum amount: 最低 %value%
 Maximum amount: 最高 %value%
@@ -411,19 +398,17 @@ Biometric Authentication: 生物识别认证
 If you turn off biometric protection, you will need to create a password.: 如果您关闭生物识别保护，则需要创建密码。
 Enter your current password: 输入当前密码
 Turn On Biometrics: 打开生物识别
-Please confirm transaction using biometrics: 请使用生物识别技术确认交易
 Enabling biometric confirmation will reset the password.: 启用生物识别确认将重置密码。
 Biometric Registration: 生物识别注册
 Step 1 of 2. Registration: 第 1 步（共 2 步）：注册
 Step 2 of 2. Verification: 第 2 步（共 2 步）：验证
 Download Logs: 下载日志
 Copy Logs: 复制日志
-Logs were copied!: 日志已复制！
+Logs Copied: 日志已复制
 Biometric setup failed.: 生物识别设置失败。
 Biometric confirmation failed.: 生物识别确认失败。
 Failed to disable biometrics.: 无法禁用生物识别。
 Biometric Confirmation: 生物识别确认
-Please verify the operation.: 请验证操作。
 Create Password: 创建密码
 Complete: 完成
 Verification: 确认
@@ -432,12 +417,12 @@ Use Password: 使用密码
 Biometrics Disabled: 生物识别已禁用
 Biometrics Enabled: 启用生物识别
 A request is already pending: 请求已待处理
-Please confirm operation using biometrics: 请使用生物识别确认操作
+Please confirm action using biometrics: 请使用生物识别确认操作
 Scan QR Code: 扫描二维码
 Permission denied. Please grant camera permission to use the QR code scanner.: 没有权限。 请授予相机使用 QR 扫描仪的权限。
 This QR Code is not supported: 此二维码不受支持
 An error on the server side. Please try again.: 服务器端的错误。请再试一次。
-Address was saved!: 地址已保存！
+Address Saved: 地址已保存
 US Dollar: 美元
 Euro: 欧元
 Russian Ruble: 俄罗斯卢布
@@ -452,7 +437,6 @@ Wallet is ready!: 钱包准备好了！
 Wallet is imported!: 钱包是进口的！
 Create a code to protect it: 创建代码来保护它
 Enter your code again: 再次输入您的代码
-Codes don't match: 代码不匹配
 Code set successfully: 代码设置成功
 Use Biometrics: 使用生物识别技术
 Use Touch ID: 使用 Touch ID
@@ -474,6 +458,7 @@ Scan your fingerprint: 扫描您的指纹
 Incorrect code, please try again.: 不正确的代码，请重试。
 Correct: 正确
 Confirm Action: 确认操作
+$classic_confirm_actions: 确认所有操作
 Confirm Swap: 确认兑换
 Confirm Rewards Claim: 确认奖励提取
 "%amount% to %address%": "%amount% 至 %address%"
@@ -487,7 +472,7 @@ Are you sure you want to disable biometrics?: 您确定要禁用生物识别技�
 "Yes": 是的
 Biometric confirmation failed: 生物识别确认失败
 No Activity: 无活动
-Add / Buy: 添加 / 购买
+Fund: 充值
 Buy with Card: 用卡购买
 Buy with Crypto: 用加密货币购买
 Cannot load widget: 无法加载小部件
@@ -499,7 +484,7 @@ $all_balance: "全部: %balance%"
 $unstaking_not_enough_balance: 您需要在主要余额中有 %value% 才能继续解押。
 $ledger_verify_address_on_device: 请验证您的 Ledger 上的地址。
 Wallet Versions: 钱包版本
-$read_more_about_wallet_version: 在%ton_link%上阅读更多关于钱包合约类型的信息。
+$read_more_about_wallet_version: 在%link%上阅读更多关于钱包合约类型的信息。
 $current_wallet_version: 您当前的钱包版本是%version%。
 You have tokens on other versions of your wallet. You can import them from here.: 您在钱包的其他版本上有代币。您可以从这里导入它们。
 $wallet_switch_version_1: 您也可以%action%。
@@ -510,7 +495,7 @@ $insufficient_fee: "手续费不足: %fee%"
 Required: 必需的
 Comment is too long.: 评论太长了。
 Memo: Memo
-Memo was copied!: Memo 被复制了！
+Memo Copied: Memo 被复制了
 $hide_tokens_no_cost_help: |
   将其关闭以在您的帐户上显示为价值小于 $%value% 的代币。请注意，这种令牌通常用于垃圾邮件和骗局。
   您还可以使用下面在此屏幕上的列表选择性地启用和禁用特定令牌。
@@ -518,9 +503,7 @@ No internet connection. Please check your connection and try again.: 没有网�
 To use this feature, first enable Face ID in your phone settings.: 要使用此功能，请首先在手机设置中启用面容 ID。
 To use this feature, first enable biometrics in your phone settings.: 要使用此功能，请首先在手机设置中启用生物识别功能。
 Open Settings: 打开设置
-$service_token_transfer_warning: 您即将转移一个重要的服务代币，该代币是提款或完成服务操作所必需的。请确保这是您打算执行的操作。
 No Price: 无价格
-$ledger_outdated: 此操作不支持您当前版本的 Ledger %chain% 应用程序。请使用 Ledger Live 进行更新。
 $dapp_transfer_tokens_burn: 燃烧%amount%
 $dapp_dns_set_wallet_payload: 将域 %domain% 的链接钱包更改为 %address%
 $dapp_dns_delete_wallet_payload: 删除域 %domain% 的链接钱包
@@ -530,34 +513,37 @@ $dapp_token_bridge_pay_swap_payload: 通过跨链桥确认交易
 $dapp_liquid_staking_deposit_payload: 存款到流动质押
 $dapp_liquid_staking_vote_payload: 对提案 %votingAddress% 投票“%vote%”
 $dapp_single_nominator_change_validator_payload: 将 SingleNominator 质押合约验证者的地址更改为 %address%
-$dapp_single_nominator_withdraw_payload: 从 SingleNominator 质押合约中提取 %amount% TON
+$dapp_single_nominator_withdraw_payload: 从 SingleNominator 质押合约中提取 %amount%
 $dapp_vesting_add_whitelist_payload: 将 %address% 添加到归属钱包白名单
 Connecting dapps is not yet supported by Ledger.: Ledger 尚不支持连接 dapp。
 Time synchronization issue. Please ensure your device's time settings are correct.: 时间同步问题。 请确保您设备的时间设置正确。
-Data was copied!: 数据被复制！
+Data Copied: 数据被复制
+URL Copied: URL Copied
+Private Key Copied: Private Key Copied
+Contract Initialization Data Copied: Contract Initialization Data Copied
 Open NFT Collection: 打开 NFT 收藏
 Previous: 上一页
 Next: 下一页
-Insufficient TON for fee.: TON 不足以支付费用。
+Insufficient %token% for fee.: "%token% 不足以支付费用。"
 Send NFT: 发送 NFT
+Send Collectible: 发送收藏品
+Send Collectibles: 发送收藏品
 NFT has been sent!: NFT已发送！
 Cannot be sent: 无法发送
 NFT is for sale: NFT 正在出售
 More actions: 更多操作
-Open on %ton_explorer_name%: 在 %ton_explorer_name% 上打开
+Open on %explorer_name%: 在 %explorer_name% 上打开
 Swap is not supported in Testnet.: 测试网不支持共享。
 Swap is not yet supported by Ledger.: Ledger 尚不支持该交易所。
 Buying with card is not supported in Testnet.: 测试网不支持刷卡购买。
 Staking is not supported in Testnet.: 测试网不支持质押。
 Get Support: 得到支持
-$transfer_inactive_contract_error: |
-  您以“EQ...”格式输入了地址，但该地址未激活，因此交易将无法完成。如果您确实要发送到该地址，请以“UQ...”格式输入该地址。
 $transfer_link_expired: 转账链接已过期
 $transfer_text_and_bin_exclusive: 不能同时使用文本和二进制数据参数
-$unsupported_deeplink_parameter: 此深度链接包含不支持的参数
+$unsupported_deeplink_parameter: 此深度链接包含不支持的参数。
+$unsupported_chain: 不支持的区块链。
 Successfully: 成功地
 Unstake More: 解除质押更多
-WrongAddress: 该 dapp 请求另一个钱包进行交易。
 Are you sure you want to burn this NFT? It will be lost forever.: 您确定要烧毁这个 NFT 吗？ 它将永远失去。
 $multi_burn_nft_warning: 您即将销毁 %amount% 个 NFT。
 $multi_send_nft_warning: 该过程可能需要 ~%duration% 分钟。请勿关闭应用程序，也不要在完成之前切换账户。
@@ -574,7 +560,8 @@ Send All: 全部发送
 Burn All: 全部烧掉
 Select All: 全选
 Collection: 集合
-Transaction ID was copied!: 交易ID已被复制！
+Unnamed Collection: 未命名集合
+Transaction ID Copied: 交易ID已被复制
 $swap_changelly_support: 如果有任何问题，请联系%livechat%或%email%并提供**交易ID**：
 Changelly Live Chat: Changelly 实时聊天
 Your %blockchain% Address: 您的%blockchain% 地址
@@ -598,10 +585,12 @@ $fee_value_bold: "**手续费:** %fee%"
 "%app_name% Features": "%app_name% 功能"
 Security: 安全
 To avoid entering the passcode every time, you can use biometrics.: 为避免每次输入密码，您可以使用生物识别技术。
+To avoid entering the password every time, you can use biometrics.: 为避免每次输入密码，您可以使用生物识别技术。
 Change Passcode: 更改密码
 Change Password: 更改密码
 Confirm Password: 确认密码
 The passcode will be changed for all your wallets.: 密码将为您的所有钱包更改。
+The password will be changed for all your wallets.: 密码将为您的所有钱包更改。
 Password Changed!: 密码已更改！
 Passcode Changed!: 密码已更改！
 New code set successfully: 新代码设置成功
@@ -611,7 +600,6 @@ Re-enter your new code: 再次输入您的新代码
 Install on Desktop: 安装到桌面
 Install on Mobile: 安装在手机
 Install App: 安装应用
-WrongNetwork: Dapp 从另一个网络请求交易。
 Hide: 隐藏
 Hidden NFTs: 隐藏的NFT
 Hidden By Me: 我隐藏的
@@ -635,7 +623,6 @@ Confirm Sending: 确认发送
 Confirm Burning: 确认刻录
 Confirm Passcode: 确认密码
 Enter your code: 输入您的代码
-$hardware_payload_warning: "**第三方服务正在请求访问您的钱包。**这可能会导致资金损失。如果您不确定该服务的可靠性，请取消操作。"
 $hardware_blind_sign_not_enabled: 要继续，请在 Ledger 的 %chain% 应用程序设置中启用“盲签名”选项。
 Switch to W5: 切换到 W5
 Not Scam: 不是骗局
@@ -644,7 +631,7 @@ Multichain: 多链
 $swap_too_small_amount: 金额太小
 Not enough %symbol%: "%symbol% 不足"
 You have just created a new multichain wallet: 您刚刚创建了一个新的多链钱包
-Now you can transfer tokens from your TON and TRON wallets.: 现在您可以从您的 TON 和 TRON 钱包中转移代币。
+Now you can transfer tokens from your %chains% wallets.: 现在您可以从您的 %chains% 钱包中转移代币。
 Enter Secret Words: 输入密语
 Turn this off so you can manually download updates and verify signatures.: 关闭此功能以便手动下载更新并验证签名。
 InvalidMnemonic: 您的助记词无效
@@ -706,10 +693,8 @@ Request is sent!: 请求已发送！
 Transaction ID: 交易ID
 Help Center: 帮助中心
 MyTonWallet Tips: MyTonWallet 提示
-$auth_import_24_mnemonic_description: |
-  你可以通过输入创建钱包时记录的 **24 个秘密单词** 来恢复对钱包的访问权限。
 Open %nft_marketplace%: 打开 %nft_marketplace%
-Link was copied!: 链接已复制！
+Link Copied: 链接已复制
 Share Link: 分享链接
 $dapp_return_details: |
   %fee_amount% 将立即从您的钱包扣除以支付费用。
@@ -785,19 +770,18 @@ Transferable: 可转让
 Easily send your upgraded card to any of your friends.: 轻松将您的升级卡片发送给任何朋友。
 Tradable: 可交易
 Sell or auction your card on third-party NFT marketplaces.: 在第三方 NFT 市场上出售或拍卖您的卡片。
-Upgrade for %currency% %amount%: 升级需 %currency% %amount%
+Upgrade for %amount% %currency%: 升级需 %amount% %currency%
 "%amount% left": 剩余 %amount%
 "%amount% sold": 已售 %amount%
 This card has been sold out: 此卡片已售罄
 Import Existing Wallet: 导入现有钱包
 View Any Address: 查看任意地址
-12/24 Secret Words: 12/24个助记词
-24 Secret Words: 24个助记词
+"%counts% Secret Words": "%counts%个助记词"
 Wallet Address or Domain: 钱包地址或域名
-$import_view_account_note: 输入TON或TRON网络上的**任意地址**以**查看模式**打开。
+$import_view_account_note: 输入 %chains% 网络上的**任意地址**以**查看模式**打开。
 $view_mode: 查看
 Import Wallet: 导入钱包
-Please top up your TON balance.: 请充值您的TON余额。
+Please top up your %token% balance.: 请充值您的%token%余额。
 Remember Passcode: 记住验证码
 Remember Password: 记住密码
 Not available with biometrics.: 生物识别不可用。
@@ -806,8 +790,11 @@ Remember for %1$d minutes: 记住 %1$d 分钟
 Preview: 预览
 $preview_not_guaranteed: 预览结果**不受保证**，且**可能被服务伪造**。
 Unverified Source: 未经验证的来源
-$reopen_in_iab: 为了您的安全，请在%browserButton%中重新打开此DApp。
+$reopen_in_iab: 请使用 MyTonWallet %mobileAppButton% 或 %browserExtensionButton% 以避免此警告。
+$reopen_in_iab_explore: 浏览应用时，请使用 %exploreTab% 栏目以避免此警告。
 MyTonWallet Browser: MyTonWallet 浏览器
+mobile app: 移动应用
+browser extension: 浏览器扩展
 Exit all wallets: 退出所有钱包
 Can't confirm?: 无法登录？
 $safe_staking_ethena_description1: 质押完全去中心化，由**Ethena官方**审计的流动性质押**智能合约**运营。
@@ -844,7 +831,7 @@ Change Linked Wallet: 更改已链接钱包
 Domain has been renewed!: 域名已续费!
 Domains have been renewed!: 域名已成功续费!
 Linked Wallet: 已链接钱包
-Domain has been linked!: 域名已链接!
+Domain Linked: 域名已链接
 Link: 链接
 Confirm Renewing: 确认续费
 Confirm Linking: 确认链接
@@ -886,7 +873,7 @@ Attributes: 属性
 Show All: 显示全部
 Description: 描述
 No additional data.: 无附加数据。
-Domain was copied!: 域名已复制！
+"%chain% Domain Copied": "%chain% 域名已复制"
 $in_currency: 以 %currency%
 Rename Wallet: 重命名钱包
 You can rename this wallet for easier identification.: 您可以重命名该钱包以便于识别。
@@ -899,7 +886,6 @@ Telegram Gifts: Telegram 礼物
 Collectibles: 收藏品
 Bluetooth unavailable: 蓝牙不可用
 $bluetooth_enable_guide: 请在设备设置中开启蓝牙并允许应用访问蓝牙。
-Another transaction was sent from this wallet simultaneously. Please try again.: 此钱包同时发送了另一笔交易。请重试。
 Canceled by the user: 用户已取消
 The proof for signing provided by the Dapp is too large: Dapp 提供的签名证明过大
 $domain_like_scam_warning: |
@@ -921,7 +907,7 @@ use the wallet responsibly: 负责任地使用钱包
 Watch Video about Features: 观看功能视频
 Enjoy Monthly Updates in Blog: 享受博客中的每月更新
 Learn New Things in Help Center: 在帮助中心学习新知识
-Frequency Questions and Answers: 常见问题与解答
+Frequent Questions & Answers: 常见问题与解答
 Paste from Clipboard: 从剪贴板粘贴
 Use biometric authentication or create a password to protect it.: 使用生物识别认证或创建密码进行保护。
 Go to Words: 转到单词
@@ -940,6 +926,7 @@ Security Warning: 安全警告
 Go back to Words: 返回单词
 I’m sure. Continue: 我确定。继续
 $copy_mnemonic_warning: 在数字环境（包括**剪贴板**）中存储单词不安全。请确保您已安全保存恢复短语。
+$screenshot_mnemonic_warning: 在数字环境（包括**屏幕截图**）中存储单词不安全。请确保您已安全保存恢复短语。
 Other apps will be able to read your recovery phrase!: 其他应用将能够读取您的恢复短语！
 I’m sure. Copy anyway: 我确定。仍然复制
 $auth_biometric_info: 您可以连接生物识别数据以**获得更多便利。**
@@ -951,4 +938,130 @@ $ledger_wrong_device: 当前账户使用了其他 Ledger 恢复短语或密码�
 Show More: 显示更多
 Search app or enter address: 搜索应用或输入地址
 Connected Apps: 已连接的应用
+Connected Sites: 已连接的应用
 Popular Apps: 热门应用
+Popular Sites: 热门应用
+$wallets_amount:
+  zeroValue: 没有钱包
+  oneValue: "%1$d 个钱包"
+  otherValue: "%1$d 个钱包"
+$total_balance: "%balance% 总计"
+No wallets: 没有钱包
+View as List: 列表视图
+View as Cards: 卡片视图
+Reorder: 重新排序
+Rename: 重命名
+Customize: 自定义
+i18n_dragToSort: 拖动以排序
+My: 我的
+All: 全部
+$view_accounts: 查看
+Add your first one to begin.: 添加您的第一个钱包以开始。
+You don’t have any wallets yet: 您还没有任何钱包
+Add Ledger Wallet: 添加 Ledger 钱包
+Add View Wallet: 添加查看钱包
+No Ledger wallets yet: 尚无 Ledger 钱包
+No view wallets yet: 尚无查看钱包
+Add the first one to track balances and activity for any address.: 添加第一个钱包以跟踪任何地址的余额和活动。
+Customize Wallet: 自定义钱包
+"Select the card stored in this wallet:": 选择此钱包中存储的卡片：
+This card will be installed for this wallet and will be displayed on the home screen and in the wallets list.: 该卡片将安装到此钱包中，并显示在主屏幕和钱包列表中。
+Get More Cards: 获取更多卡片
+Browse MyTonWallet Cards available for purchase.: 浏览可购买的 MyTonWallet 卡片。
+You don't have any cards to customize yet: 您还没有可自定义的卡片。
+MyTonWallet Cards can be installed for wallets and displayed on the home screen and in the wallet list.: MyTonWallet 卡片可以安装到钱包中，并显示在主屏幕和钱包列表中。
+Get First Card: 获取第一张卡片
+Palette and Card: 调色板与卡片
+Customize the wallet's home screen and color accents the way you like.: 按照您的喜好自定义钱包主屏幕和颜色。
+Address doesn't exist: 地址不存在
+The address is not a token minter address: 该地址不是代币铸造者地址
+$joining_comma: 、
+$joining_and: " 和 "
+$joining_or: " 或 "
+View in App: 在应用中查看
+Save Account: 保存账户
+$invalid_address_format: 地址格式无效
+$no_valid_view_addresses: 没有可查看的有效地址
+Account Saved: 账户已成功保存
+Share Wallet Link: 分享钱包链接
+Remove: 移除
+$missing_offramp_deposit_address: 缺少 off-ramp 的充值地址。
+Buy: 购买
+Sell: 出售
+Sell on Card: 出售到卡
+Sell %symbol%: 出售 %symbol%
+$connect_dapp_description: 已连接的应用只能看到你的钱包地址，未经你的许可无法转移你的资产。
+$connect_dapp_title: 连接到 %name%？
+Choose Wallet: 选择钱包
+Wallet to use on %host%: 用于 %host% 的钱包
+Selected Wallet: 已选钱包
+Connect Wallet: 连接钱包
+Insufficient Fee: 手续费不足
+Waiting for a View deeplink to display a wallet address.: 正在等待查看深层链接以显示钱包地址。
+Adding wallets is not available in explorer mode: 在浏览器模式下无法添加钱包
+$explorer_mode_warning: "浏览器模式：正在等待查看深层链接以打开地址"
+This command is not supported in explorer mode: 此命令在浏览器模式下不受支持
+$saved_addresses_header: 已保存
+confirm an action in MyTonWallet: 在 MyTonWallet 中确认操作
+Timed out waiting for account to be ready: 等待账户准备就绪超时
+$connected_apps:
+  otherValue: "%1$d 已连接"
+Night Mode, Palette, Card: 夜间模式、调色板、卡片
+Back Up, Passcode, Auto-Lock: 备份、密码、自动锁定
+Back Up, Password, Auto-Lock: 备份、密码、自动锁定
+Base Currency, Token Order, Hidden NFTs: 基础货币、代币顺序、隐藏的 NFT
+Your assets on other contracts: 您在其他合约上的资产
+Wallets, Sounds: 钱包、声音
+Help: 帮助
+About: 关于
+Wallets: 钱包
+Open: 打开
+Open in %app_name%: 在 %app_name% 中打开
+Blog: 博客
+Apps: 应用
+$nft_not_found: 未找到 NFT
+You will be able to save it again via Transfer Info with this address.: 您将能够通过此地址的转账信息再次保存它。
+Transfer Info: 转账信息
+Transfer not found: 未找到转账
+Failed to fetch transfer: 获取转账失败
+Transfer in progress: 转账进行中
+Transfer Sent!: 转账已发送！
+Please confirm transfer on your Ledger: 请在您的 Ledger 上确认转账
+Please confirm action on your Ledger: 请在您的 Ledger 上确认操作
+Not all transfers were sent successfully: 并非所有转账都发送成功
+$swap_changelly_agreement_message: 继续即表示您同意 %terms% 和 %policy%，并理解该转账可能会根据 %kyc% 触发验证。
+Please confirm transfer using biometrics: 请使用生物识别确认转账
+$transfer_inactive_contract_error: |
+  您输入了 "EQ..." 格式的地址，但该地址未激活，因此转账不会完成。
+  如果您确实想发送到此地址，请以 "UQ..." 格式输入地址。
+$transaction_not_found: 未找到转账。
+$could_not_determine_address: 无法从转账中确定钱包地址
+WrongAddress: 去中心化应用 (dapp) 请求了另一个钱包的操作。
+WrongNetwork: 去中心化应用 (dapp) 请求了另一个网络的操作。
+Another transfer was sent from this wallet simultaneously. Please try again.: 同时从此钱包发送了另一笔转账。请重试。
+Confirm action with your password: 用密码确认操作
+$dapps-description: 您可以在支持 %app_name% 的去中心化应用 (dapps) 上登录。它们可以查看钱包地址、余额并请求操作。
+Please verify the action.: 请验证操作。
+$service_token_transfer_warning: 您即将转移一个重要的服务代币，该代币是提取存款或完成服务操作所必需的。请确保这是您打算执行的操作。
+$ledger_outdated: 此操作不受您的 Ledger %chain% 应用程序版本支持。请使用 Ledger Live 更新它。
+$hardware_payload_warning: "**第三方服务正在请求访问您的钱包。** 这可能导致资金损失。如果您不确定此服务的可靠性，请取消操作。"
+Pin: 固定
+Unpin: 取消固定
+My Assets: 我的资产
+Owner: 所有者
+Show All Wallets: 显示所有钱包
+Ask a Question: 提问
+MyTonWallet Features: MyTonWallet 功能
+Notifications: 通知
+Wrong passcode, please try again: 密码错误，请重试。
+Use biometric authentication or create a passcode to protect it.: 使用生物识别认证或创建密码进行保护。
+Use Passcode: 使用密码
+Create Passcode: 创建密码
+Create a passcode to protect it.: 创建密码进行保护。
+Enter Passcode: 输入密码
+If you turn off biometric protection, you will need to create a passcode.: 如果您关闭生物识别保护，您需要创建密码。
+Enabling biometric confirmation will reset the passcode.: 启用生物识别确认将重置密码。
+Confirm operation with your passcode: 使用您的密码确认操作
+Confirm action with your passcode: 用密码确认操作
+No Image: 无图片
+Different blockchain. Cannot be selected: 不同的区块链。无法选择

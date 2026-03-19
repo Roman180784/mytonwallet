@@ -34,6 +34,7 @@ class WNavigationBar(
 ) : WView(viewController.navigationController!!.context), WThemedView {
 
     companion object {
+        const val DEFAULT_HEIGHT_THICK = 76
         const val DEFAULT_HEIGHT = 64
         const val DEFAULT_HEIGHT_THIN = 56
         const val DEFAULT_HEIGHT_TINY = 48
@@ -62,7 +63,7 @@ class WNavigationBar(
 
     val titleLabel: WLabel by lazy {
         WLabel(context).apply {
-            setStyle(22F, WFont.Medium)
+            setStyle(22F, WFont.SemiBold)
             setSingleLine()
             ellipsize = TextUtils.TruncateAt.MARQUEE
             isSelected = true
@@ -90,7 +91,7 @@ class WNavigationBar(
     private val backButton: WImageButton by lazy {
         WImageButton(context).apply {
             setOnClickListener {
-                navigationController.pop()
+                navigationController.onBackPressed()
             }
             visibility = if (navigationController.isBackAllowed()) VISIBLE else GONE
             val arrowDrawable =
@@ -176,6 +177,54 @@ class WNavigationBar(
         oldTitle = title
     }
 
+    private var oldTitleView: View? = null
+    fun setTitleView(titleView: View?, animated: Boolean) {
+        if (oldTitleView == titleView)
+            return
+
+        val showNewView = {
+            if (titleView != null) {
+                titleLabel.visibility = GONE
+                titleLinearLayout.addView(
+                    titleView,
+                    0,
+                    LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                )
+                if (animated) {
+                    titleView.alpha = 0f
+                    titleView.fadeIn(AnimationConstants.VERY_QUICK_ANIMATION)
+                }
+            } else {
+                titleLabel.visibility = VISIBLE
+                if (animated) {
+                    titleLabel.alpha = 0f
+                    titleLabel.fadeIn(AnimationConstants.VERY_QUICK_ANIMATION)
+                }
+            }
+            oldTitleView = titleView
+        }
+
+        oldTitleView?.let { oldView ->
+            if (animated) {
+                oldView.fadeOut(AnimationConstants.VERY_QUICK_ANIMATION) {
+                    titleLinearLayout.removeView(oldView)
+                    showNewView()
+                }
+            } else {
+                titleLinearLayout.removeView(oldView)
+                showNewView()
+            }
+        } ?: run {
+            if (animated && titleLabel.isVisible && titleView != null) {
+                titleLabel.fadeOut(AnimationConstants.VERY_QUICK_ANIMATION) {
+                    showNewView()
+                }
+            } else {
+                showNewView()
+            }
+        }
+    }
+
     private var oldSubtitle: String? = null
     fun setSubtitle(subtitle: String?, animated: Boolean) {
         if (oldSubtitle == subtitle)
@@ -199,6 +248,7 @@ class WNavigationBar(
     }
 
     fun addCloseButton(
+        trailingMarginDp: Float? = null,
         onClose: () -> Unit = {
             navigationController.window.dismissLastNav()
         }
@@ -210,7 +260,23 @@ class WNavigationBar(
         contentView.setConstraints {
             toTopPx(closeButton, topOffset)
             toBottom(closeButton)
-            toEnd(closeButton, if (height < DEFAULT_HEIGHT) 11f else 8f)
+            toEnd(closeButton, trailingMarginDp ?: if (height < DEFAULT_HEIGHT) 11f else 8f)
+        }
+    }
+
+    private var leadingView: View? = null
+    fun addLeadingView(
+        leadingView: View,
+        layoutParams: LayoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+    ) {
+        this.leadingView = leadingView
+        contentView.addView(leadingView, layoutParams)
+
+        contentView.setConstraints {
+            toTopPx(leadingView, topOffset + contentMarginTop)
+            toBottom(leadingView)
+            toStart(leadingView, 8f)
+            startToEnd(titleLinearLayout, leadingView, 4f)
         }
     }
 
@@ -247,11 +313,12 @@ class WNavigationBar(
 
     fun setTitleGravity(gravity: Int) {
         titleLabel.gravity = gravity
+        subtitleLabel.gravity = gravity
         contentView.setConstraints {
             if (gravity == Gravity.CENTER) {
-                toCenterX(titleLinearLayout, if (backButton.isVisible) 64f else 20f)
+                toCenterX(titleLinearLayout, if (backButton.isVisible) 64f else 24f)
             } else {
-                toStart(titleLinearLayout, if (backButton.isVisible) 64f else 20f)
+                toStart(titleLinearLayout, if (backButton.isVisible) 64f else 24f)
                 toEnd(titleLinearLayout, 20f)
             }
         }
@@ -268,8 +335,7 @@ class WNavigationBar(
     fun fadeInActions() {
         backButton.isEnabled = true
         backButton.visibility = VISIBLE
-        backButton.fadeIn {
-        }
+        backButton.fadeIn()
         trailingView?.fadeIn()
     }
 

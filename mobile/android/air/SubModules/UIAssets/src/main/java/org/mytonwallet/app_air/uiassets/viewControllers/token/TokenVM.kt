@@ -10,14 +10,14 @@ import org.mytonwallet.app_air.walletcore.WalletEvent
 import org.mytonwallet.app_air.walletcore.helpers.ActivityLoader
 import org.mytonwallet.app_air.walletcore.helpers.IActivityLoader
 import org.mytonwallet.app_air.walletcore.models.MToken
-import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
 import java.lang.ref.WeakReference
 
 class TokenVM(
     val context: Context,
+    private val accountId: String,
     val token: MToken,
-    delegate: Delegate
+    val delegate: WeakReference<Delegate>
 ) : WalletCore.EventObserver,
     IActivityLoader.Delegate {
 
@@ -31,18 +31,17 @@ class TokenVM(
         fun priceDataUpdated()
         fun stateChanged()
         fun accountChanged()
+        fun accountRemoved()
         fun cacheNotFound()
     }
 
-    val delegate: WeakReference<Delegate> = WeakReference(delegate)
-
     var selectedPeriod: MHistoryTimePeriod =
         MHistoryTimePeriod.entries
-            .find { it.value == WGlobalStorage.currentTokenPeriod(AccountStore.activeAccountId!!) }
+            .find { it.value == WGlobalStorage.currentTokenPeriod(accountId) }
             ?: MHistoryTimePeriod.DAY
         set(value) {
             field = value
-            WGlobalStorage.setCurrentTokenPeriod(AccountStore.activeAccountId!!, value.value)
+            WGlobalStorage.setCurrentTokenPeriod(accountId, value.value)
             historyData = null
             delegate.get()?.priceDataUpdated()
             loadPriceHistoryChart(value)
@@ -63,7 +62,7 @@ class TokenVM(
         activityLoader?.clean()
         activityLoader = ActivityLoader(
             context,
-            AccountStore.activeAccountId!!,
+            accountId,
             token.slug,
             WeakReference(this)
         )
@@ -140,6 +139,11 @@ class TokenVM(
 
             is WalletEvent.AccountChanged -> {
                 delegate.get()?.accountChanged()
+            }
+
+            is WalletEvent.AccountRemoved -> {
+                if (walletEvent.accountId == accountId)
+                    delegate.get()?.accountRemoved()
             }
 
             is WalletEvent.AccountSavedAddressesChanged -> {

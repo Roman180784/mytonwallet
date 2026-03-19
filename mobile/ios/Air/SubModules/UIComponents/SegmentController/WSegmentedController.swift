@@ -10,7 +10,7 @@ import UIKit
 import WalletContext
 
 @MainActor
-public protocol WSegmentedControllerContent: AnyObject {
+public protocol WSegmentedControllerContent: UIViewController {
     var onScroll: ((_ y: CGFloat) -> Void)? { get set }
     var onScrollStart: (() -> Void)? { get set }
     var onScrollEnd: (() -> Void)? { get set }
@@ -22,6 +22,7 @@ public protocol WSegmentedControllerContent: AnyObject {
 }
 
 public extension WSegmentedControllerContent {
+    // FIXME: - default implementation is ambiguous
     var calculatedHeight: CGFloat { 0 }
 }
 
@@ -31,20 +32,28 @@ extension WSegmentedControllerContent {
     }
 }
 
+@MainActor public protocol WSegmentedControllerDelegate: AnyObject {
+    func segmentedController(scrollOffsetChangedTo progress: CGFloat)
+    func segmentedControllerDidStartDragging()
+    func segmentedControllerDidEndScrolling()
+}
+
+public extension WSegmentedControllerDelegate {
+    func segmentedController(scrollOffsetChangedTo progress: CGFloat) {}
+    func segmentedControllerDidStartDragging() {}
+    func segmentedControllerDidEndScrolling() {}
+}
+
 @MainActor
 public class WSegmentedController: WTouchPassView {
-    
-    @MainActor public protocol Delegate: AnyObject {
-        func segmentedController(scrollOffsetChangedTo progress: CGFloat)
-        func segmentedControllerDidStartDragging()
-        func segmentedControllerDidEndScrolling()
-    }
-    
+
+    public typealias Delegate = WSegmentedControllerDelegate
+
     public enum AnimationSpeed {
         case fast
         case medium
         case slow
-        
+
         var duration: CGFloat {
             switch self {
             case .fast:
@@ -57,7 +66,7 @@ public class WSegmentedController: WTouchPassView {
         }
     }
     public var animationSpeed: AnimationSpeed
-    
+
     private static let notSelectedDefaultAttr = [
         NSAttributedString.Key.font: UIFont.systemFont(ofSize: 17, weight: .semibold),
         NSAttributedString.Key.foregroundColor: WTheme.secondaryLabel
@@ -66,103 +75,96 @@ public class WSegmentedController: WTouchPassView {
         NSAttributedString.Key.font: UIFont.systemFont(ofSize: 17, weight: .semibold),
         NSAttributedString.Key.foregroundColor: WTheme.primaryLabel
     ]
-    
+
     private let barHeight: CGFloat
     private let goUnderNavBar: Bool
-    private let constraintToTopSafeArea: Bool
     private let primaryTextColor: UIColor?
     private let secondaryTextColor: UIColor?
     private let capsuleFillColor: UIColor?
-    private var animator: ValueAnimator?
     public var delegate: Delegate?
-    
+
     public private(set) var model: SegmentedControlModel
-    
+
     public let blurView = WBlurView()
-    public var newSegmentedControl: WSegmentedControl!
-    
+    public var segmentedControl: WSegmentedControl!
+
     public var separator: UIView!
     public private(set) var scrollView: UIScrollView!
-    
+
     private(set) public var viewControllers: [WSegmentedControllerContent]!
 
     private var contentLeadingConstraint: NSLayoutConstraint!
     private var scrollViewWidthConstraint: NSLayoutConstraint!
 
-    public init(viewControllers: [WSegmentedControllerContent],
-                items: [SegmentedControlItem]? = nil,
-                defaultIndex: Int = 0,
+    public init(items: [SegmentedControlItem],
+                defaultItemId: String? = nil,
                 barHeight: CGFloat = 44,
                 goUnderNavBar: Bool = true,
                 animationSpeed: AnimationSpeed = .fast,
-                constraintToTopSafeArea: Bool = true,
                 primaryTextColor: UIColor? = nil,
                 secondaryTextColor: UIColor? = nil,
                 capsuleFillColor: UIColor? = nil,
                 delegate: Delegate? = nil) {
         self.barHeight = barHeight
         self.goUnderNavBar = goUnderNavBar
-        self.constraintToTopSafeArea = constraintToTopSafeArea
         self.animationSpeed = animationSpeed
         self.primaryTextColor = primaryTextColor
         self.secondaryTextColor = secondaryTextColor
         self.capsuleFillColor = capsuleFillColor
-        self.model = .init(items: items ?? [])
+        self.model = .init(items: items)
         self.delegate = delegate
         super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        let viewControllers = items.map(\.viewController)
+        self.viewControllers = viewControllers
         setupViews(viewControllers: viewControllers)
-        setupModel(viewControllers: viewControllers, selectedIndex: defaultIndex)
+        setupModel(viewControllers: viewControllers, selectedId: defaultItemId)
     }
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
-    private func setupModel(viewControllers: [WSegmentedControllerContent], selectedIndex: Int) {
+
+    private func setupModel(viewControllers: [WSegmentedControllerContent], selectedId: String?) {
         if !model.items.isEmpty {
-            model.selection = .init(item1: model.items[selectedIndex].id)
-        } else {
-            var items: [SegmentedControlItem] = []
-            var selectedId: String?
-            for (idx, vc) in viewControllers.enumerated() {
-                let item = SegmentedControlItem(
-                    index: idx,
-                    id: vc.title ?? "\(idx + 1)",
-                    content: AnyView(Text(vc.title ?? "\(idx + 1)"))
-                )
-                items.append(item)
-                if idx == selectedIndex {
-                    selectedId = item.id
-                }
-            }
-            model.setItems(items)
             if let selectedId {
                 model.selection = .init(item1: selectedId)
+            } else {
+                model.selection = .init(item1: model.items[0].id)
             }
         }
         model.primaryColor = primaryTextColor ?? WTheme.primaryLabel
         model.secondaryColor = secondaryTextColor ?? WTheme.secondaryLabel
         model.capsuleColor = capsuleFillColor ?? WTheme.thumbBackground
         model.onSelect = { [weak self] item in
-            self?.handleSegmentChange(to: item.index, animated: true)
+            guard let self else { return }
+            if let index = model.getItemIndexById(itemId: item.id) {
+                handleSegmentChange(to: index, animated: true)
+            }
         }
     }
-    
+
     private func setupViews(viewControllers: [WSegmentedControllerContent]) {
         self.viewControllers = viewControllers
 
         var constraints = [NSLayoutConstraint]()
 
-        // ScrollView is only used to position other views and have bounces. It's empty and views are its sibilings to prevent swipe to dismiss issues.
         scrollView = UIScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.canCancelContentTouches = true
         scrollView.delaysContentTouches = false
-        scrollView.decelerationRate = .init(rawValue: 0.998)
+        scrollView.decelerationRate = .fast
         scrollView.delegate = self
-        scrollView.isHidden = true
-//        scrollView.isPagingEnabled = true
+        scrollView.isPagingEnabled = true
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.alwaysBounceVertical = false
+        if #available(iOS 17.4, *) {
+            scrollView.bouncesVertically = false
+        }
+        if #available(iOS 26.0, *) {
+            scrollView.topEdgeEffect.isHidden = true
+        }
         addSubview(scrollView)
 
         // Add all view-controllers
@@ -172,24 +174,26 @@ public class WSegmentedController: WTouchPassView {
                 guard let self else {return}
                 onInnerScroll(y: y, animated: true)
             }
-            addSubview(viewController.view)
+            scrollView.addSubview(viewController.view)
             constraints.append(contentsOf: [
                 viewController.view.widthAnchor.constraint(equalTo: widthAnchor),
                 viewController.view.heightAnchor.constraint(equalTo: scrollView.heightAnchor),
+                viewController.view.topAnchor.constraint(equalTo: scrollView.topAnchor),
             ])
             if i == 0 {
-                contentLeadingConstraint = leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor)
+                contentLeadingConstraint = scrollView.contentLayoutGuide.leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor)
                 constraints.append(contentsOf: [
-                    viewController.view.topAnchor.constraint(equalTo: scrollView.topAnchor),
+                    // viewController.view.topAnchor.constraint(equalTo: scrollView.topAnchor),
                     contentLeadingConstraint,
                 ])
             } else {
                 let prevView = viewControllers[i - 1].view!
                 constraints.append(contentsOf: [
-                    viewController.view.topAnchor.constraint(equalTo: prevView.topAnchor),
+                    // viewController.view.topAnchor.constraint(equalTo: prevView.topAnchor),
                     viewController.view.leadingAnchor.constraint(equalTo: prevView.trailingAnchor),
                 ])
             }
+        
             viewController.scrollToTop(animated: false)
         }
 
@@ -203,18 +207,17 @@ public class WSegmentedController: WTouchPassView {
         scrollViewWidthConstraint = scrollView.contentLayoutGuide.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: CGFloat(viewControllers.count))
 
         constraints.append(contentsOf: [
-            separator.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: barHeight),
+            separator.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor,
+                                           constant: barHeight),
             separator.leftAnchor.constraint(equalTo: leftAnchor),
             separator.rightAnchor.constraint(equalTo: rightAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.33),
-            scrollView.contentLayoutGuide.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            scrollView.contentLayoutGuide.topAnchor.constraint(equalTo: scrollView.topAnchor),
-            scrollView.contentLayoutGuide.heightAnchor.constraint(lessThanOrEqualTo: scrollView.heightAnchor),
             scrollView.topAnchor.constraint(equalTo: topAnchor, constant: goUnderNavBar ? 0 : 44),
             scrollView.leftAnchor.constraint(equalTo: leftAnchor),
             scrollView.rightAnchor.constraint(equalTo: rightAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            scrollViewWidthConstraint
+            scrollView.contentLayoutGuide.heightAnchor.constraint(equalTo: scrollView.heightAnchor),
+            scrollViewWidthConstraint,
         ])
 
         blurView.alpha = 0
@@ -228,18 +231,18 @@ public class WSegmentedController: WTouchPassView {
 
         NSLayoutConstraint.activate(constraints)
 
-        newSegmentedControl = WSegmentedControl(model: model)
-        newSegmentedControl.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(newSegmentedControl)
+        segmentedControl = WSegmentedControl(model: model)
+        segmentedControl.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(segmentedControl)
 
         NSLayoutConstraint.activate([
-            newSegmentedControl.centerXAnchor.constraint(equalTo: centerXAnchor),
-            newSegmentedControl.topAnchor.constraint(
-                equalTo: constraintToTopSafeArea ? safeAreaLayoutGuide.topAnchor : topAnchor,
-                constant: barHeight == 56 ? 16 : (barHeight - 24) / 2 + 3
+            segmentedControl.centerXAnchor.constraint(equalTo: centerXAnchor),
+            segmentedControl.topAnchor.constraint(
+                equalTo: topAnchor,
+                constant: (barHeight - SegmentedControlConstants.height) / 2.0 + 3.0 - SegmentedControlConstants.topInset
             ),
-            newSegmentedControl.heightAnchor.constraint(equalToConstant: 24),
-            newSegmentedControl.widthAnchor.constraint(equalTo: widthAnchor)
+            segmentedControl.heightAnchor.constraint(equalToConstant: SegmentedControlConstants.fullHeight),
+            segmentedControl.widthAnchor.constraint(equalTo: widthAnchor)
         ])
 
         DispatchQueue.main.async { [self] in
@@ -248,31 +251,35 @@ public class WSegmentedController: WTouchPassView {
             }
         }
     }
-    
-    @MainActor
-    public func replace(viewControllers: [WSegmentedControllerContent], items: [SegmentedControlItem], force: Bool = false) {
+
+    public func replace(items: [SegmentedControlItem], force: Bool = false) {
+        let viewControllers = items.map(\.viewController)
+        
+        // Remember current selection and tray to restore it later. For the very first time
+        // if effectively would be resolved to the first item in the list
+        let oldSelectedID = model.selection?.effectiveSelectedItemID
+        
         UIView.performWithoutAnimation {
             let oldViewControllers = self.viewControllers ?? []
-            let oldSelected = selectedIndex.flatMap { oldViewControllers[$0] }
             let oldItems = model.items
-            
+
             if items == oldItems && zip(viewControllers, oldViewControllers).allSatisfy({ $0 === $1 }) && !force {
                 return
             }
-            
+
             var newSelected = 0
-            
+
             self.viewControllers = viewControllers
-            
+
             var constraints = [NSLayoutConstraint]()
-            
+
             for vc in oldViewControllers {
                 vc.view.removeFromSuperview()
             }
-            
+
             // Add all view-controllers
             for (i, viewController) in viewControllers.enumerated() {
-                if viewController === oldSelected {
+                if items[i].id == oldSelectedID {
                     newSelected = i
                 }
                 
@@ -281,22 +288,26 @@ public class WSegmentedController: WTouchPassView {
                     guard let self else {return}
                     onInnerScroll(y: y, animated: true)
                 }
-                addSubview(viewController.view)
+                scrollView.addSubview(viewController.view)
                 constraints.append(contentsOf: [
                     viewController.view.widthAnchor.constraint(equalTo: widthAnchor),
                     viewController.view.heightAnchor.constraint(equalTo: scrollView.heightAnchor),
+                    viewController.view.topAnchor.constraint(equalTo: scrollView.topAnchor),
                 ])
                 if i == 0 {
-                    contentLeadingConstraint = leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor)
+                    contentLeadingConstraint = scrollView.contentLayoutGuide.leadingAnchor.constraint(equalTo: viewController.view.leadingAnchor)
                     constraints.append(contentsOf: [
-                        viewController.view.topAnchor.constraint(equalTo: scrollView.topAnchor),
                         contentLeadingConstraint,
                     ])
                 } else {
                     let prevView = viewControllers[i - 1].view!
                     constraints.append(contentsOf: [
-                        viewController.view.topAnchor.constraint(equalTo: prevView.topAnchor),
                         viewController.view.leadingAnchor.constraint(equalTo: prevView.trailingAnchor),
+                    ])
+                }
+                if i == viewControllers.count - 1 {
+                    constraints.append(contentsOf: [
+                        viewController.view.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
                     ])
                 }
                 viewController.scrollToTop(animated: false)
@@ -308,20 +319,22 @@ public class WSegmentedController: WTouchPassView {
             scrollViewWidthConstraint = scrollView.contentLayoutGuide.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: CGFloat(viewControllers.count))
             scrollViewWidthConstraint.isActive = true
             
+            syncContentOffsetWitgSelectedItemIndex(newSelected)
+
             bringSubviewToFront(scrollView)
             bringSubviewToFront(separator)
             bringSubviewToFront(blurView)
-            bringSubviewToFront(newSegmentedControl)
+            bringSubviewToFront(segmentedControl)
             setNeedsLayout()
             layoutIfNeeded()
 
             DispatchQueue.main.async {
                 UIView.performWithoutAnimation {
                     self.model.setItems(items)
-                    self.model.onSelect(items[0])
-                    self.handleSegmentChange(to: 0, animated: false)
-                    self.delegate?.segmentedController(scrollOffsetChangedTo: CGFloat(0))
-                    
+                    self.model.onSelect(items[newSelected])
+                    self.handleSegmentChange(to: newSelected, animated: false)
+                    self.delegate?.segmentedController(scrollOffsetChangedTo: CGFloat(newSelected))
+
                     self.setNeedsLayout()
                     self.layoutIfNeeded()
                 }
@@ -329,29 +342,58 @@ public class WSegmentedController: WTouchPassView {
         }
     }
     
-    @objc func handleSegmentChange(to index: Int, animated: Bool) {
+    private func syncContentOffsetWitgSelectedItemIndex(_ selectedItemIndex: Int) {
+        let viewportWidth = scrollView.frame.width
+        if viewportWidth > 0 {
+            let targetPointX = CGFloat(selectedItemIndex) * viewportWidth
+            let progress = targetPointX / viewportWidth
+            delegate?.segmentedController(scrollOffsetChangedTo: progress)
+            scrollView.setContentOffset(CGPoint(x: targetPointX, y: 0), animated: false)
+        }
+    }
+
+    private var lastWidthForRecalculation: CGFloat = 0
+    
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+
+        let viewportWidth = scrollView.frame.width
+        guard viewportWidth > 0,
+            viewportWidth != lastWidthForRecalculation,
+            !scrollView.isDragging,
+            !scrollView.isDecelerating,
+            let selection = model.selection,
+            let index = model.getItemIndexById(itemId: selection.effectiveSelectedItemID) else {
+            return
+        }
+
+        lastWidthForRecalculation = viewportWidth
+        syncContentOffsetWitgSelectedItemIndex(index)
+    }
+
+    @objc public func handleSegmentChange(to index: Int, animated: Bool) {
         let targetPoint = CGPoint(x: CGFloat(index) * scrollView.frame.width, y: 0)
+        let progress = targetPoint.x / scrollView.frame.width
         if animated {
-            self.animator?.invalidate()
-            let animator = ValueAnimator(startValue: scrollView.contentOffset.x, endValue: targetPoint.x, duration: animationSpeed.duration)
-            animator.addUpdateBlock { progress, value in
-                self.scrollView.contentOffset = CGPoint(x: value, y: self.scrollView.contentOffset.y)
+            withAnimation(.spring(duration: 0.25)) {
+                segmentedControl.model.setRawProgress(progress)
             }
-            self.animator = animator
-            animator.start()
+            UIView.animateAdaptive(duration: animationSpeed.duration) { [self] in
+                scrollView.setContentOffset(targetPoint, animated: false)
+                delegate?.segmentedController(scrollOffsetChangedTo: progress)
+            }
         } else {
             scrollView.setContentOffset(targetPoint, animated: false)
-            updatePanGesture(index: index)
+            delegate?.segmentedController(scrollOffsetChangedTo: progress)
         }
-        self.viewControllers[index].view.addGestureRecognizer(scrollView.panGestureRecognizer)
         updateNavBar(index: index, animated: animated)
     }
-    
+
     private func onInnerScroll(y: CGFloat, animated: Bool) {
         if y > 0, separator.alpha == 0 {
             if animated {
                 UIView.animate(withDuration: 0.3) { [weak self] in
-                    guard let self else {return}
+                    guard let self else { return }
                     separator.alpha = 1
                     blurView.alpha = 1
                 }
@@ -372,36 +414,27 @@ public class WSegmentedController: WTouchPassView {
             }
         }
     }
-    
+
     public func updateTheme() {
     }
-    
+
     public func scrollToTop(animated: Bool) {
         if let selectedIndex {
             viewControllers?[selectedIndex].scrollToTop(animated: animated)
         }
     }
-    
+
     public var selectedIndex: Int? {
-        return newSegmentedControl?.model.selectedItem?.index
+        if let itemId =  segmentedControl?.model.selectedItem?.id {
+            return model.getItemIndexById(itemId: itemId)
+        }
+        return nil
     }
-    
+
     public func switchTo(tabIndex: Int) {
-        newSegmentedControl.model.setRawProgress(CGFloat(tabIndex))
+        segmentedControl.model.setRawProgress(CGFloat(tabIndex))
     }
-    
-    public func updatePanGesture(index: Int) {
-        viewControllers[index].view.addGestureRecognizer(scrollView.panGestureRecognizer)
-    }
-    public var panGestureEnabled: Bool {
-        get {
-            return scrollView.isScrollEnabled
-        }
-        set {
-            scrollView.isScrollEnabled = newValue
-        }
-    }
-    
+
     private func updateNavBar(index: Int, animated: Bool) {
         onInnerScroll(y: viewControllers[index].scrollPosition, animated: animated)
     }
@@ -409,52 +442,43 @@ public class WSegmentedController: WTouchPassView {
 
 extension WSegmentedController: UIScrollViewDelegate {
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView.frame.width > 0 else { return }
         let progress = scrollView.contentOffset.x / scrollView.frame.width
-        newSegmentedControl.model.setRawProgress(progress)
-        delegate?.segmentedController(scrollOffsetChangedTo: progress)
-        contentLeadingConstraint?.constant = scrollView.contentOffset.x
+        if scrollView.isDragging {
+            segmentedControl.model.setRawProgress(progress)
+            delegate?.segmentedController(scrollOffsetChangedTo: progress)
+        }
         if viewControllers.count >= 2 {
             let navAlpha = (viewControllers[0].scrollPosition > 0 ? 1 : 0) * (1 - progress) + (viewControllers[1].scrollPosition > 0 ? 1 : 0) * progress
             separator.alpha = navAlpha
             blurView.alpha = navAlpha
         }
     }
+    
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         delegate?.segmentedControllerDidStartDragging()
     }
+    
     public func scrollViewWillEndDragging(_ scrollView: UIScrollView,
                                           withVelocity velocity: CGPoint,
                                           targetContentOffset: UnsafeMutablePointer<CGPoint>) {
-        let pageWidth = scrollView.frame.width
-        let pageCount = viewControllers.count
-        let velocity = scrollView.panGestureRecognizer.velocity(in: scrollView)
-        let currentPage = scrollView.contentOffset.x / pageWidth
-        
-        var targetPage: Int
-        if abs(velocity.x) > 10 {
-            targetPage = velocity.x > 0 ? Int(floor(currentPage)) : Int(ceil(currentPage))
-        } else {
-            targetPage = Int(round(currentPage))
+        // sometimes, default pagination behavior skips pages (0 -> 1 -> 3 ?!)
+        if (targetContentOffset.pointee.x - scrollView.contentOffset.x) > scrollView.frame.width {
+            targetContentOffset.pointee.x -= scrollView.frame.width
+        } else if (targetContentOffset.pointee.x - scrollView.contentOffset.x) < -scrollView.frame.width {
+            targetContentOffset.pointee.x += scrollView.frame.width
         }
-        targetPage = max(0, min(targetPage, pageCount - 1))
-        let targetX = CGFloat(targetPage) * scrollView.frame.width
-
-        let isBouncingWithVelocity = velocity.x != 0 && (scrollView.contentOffset.x < 0 || (targetPage == pageCount - 1 && scrollView.contentOffset.x > targetX))
-        if !isBouncingWithVelocity {
-            targetContentOffset.pointee.x = scrollView.contentOffset.x
-            let deltaX = max(1, abs(targetX - scrollView.contentOffset.x))
-            self.animator?.invalidate()
-            let animator = ValueAnimator(startValue: scrollView.contentOffset.x, endValue: targetX, duration: animationSpeed.duration, initialVelocity: abs(velocity.x / deltaX))
-            animator.addUpdateBlock { progress, value in
-                scrollView.contentOffset = CGPoint(x: value, y: scrollView.contentOffset.y)
+        let progress = targetContentOffset.pointee.x / scrollView.frame.width
+        UIView.animateAdaptive(duration: animationSpeed.duration) { [self] in
+            withAnimation(.spring(duration: 0.25)) {
+                segmentedControl.model.setRawProgress(progress)
+                scrollView.setContentOffset(targetContentOffset.pointee, animated: false)
+                delegate?.segmentedController(scrollOffsetChangedTo: progress)
             }
-            animator.addCompletionBlock { [weak self] in
+        } completion: { [weak self] _ in
+            if !scrollView.isTracking {
                 self?.delegate?.segmentedControllerDidEndScrolling()
-                self?.updateNavBar(index: targetPage, animated: true)
             }
-            self.animator = animator
-            animator.start()
         }
-        updatePanGesture(index: targetPage)
     }
 }

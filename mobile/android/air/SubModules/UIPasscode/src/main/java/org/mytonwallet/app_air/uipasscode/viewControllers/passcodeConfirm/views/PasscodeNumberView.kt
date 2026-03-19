@@ -4,11 +4,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.Drawable
+import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
+import org.mytonwallet.app_air.uicomponents.extensions.crossFadeImage
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
-import org.mytonwallet.app_air.uicomponents.widgets.WImageView
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
@@ -42,9 +43,10 @@ class PasscodeNumberView(
         lbl
     }
 
-    private val imageView: WImageView by lazy {
-        val iv = WImageView(context)
-        iv
+    private val imageView: AppCompatImageView by lazy {
+        AppCompatImageView(context).apply {
+            id = generateViewId()
+        }
     }
 
     var customDrawable: Drawable? = null
@@ -113,14 +115,20 @@ class PasscodeNumberView(
         updateBackground()
     }
 
+    private var prevColor: Int? = null
+    private var prevRadius: Float? = null
     fun updateBackground() {
         val color = if (showMotionBackgroundDrawable)
             (if (light ?: ThemeManager.isDark) Color.WHITE else Color.BLACK).colorWithAlpha(20)
         else WColor.BackgroundRipple.color
         val radius = if (measuredWidth == measuredHeight) 40f.dp else 16f.dp
-        if (num != null) {
-            setBackgroundColor(0, radius)
-        } else {
+        if (prevColor == color && prevRadius == radius)
+            return
+        prevColor = color
+        prevRadius = radius
+        // Always set background first to avoid nested RippleDrawables on repeated calls
+        setBackgroundColor(0, radius)
+        if (num == null) {
             updateImage(false)
         }
         addRippleEffect(color, radius)
@@ -130,12 +138,11 @@ class PasscodeNumberView(
         isEnabled = customDrawable != null
         if (customDrawable == null) {
             if (isVisible && animated) {
+                imageView.animate().cancel()
                 imageView.fadeOut {
-                    if (customDrawable == null) {
-                        imageView.setImageDrawable(null)
-                        visibility = INVISIBLE
-                        imageView.alpha = 1f
-                    }
+                    imageView.setImageDrawable(null)
+                    visibility = INVISIBLE
+                    imageView.alpha = 1f
                 }
             } else {
                 visibility = INVISIBLE

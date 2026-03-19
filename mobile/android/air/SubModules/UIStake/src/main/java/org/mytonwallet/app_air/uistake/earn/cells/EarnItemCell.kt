@@ -22,6 +22,7 @@ import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.DateUtils
+import org.mytonwallet.app_air.walletbasecontext.utils.signSpace
 import kotlin.math.abs
 
 class EarnItemCell(context: Context) : WCell(context), WThemedView {
@@ -31,7 +32,7 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
 
     private val historyTitleLabel: WLabel by lazy {
         val wLabel = WLabel(context)
-        wLabel.setStyle(16f, WFont.Medium)
+        wLabel.setStyle(14f, WFont.DemiBold)
         wLabel.visibility = GONE
         wLabel.text = LocaleController.getString("History")
         wLabel
@@ -39,7 +40,7 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
 
     private val totalEarnedLabel: WSensitiveDataContainer<WLabel> by lazy {
         val wLabel = WLabel(context)
-        wLabel.setStyle(16f, WFont.Regular)
+        wLabel.setStyle(14f, WFont.Regular)
         WSensitiveDataContainer(
             wLabel,
             WSensitiveDataContainer.MaskConfig(
@@ -115,8 +116,6 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
         )
     }
 
-    private val separatorView = WBaseView(context)
-
     init {
         super.setupViews()
 
@@ -133,8 +132,6 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
         addView(itemDateLabel)
         addView(amountLabel)
         addView(fiatValueLabel)
-
-        addView(separatorView, LayoutParams(LayoutParams.MATCH_CONSTRAINT, 1))
 
         addRippleEffect(WColor.SecondaryBackground.color)
 
@@ -177,10 +174,6 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
             topToBottom(fiatValueLabel, amountLabel)
             endToEnd(fiatValueLabel, amountLabel)
             toBottom(fiatValueLabel, 9f)
-
-            toBottom(separatorView)
-            toEnd(separatorView, 16f)
-            toStart(separatorView, 72f)
         }
 
         updateTheme()
@@ -189,8 +182,8 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
     override fun updateTheme() {
         setBackgroundColor(
             WColor.Background.color,
-            if (isFirst) ViewConstants.BIG_RADIUS.dp else 0f.dp,
-            if (isLast) ViewConstants.BIG_RADIUS.dp else 0f.dp
+            if (isFirst) ViewConstants.BLOCK_RADIUS.dp else 0f.dp,
+            if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f.dp
         )
 
         historyTitleLabel.setTextColor(WColor.PrimaryText.color)
@@ -201,8 +194,6 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
 
         amountLabel.contentView.setTextColor(WColor.PrimaryText.color)
         fiatValueLabel.contentView.setTextColor(WColor.SecondaryText.color)
-
-        separatorView.setBackgroundColor(WColor.Separator.color)
     }
 
     // TODO:: Header should be a separate cell!
@@ -220,8 +211,8 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
         updateTheme()
 
         titleLabel.setTextIfChanged(item.getTitle())
-        if (item is EarnItem.Profit || item is EarnItem.ProfitGroup) {
-            amountLabel.contentView.text = "+${item.formattedAmount} $tokenSymbol"
+        if (item is EarnItem.Profit || item is EarnItem.ProfitGroup || item is EarnItem.Unstaked) {
+            amountLabel.contentView.text = "+$signSpace${item.formattedAmount} $tokenSymbol"
             amountLabel.contentView.setTextColor(WColor.Green.color)
             amountLabel.maskView.skin = SensitiveDataMaskView.Skin.GREEN
         } else {
@@ -245,7 +236,7 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
 
             val firstDate = DateUtils.formatDayMonth(item.profitItems.first().timestamp)
             val lastDate = DateUtils.formatDayMonth(item.profitItems.last().timestamp)
-            itemDateLabel.text = "$firstDate\u2025$lastDate"
+            itemDateLabel.text = "$firstDate…$lastDate"
         } else {
             groupIcon.visibility = GONE
             groupIconShadow1.visibility = GONE
@@ -268,8 +259,6 @@ class EarnItemCell(context: Context) : WCell(context), WThemedView {
             historyTitleLabel.visibility = GONE
             totalEarnedLabel.visibility = GONE
         }
-
-        separatorView.visibility = if (isLast) INVISIBLE else VISIBLE
 
         setOnClickListener {
             onTap()

@@ -26,20 +26,24 @@ import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.WalletContextManager
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.models.MBridgeError
 import org.mytonwallet.app_air.walletcore.moshi.ledger.MLedgerWalletInfo
+import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import java.lang.ref.WeakReference
 
 class LedgerWalletsVC(
     context: Context,
+    private val network: MBlockchainNetwork,
     discoveredWallets: List<MLedgerWalletInfo>
 ) :
     WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource, LedgerWalletsVM.Delegate {
+    override val TAG = "LedgerWallets"
 
     data class Item(
         val title: String?,
@@ -56,10 +60,11 @@ class LedgerWalletsVC(
     private val prevAccountsCount = WGlobalStorage.accountIds().size
 
     val accounts = WGlobalStorage.accountIds().mapNotNull { accountId ->
-        val accountObj = WGlobalStorage.getAccount(accountId)
-        accountObj?.let {
-            MAccount(accountId, accountObj)
-        }
+        val account = AccountStore.accountById(accountId)
+        if (account?.accountType != MAccount.AccountType.VIEW)
+            return@mapNotNull account
+        else
+            return@mapNotNull null
     }
 
     override val shouldDisplayBottomBar = true
@@ -84,7 +89,7 @@ class LedgerWalletsVC(
                 lockView()
                 this@apply.isLoading = true
                 this@apply.isEnabled = true
-                ledgerWalletsVM.finalizeImport(newlySelectedItems.map { it.wallet })
+                ledgerWalletsVM.finalizeImport(network, newlySelectedItems.map { it.wallet })
             }
         }
     }
@@ -168,7 +173,7 @@ class LedgerWalletsVC(
             topToTop(
                 bottomReversedCornerViewUpsideDown,
                 continueButton,
-                -20f - ViewConstants.BIG_RADIUS
+                -ViewConstants.GAP - ViewConstants.BLOCK_RADIUS
             )
             toBottom(bottomReversedCornerViewUpsideDown)
         }
@@ -277,7 +282,7 @@ class LedgerWalletsVC(
             else -> {
                 LedgerLoadMoreCell(context).apply {
                     onTap = {
-                        ledgerWalletsVM.loadMore(items.size)
+                        ledgerWalletsVM.loadMore(network, items.size)
                     }
                 }
             }

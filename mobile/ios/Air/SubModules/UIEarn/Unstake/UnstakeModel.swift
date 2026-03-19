@@ -12,7 +12,8 @@ import UIKit
 import UIComponents
 import WalletCore
 import WalletContext
-import UIPasscode
+import Perception
+import SwiftNavigation
 
 private let log = Log("StakeUnstakeModel")
 
@@ -23,23 +24,28 @@ private let log = Log("StakeUnstakeModel")
 //
 
 @MainActor
-final class UnstakeModel: ObservableObject, WalletCoreData.EventsObserver {
+@Perceptible
+final class UnstakeModel: WalletCoreData.EventsObserver {
     
+    @PerceptionIgnored
     let config: StakingConfig
+    @PerceptionIgnored
+    @AccountContext private var account: MAccount
     
-    public init(config: StakingConfig, stakingState: ApiStakingState) {
+    public init(config: StakingConfig, stakingState: ApiStakingState, accountContext: AccountContext) {
         self.config = config
         self.stakingState = stakingState
+        self._account = accountContext
         updateAccountBalances()
         WalletCoreData.add(eventObserver: self)
     }
     
     // MARK: External dependencies
     
-    @Published var stakingState: ApiStakingState
-    @Published var nativeBalance: BigInt = 0
-    @Published var stakedTokenBalance: BigInt = 0
-    var baseCurrency: MBaseCurrency { TokenStore.baseCurrency ?? .USD }
+    var stakingState: ApiStakingState
+    var nativeBalance: BigInt = 0
+    var stakedTokenBalance: BigInt = 0
+    var baseCurrency: MBaseCurrency { TokenStore.baseCurrency }
     
     public func walletCore(event: WalletCoreData.Event) {
         switch event {
@@ -51,8 +57,8 @@ final class UnstakeModel: ObservableObject, WalletCoreData.EventsObserver {
     }
     
     func updateAccountBalances() {
-        let nativeBalance = BalanceStore.currentAccountBalances[nativeTokenSlug] ?? 0
-        let stakedTokenBalance = StakingStore.currentAccount?.byStakedSlug(stakedTokenSlug)?.balance ?? .zero
+        let nativeBalance = $account.balances[nativeTokenSlug] ?? 0
+        let stakedTokenBalance = $account.stakingData?.byStakedSlug(stakedTokenSlug)?.balance ?? .zero
         self.nativeBalance = nativeBalance
         self.stakedTokenBalance = stakedTokenBalance
         
@@ -73,10 +79,17 @@ final class UnstakeModel: ObservableObject, WalletCoreData.EventsObserver {
     
     // User input
     
-    @Published var switchedToBaseCurrencyInput: Bool = false
-    @Published var amount: BigInt? = nil
-    @Published var amountInBaseCurrency: BigInt? = nil
-    @Published var isAmountFieldFocused: Bool = false
+    var switchedToBaseCurrencyInput: Bool = false
+    var amount: BigInt? = nil {
+        didSet {
+            if oldValue != amount {
+                draft = nil
+                draftAmount = nil
+            }
+        }
+    }
+    var amountInBaseCurrency: BigInt? = nil
+    var isAmountFieldFocused: Bool = false
     
     // Wallet state
     
@@ -85,32 +98,34 @@ final class UnstakeModel: ObservableObject, WalletCoreData.EventsObserver {
     var nativeTokenSlug: String { config.nativeTokenSlug }
     var stakedTokenSlug: String { config.stakedTokenSlug }
 
-    @Published var draft: ApiCheckTransactionDraftResult?
+    var draft: ApiCheckTransactionDraftResult?
+    var draftAmount: BigInt?
     
     var fee: MFee? {
         let stakeOperationFee = getStakeOperationFee(stakingType: stakingState.type, stakeOperation: .unstake).real
         return MFee(precision: .exact, terms: .init(token: nil, native: stakeOperationFee, stars: nil), nativeSum: stakeOperationFee)
     }
     
-    var tokenChain: ApiChain? { availableChain(slug: baseToken.chain) }
+    var tokenChain: ApiChain? { baseToken.chain }
     
     // Validation
 
-    @Published var insufficientFunds: Bool = false
+    var insufficientFunds: Bool = false
 
-    @Published var shouldRenderBalanceWithSmallFee = false
+    var shouldRenderBalanceWithSmallFee = false
     
     enum WithdrawalType {
         case instant
         case loading
         case timed(TimeInterval)
     }
-    @Published var withdrawalType: WithdrawalType = .instant
+    var withdrawalType: WithdrawalType = .instant
     
     var canContinue: Bool {
         !insufficientFunds && (amount ?? 0 > 0)
     }
     
+    @PerceptionIgnored
     private var observers: Set<AnyCancellable> = []
         
     // MARK: - View callbacks
@@ -131,17 +146,13 @@ final class UnstakeModel: ObservableObject, WalletCoreData.EventsObserver {
     func updateBaseCurrencyAmount(_ amount: BigInt?) {
         guard let amount else { return }
         let price = config.baseToken.price ?? 0
-        self.amountInBaseCurrency = if let baseCurrency = TokenStore.baseCurrency {
-            convertAmount(amount, price: price, tokenDecimals: baseToken.decimals, baseCurrencyDecimals: baseCurrency.decimalsCount)
-        } else {
-            0
-        }
+        self.amountInBaseCurrency = convertAmount(amount, price: price, tokenDecimals: baseToken.decimals, baseCurrencyDecimals: baseCurrency.decimalsCount)
         onAmountChanged?(amount)
     }
     
     func updateAmountFromBaseCurrency(_ baseCurrency: BigInt) {
         let price = config.baseToken.price ?? 0
-        let baseCurrencyDecimals = TokenStore.baseCurrency?.decimalsCount ?? 2
+        let baseCurrencyDecimals = self.baseCurrency.decimalsCount
         if price > 0 {
             self.amount = convertAmountReverse(baseCurrency, price: price, tokenDecimals: baseToken.decimals, baseCurrencyDecimals: baseCurrencyDecimals)
         } else {
@@ -152,23 +163,26 @@ final class UnstakeModel: ObservableObject, WalletCoreData.EventsObserver {
     }
 
     func updateFee() async {
-        if let accountId = AccountStore.accountId, let amount = amount {
-            do {
-                let draft: ApiCheckTransactionDraftResult = try await Api.checkUnstakeDraft(accountId: accountId, amount: amount, state: stakingState)
-                try handleDraftError(draft)
-                if Task.isCancelled {
-                    if self.draft == nil {
-                        self.draft = draft
-                    }
-                    return
-                }
-                self.draft = draft
-            } catch {
-                if !Task.isCancelled {
-                    topViewController()?.showAlert(error: error)
-                }
-                log.info("\(error)")
+        let accountId = $account.accountId
+        guard let amount = amount else {
+            draft = nil
+            draftAmount = nil
+            return
+        }
+        let requestAmount = amount
+        draft = nil
+        draftAmount = nil
+        do {
+            let draft: ApiCheckTransactionDraftResult = try await Api.checkUnstakeDraft(accountId: accountId, amount: requestAmount, state: stakingState)
+            try handleDraftError(draft)
+            guard !Task.isCancelled, self.amount == requestAmount else { return }
+            self.draft = draft
+            self.draftAmount = requestAmount
+        } catch {
+            if !Task.isCancelled {
+                AppActions.showError(error: error)
             }
+            log.info("\(error)")
         }
     }
 }

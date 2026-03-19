@@ -6,51 +6,63 @@ import UIKit
 import UIComponents
 import WalletCore
 import WalletContext
-
+import Perception
+import Dependencies
 
 public struct SendComposeView: View {
     
-    @ObservedObject var model: SendModel
+    let model: SendModel
     var isSensitiveDataHidden: Bool
-    var navigationBarInset: CGFloat
-    var onScrollPositionChange: (CGFloat) -> ()
             
-    @State private var addressFocused: Bool = false
     @State private var amountFocused: Bool = false
     
-    @Namespace private var ns
-    
     public var body: some View {
-        InsetList {
-            ToSection(isFocused: $addressFocused, onSubmit: onAddressSubmit)
-                .scrollPosition(ns: ns, offset: 8, callback: onScrollPositionChange)
-            AmountSection(focused: $amountFocused)
-            NftSection()
-            CommentOrMemoSection(commentIsEnrypted: $model.isMessageEncrypted, commentOrMemo: $model.comment)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Color.clear.frame(height: 60)
+        WithPerceptionTracking {
+            @Perception.Bindable var model = model
+            InsetList {
+                RecipientAddressSection(model: model.addressInput)
+                if !model.addressInput.isFocused {
+                    Group {
+                        if model.shouldShowDomainScamWarning {
+                            WarningView(
+                                text: lang("$domain_like_scam_warning", arg1: "[\(lang("$help_center_prepositional"))](\(model.domainScamHelpUrl.absoluteString))"),
+                                kind: .error
+                            )
+                            .padding(.horizontal, 16)
+                        }
+                        if model.shouldShowMultisigWarning {
+                            WarningView(
+                                header: lang("Multisig Wallet Detected"),
+                                text: lang("$multisig_warning_text", arg1: "[\(lang("$multisig_warning_link"))](\(model.seedPhraseScamHelpUrl.absoluteString))"),
+                                kind: .error
+                            )
+                            .padding(.horizontal, 16)
+                        }
+                        AmountSection(model: self.model, focused: $amountFocused)
+                        if model.shouldShowGasWarning {
+                            WarningView(
+                                text: lang("$seed_phrase_scam_warning", arg1: "[\(lang("$help_center_prepositional"))](\(model.seedPhraseScamHelpUrl.absoluteString))"),
+                                kind: .warning
+                            )
+                            .padding(.horizontal, 16)
+                        }
+                        NftSection(model: self.model)
+                        CommentOrMemoSection(model: self.model, commentIsEnrypted: $model.isMessageEncrypted, commentOrMemo: $model.comment)
+                    }
+                    .transition(.opacity.combined(with: .offset(y: 20)))
                 }
-        }
-        .coordinateSpace(name: ns)
-        .navigationBarInset(navigationBarInset)
-        .safeAreaInset(edge: .bottom) {
-            Color.clear.frame(height: 140)
-        }
-        .contentShape(.rect)
-        .onTapGesture {
-            model.onBackgroundTapped()
-        }
-
-        .navigationTitle(Text(lang("Send")))
-        .environment(\.isSensitiveDataHidden, isSensitiveDataHidden)
-        .environmentObject(model)
-
-        .onChange(of: addressFocused) { focus in
-            model.validateAddressOrDomain(nil, tokenSlug: nil)
-        }
-        .onAppear {
-            if model.addressOrDomain != "" {
-                model.validateAddressOrDomain(model.addressOrDomain, tokenSlug: model.tokenSlug)
+            }
+            .scrollIndicators(.hidden)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: 60)
+            }
+            .animation(.default, value: model.addressInput.isFocused)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 140)
+            }
+            .contentShape(.rect)
+            .onTapGesture {
+                endEditing()
             }
         }
     }
@@ -60,147 +72,105 @@ public struct SendComposeView: View {
     }
 }
 
-
 // MARK: -
 
+struct SendComposeTitleView: View {
+    var onSellTapped: () -> Void
+    var onMultisendTapped: () -> Void
 
-fileprivate struct ToSection: View {
-    
-    @Binding var isFocused: Bool
-    var onSubmit: () -> ()
-    
-    @EnvironmentObject private var model: SendModel
-    
-    private var showName: Bool {
-        if model.draftData.address == model.addressOrDomain,
-           let name = model.draftData.transactionDraft?.addressName,
-           !name.isEmpty,
-           name != model.draftData.address
-        {
-            return true
-        }
-        return false
-    }
-    private var showResolvedAddress: Bool {
-        if model.draftData.address == model.addressOrDomain,
-           model.draftData.transactionDraft?.resolvedAddress != model.draftData.address {
-            return true
-        }
-        return false
-    }
+    @State private var menuContext = MenuContext()
+
+    private let titleFont = Font.system(size: 14, weight: .medium)
 
     var body: some View {
-        InsetSection {
-            InsetCell {
-                HStack {
-                    AddressTextField(
-                        value: $model.addressOrDomain,
-                        isFocused: $isFocused,
-                        onNext: {
-                            onSubmit()
-                        }
-                    )
-                    .offset(y: 1)
-                    .background(alignment: .leading) {
-                        if model.addressOrDomain.isEmpty {
-                            Text(lang("Wallet address or domain"))
-                                .foregroundStyle(Color(UIColor.placeholderText))
-                        }
-                    }
-                    
-                    if model.addressOrDomain.isEmpty {
-                        HStack(spacing: 12) {
-                            Button(action: { model.onAddressPastePressed() }) {
-                                Text(lang("Paste"))
-                            }
-                            Button(action: { model.onScanPressed() }) {
-                                Image("ScanIcon", bundle: AirBundle)
-                                    .renderingMode(.template)
-                            }
-                        }
-                        .offset(x: 4)
-                        .padding(.vertical, -1)
-                    } else {
-                        Button(action: { model.addressOrDomain = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .tint(Color(WTheme.secondaryLabel))
-                                .scaleEffect(0.9)
-                        }
-                    }
-                }
-                .buttonStyle(.borderless)
+        
+        let showSell = !ConfigStore.shared.shouldRestrictSell
+        
+        HStack(spacing: 12) {
+            HStack(spacing: 4) {
+                Text(lang("Send"))
+                Image.airBundle("ArrowUpDownSmall").opacity(0.5)
             }
-            .contentShape(.rect)
-            .onTapGesture {
-                isFocused = true
-            }
-        } header: {
-            Text(lang("Send to"))
-        } footer: {
-            footer
-        }
-        .onAppear {
-            if model.addressOrDomain.isEmpty {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                    isFocused = true
+            .fixedSize(horizontal: true, vertical: false)
+            .font(titleFont)
+            .foregroundColor(Color(WTheme.primaryLabel))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color(WTheme.secondaryLabel).opacity(0.12))
+            .clipShape(Capsule())
+            .menuSource(menuContext: menuContext)
+            .onAppear { configureMenu() }
+            
+            if showSell {
+                Button(action: onSellTapped) {
+                    Text(lang("Sell"))
+                        .font(titleFont)
+                        .foregroundStyle(Color(WTheme.secondaryLabel))
                 }
             }
         }
     }
     
-    @ViewBuilder
-    var footer: some View {
-        if let name = model.toAddressDraft?.addressName, showName {
-            Text(verbatim: name)
-        } else if let resolvedAddress = model.resolvedAddress, showResolvedAddress {
-            Text(AttributedString(formatAddressAttributed(
-                resolvedAddress,
-                startEnd: true,
-                primaryFont: .systemFont(ofSize: 13, weight: .regular),
-                secondaryFont: .systemFont(ofSize: 13, weight: .regular),
-                primaryColor: WTheme.secondaryLabel,
-                secondaryColor: WTheme.secondaryLabel
-            )))
+    private func configureMenu() {
+        menuContext.makeConfig = {
+            MenuConfig(menuItems: [
+                MenuItem.button(id: "0-multisend", title: lang("Multisend"), trailingIcon: .air("MenuMultisend26")) {
+                    onMultisendTapped()
+                }
+            ])
         }
-
     }
 }
-
 
 // MARK: -
 
 fileprivate struct AmountSection: View {
     
+    let model: SendModel
     @Binding var focused: Bool
     
-    @EnvironmentObject private var model: SendModel
-    
     var body: some View {
-        if model.nftSendMode == nil {
-            TokenAmountEntrySection(
-                amount: $model.amount,
-                token: model.token,
-                balance: model.maxToSend,
-                insufficientFunds: model.insufficientFunds,
-                amountInBaseCurrency: $model.amountInBaseCurrency,
-                switchedToBaseCurrencyInput: $model.switchedToBaseCurrencyInput,
-                fee: model.showingFee,
-                explainedFee: model.explainedTransferFee,
-                isFocused: $focused,
-                onTokenSelect: model.onTokenTapped,
-                onUseAll: model.onUseAll
-            )
-            .onChange(of: model.amount) { amount in
-                if let amount, model.switchedToBaseCurrencyInput == false {
-                    model.updateBaseCurrencyAmount(amount)
+        WithPerceptionTracking {
+            @Perception.Bindable var model = model
+            if !model.mode.isNftRelated {
+                TokenAmountEntrySection(
+                    amount: $model.amount,
+                    token: model.token,
+                    balance: model.maxToSend?.amount,
+                    insufficientFunds: model.insufficientFunds,
+                    amountInBaseCurrency: $model.amountInBaseCurrency,
+                    switchedToBaseCurrencyInput: $model.switchedToBaseCurrencyInput,
+                    fee: model.showingFee,
+                    explainedFee: model.explainedTransferFee,
+                    isFocused: $focused,
+                    onTokenSelect: onTokenTapped,
+                    onUseAll: model.onUseAll
+                )
+                .onChange(of: model.amount) { amount in
+                    if let amount, model.switchedToBaseCurrencyInput == false {
+                        model.updateBaseCurrencyAmount(amount)
+                    }
                 }
-            }
-            .onChange(of: model.amountInBaseCurrency) { baseCurrencyAmount in
-                if let baseCurrencyAmount, model.switchedToBaseCurrencyInput == true {
-                    model.updateAmountFromBaseCurrency(baseCurrencyAmount)
+                .onChange(of: model.amountInBaseCurrency) { baseCurrencyAmount in
+                    if let baseCurrencyAmount, model.switchedToBaseCurrencyInput == true {
+                        model.updateAmountFromBaseCurrency(baseCurrencyAmount)
+                    }
                 }
             }
         }
+    }
+    
+    func onTokenTapped() {
+        let walletTokens = model.$account.balances.map { (key: String, value: BigInt) in
+            MTokenBalance(tokenSlug: key, balance: value, isStaking: false)
+        }
+        let vc = SendCurrencyVC(accountId: model.account.id, isMultichain: model.account.isMultichain, walletTokens: walletTokens, currentTokenSlug: model.token.slug, onSelect: { token in })
+        vc.onSelect = { [weak model] newToken in
+            model?.onTokenSelected(newToken: newToken)
+            topViewController()?.dismiss(animated: true)
+        }
+        let nav = WNavigationController(rootViewController: vc)
+        topViewController()?.present(nav, animated: true)
     }
 }
 
@@ -210,19 +180,21 @@ fileprivate struct AmountSection: View {
 
 internal struct NftSection: View {
 
-    @EnvironmentObject private var model: SendModel
+    let model: SendModel
 
+    @Dependency(\.tokenStore) private var tokenStore
+    
     var body: some View {
-        if let nfts = model.nfts, nfts.count > 0 {
-            InsetSection {
-                ForEach(nfts, id: \.id) { nft in
-                    NftPreviewRow(nft: nft)
-                }
-            } header: {
-                Text("^[\(nfts.count) Assets](inflect: true)")
-            } footer: {
-                if let token = model.token, let nativeToken = token.availableChain?.nativeToken {
-                    FeeView(token: token, nativeToken: nativeToken, fee: model.showingFee, explainedTransferFee: nil, includeLabel: true)
+        WithPerceptionTracking {
+            if let nfts = model.nfts, nfts.count > 0 {
+                InsetSection {
+                    ForEach(nfts, id: \.id) { nft in
+                        NftPreviewRow(nft: nft)
+                    }
+                } header: {
+                    Text("^[\(nfts.count) Assets](inflect: true)")
+                } footer: {
+                    FeeView(token: model.token, nativeToken: tokenStore.getNativeToken(chain: model.token.chain), fee: model.showingFee, explainedTransferFee: nil, includeLabel: true)
                 }
             }
         }
@@ -233,19 +205,21 @@ internal struct NftSection: View {
 
 
 private struct CommentOrMemoSection: View {
+    
+    let model: SendModel
 
     @Binding var commentIsEnrypted: Bool
     @Binding var commentOrMemo: String
-    
-    @EnvironmentObject private var model: SendModel
 
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        if model.binaryPayload?.nilIfEmpty != nil {
-            binaryPayloadSection
-        } else {
-            commentSection
+        WithPerceptionTracking {
+            if model.binaryPayload?.nilIfEmpty != nil {
+                binaryPayloadSection
+            } else {
+                commentSection
+            }
         }
     }
     
@@ -254,7 +228,7 @@ private struct CommentOrMemoSection: View {
         InsetSection {
             InsetCell {
                 TextField(
-                    model.isCommentRequired ? lang("Add comment or memo") : lang("Add a message, if needed"),
+                    model.isCommentRequired ? lang("Required") : lang("Optional"),
                     text: $commentOrMemo,
                     axis: .vertical
                 )
@@ -270,7 +244,6 @@ private struct CommentOrMemoSection: View {
                 Menu {
                     Button(action: {
                         commentIsEnrypted = false
-                        model.validateAddressOrDomain(nil, tokenSlug: nil)
                     }) {
                         Text(lang("Comment or Memo"))
                             .textCase(nil)
@@ -278,7 +251,6 @@ private struct CommentOrMemoSection: View {
                     
                     Button(action: {
                         commentIsEnrypted = true
-                        model.validateAddressOrDomain(nil, tokenSlug: nil)
                     }) {
                         Text(lang("Encrypted Message"))
                             .textCase(nil)
@@ -288,13 +260,14 @@ private struct CommentOrMemoSection: View {
                     HStack(spacing: 2) {
                         Text(commentIsEnrypted == false ? lang("Comment or Memo") : lang("Encrypted Message"))
                         Image(systemName: "chevron.down")
+                            .imageScale(.small)
                             .scaleEffect(0.8)
+                            .offset(y: 1.333)
                     }
                     .padding(.trailing, 16)
                     .contentShape(.rect)
                     .foregroundStyle(.secondary)
                     .tint(.primary)
-                    .font(.footnote)
                     .padding(.vertical, 2)
                 }
                 .padding(.vertical, -2)

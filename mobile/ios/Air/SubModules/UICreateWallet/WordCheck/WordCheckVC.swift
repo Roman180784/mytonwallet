@@ -6,14 +6,12 @@
 //
 
 import UIKit
-import UIHome
 import UIPasscode
 import UIComponents
 import SwiftUI
-import WalletCore
 import WalletContext
 
-class WordCheckVC: WViewController {
+class WordCheckVC: CreateWalletBaseVC {
 
     private var introModel: IntroModel
     private var model: WordCheckModel
@@ -38,10 +36,6 @@ class WordCheckVC: WViewController {
     
     func setupViews() {
         
-        addNavigationBar(
-            addBackButton: weakifyGoBack(),
-        )
-        
         hostingController = addHostingController(makeView(), constraints: .fill)
         
         bringNavigationBarToFront()
@@ -53,8 +47,6 @@ class WordCheckVC: WViewController {
         WordCheckView(
             introModel: introModel,
             model: model,
-            navigationBarInset: navigationBarHeight,
-            onScroll: weakifyUpdateProgressiveBlur(),
         )
     }
     
@@ -68,7 +60,7 @@ class WordCheckVC: WViewController {
 @available(iOS 18.0, *)
 #Preview {
     WordCheckVC(
-        introModel: IntroModel(password: nil),
+        introModel: IntroModel(network: .mainnet, password: nil),
         words: [
             "word 1", "word 2", "word 3", "word 4",
             "word 5", "word 6", "word 7", "word 8",

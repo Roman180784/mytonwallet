@@ -16,7 +16,7 @@ extension Api {
 
 // MARK: - Types
 
-public struct ApiNotificationAddress: Encodable {
+public struct ApiNotificationAddress: Encodable, Sendable {
     public let title: String?
     public let address: String
     public let chain: ApiChain
@@ -28,19 +28,21 @@ public struct ApiNotificationAddress: Encodable {
     }
 }
 
-public struct ApiSubscribeNotificationsProps: Encodable {
+public struct ApiSubscribeNotificationsProps: Encodable, Sendable {
     public let userToken: String
     public let platform: CapacitorPlatform
+    public let langCode: String
     public let addresses: [ApiNotificationAddress]
 
-    public init(userToken: String, platform: CapacitorPlatform, addresses: [ApiNotificationAddress]) {
+    public init(userToken: String, platform: CapacitorPlatform, langCode: String, addresses: [ApiNotificationAddress]) {
         self.userToken = userToken
         self.platform = platform
+        self.langCode = langCode
         self.addresses = addresses
     }
 }
 
-public struct ApiSubscribeNotificationsResult: Decodable {
+public struct ApiSubscribeNotificationsResult: Decodable, Sendable {
     public let ok: Bool
     public let addressKeys: [String: ApiNotificationsAccountValue]
 }
@@ -51,7 +53,7 @@ public enum CapacitorPlatform: String, Equatable, Hashable, Codable, Sendable {
     case android = "android"
 }
 
-public struct ApiUnsubscribeNotificationsProps: Encodable {
+public struct ApiUnsubscribeNotificationsProps: Encodable, Sendable {
     public let userToken: String
     public let addresses: [ApiNotificationAddress]
 

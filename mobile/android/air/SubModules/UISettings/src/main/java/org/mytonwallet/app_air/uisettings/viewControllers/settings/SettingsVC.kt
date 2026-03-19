@@ -1,40 +1,41 @@
 package org.mytonwallet.app_air.uisettings.viewControllers.settings
 
 import android.content.Context
+import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.FrameLayout
 import androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
+import androidx.core.view.doOnLayout
 import androidx.core.view.setPadding
 import androidx.recyclerview.widget.RecyclerView
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
+import org.mytonwallet.app_air.uicomponents.base.WNavigationController.PresentationConfig
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.base.WViewController
-import org.mytonwallet.app_air.uicomponents.base.showAlert
 import org.mytonwallet.app_air.uicomponents.commonViews.ReversedCornerView
+import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.helpers.AccountDialogHelpers
 import org.mytonwallet.app_air.uicomponents.helpers.LinearLayoutManagerAccurateOffset
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
-import org.mytonwallet.app_air.uicomponents.widgets.WEditText
 import org.mytonwallet.app_air.uicomponents.widgets.WImageButton
 import org.mytonwallet.app_air.uicomponents.widgets.WProtectedView
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
-import org.mytonwallet.app_air.uicomponents.widgets.addRippleEffect
-import org.mytonwallet.app_air.uicomponents.widgets.dialog.WDialog
-import org.mytonwallet.app_air.uicomponents.widgets.dialog.WDialogButton
-import org.mytonwallet.app_air.uicomponents.widgets.hideKeyboard
+import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
-import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.uiinappbrowser.InAppBrowserVC
 import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeConfirmVC
-import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeViewState
+import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeViewState.Default
 import org.mytonwallet.app_air.uireceive.ReceiveVC
+import org.mytonwallet.app_air.uisettings.viewControllers.appInfo.AppInfoVC
 import org.mytonwallet.app_air.uisettings.viewControllers.appearance.AppearanceVC
 import org.mytonwallet.app_air.uisettings.viewControllers.assetsAndActivities.AssetsAndActivitiesVC
 import org.mytonwallet.app_air.uisettings.viewControllers.connectedApps.ConnectedAppsVC
+import org.mytonwallet.app_air.uisettings.viewControllers.debugMenu.DebugMenuVC
 import org.mytonwallet.app_air.uisettings.viewControllers.language.LanguageVC
 import org.mytonwallet.app_air.uisettings.viewControllers.notificationSettings.NotificationSettingsVC
 import org.mytonwallet.app_air.uisettings.viewControllers.security.SecurityVC
@@ -45,68 +46,75 @@ import org.mytonwallet.app_air.uisettings.viewControllers.settings.cells.Setting
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.cells.SettingsVersionCell
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.models.SettingsItem
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.views.SettingsHeaderView
+import org.mytonwallet.app_air.uisettings.viewControllers.userResponsibility.UserResponsibilityVC
 import org.mytonwallet.app_air.uisettings.viewControllers.walletVersions.WalletVersionsVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.logger.LogMessage
+import org.mytonwallet.app_air.walletbasecontext.logger.LogMessage.Builder
 import org.mytonwallet.app_air.walletbasecontext.logger.Logger
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
-import org.mytonwallet.app_air.walletbasecontext.utils.toProcessedSpannableStringBuilder
 import org.mytonwallet.app_air.walletcontext.WalletContextManager
-import org.mytonwallet.app_air.walletcontext.cacheStorage.WCacheStorage
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.helpers.BiometricHelpers
-import org.mytonwallet.app_air.walletcontext.secureStorage.WSecureStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
+import org.mytonwallet.app_air.walletcontext.models.MWalletSettingsViewMode
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
+import org.mytonwallet.app_air.walletcore.WalletEvent.AccountChangedInApp
 import org.mytonwallet.app_air.walletcore.api.activateAccount
-import org.mytonwallet.app_air.walletcore.api.removeAccount
-import org.mytonwallet.app_air.walletcore.api.resetAccounts
+import org.mytonwallet.app_air.walletcore.helpers.ExplorerHelpers
 import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
-import org.mytonwallet.app_air.walletcore.models.MAccount
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiUpdate
-import org.mytonwallet.app_air.walletcore.pushNotifications.AirPushNotifications
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
-import org.mytonwallet.app_air.walletcore.stores.ActivityStore
-import org.mytonwallet.app_air.walletcore.stores.AddressStore
-import org.mytonwallet.app_air.walletcore.stores.BalanceStore
-import org.mytonwallet.app_air.walletcore.stores.DappsStore
-import org.mytonwallet.app_air.walletcore.stores.NftStore
-import org.mytonwallet.app_air.walletcore.stores.StakingStore
 import java.lang.ref.WeakReference
 
 class SettingsVC(context: Context) : WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource,
     WalletCore.EventObserver, WalletCore.UpdatesObserver,
     WProtectedView {
+    override val TAG = "Settings"
+
+    private val moreButtonRipple = WRippleDrawable.create(20f.dp)
 
     companion object {
+        val TIP_URLS = mapOf(
+            "en" to "MyTonWalletTips",
+            "ru" to "MyTonWalletTipsRu"
+        )
         val HEADER_CELL = WCell.Type(1)
-        val ACCOUNT_CELL = WCell.Type(2)
-        val ITEMS_CELL = WCell.Type(3)
-        val VERSION_CELL = WCell.Type(4)
+        val SECTION_HEADER_CELL = WCell.Type(2)
+        val ACCOUNT_CELL = WCell.Type(3)
+        val ITEMS_CELL = WCell.Type(4)
+        val VERSION_CELL = WCell.Type(5)
     }
 
     override val topBarConfiguration: ReversedCornerView.Config
-        get() = super.topBarConfiguration.copy(forceSeparator = true)
+        get() = super.topBarConfiguration.copy(blurRootView = recyclerView, forceSeparator = true)
     override val topBlurViewGuideline: View
         get() = headerView
 
     private val px104 = 104.dp
-
     private val px52 = 52.dp
 
     override val isSwipeBackAllowed: Boolean = false
 
     private val settingsVM = SettingsVM()
+    private var pendingReload = false
 
     private val rvAdapter =
         WRecyclerViewAdapter(
             WeakReference(this),
-            arrayOf(HEADER_CELL, ACCOUNT_CELL, ITEMS_CELL, VERSION_CELL)
+            arrayOf(
+                HEADER_CELL,
+                SECTION_HEADER_CELL,
+                ACCOUNT_CELL,
+                ITEMS_CELL,
+                VERSION_CELL
+            )
         ).apply {
             setHasStableIds(true)
         }
@@ -151,7 +159,12 @@ class SettingsVC(context: Context) : WViewController(context),
         btn.setPadding(8.dp)
         btn.setOnClickListener {
             val navVC = WNavigationController(window!!)
-            navVC.setRoot(ReceiveVC(context))
+            navVC.setRoot(
+                ReceiveVC(
+                    context,
+                    AccountStore.activeAccount?.firstChain ?: MBlockchain.ton
+                )
+            )
             window?.present(navVC)
         }
         btn
@@ -159,6 +172,7 @@ class SettingsVC(context: Context) : WViewController(context),
 
     private val moreButton: WImageButton by lazy {
         val btn = WImageButton(context)
+        btn.background = moreButtonRipple
         btn.setPadding(8.dp)
         btn.setOnClickListener {
             WMenuPopup.present(
@@ -172,24 +186,17 @@ class SettingsVC(context: Context) : WViewController(context),
                     },
                     WMenuPopup.Item(
                         org.mytonwallet.app_air.icons.R.drawable.ic_exit,
-                        LocaleController.getString("Log Out")
+                        LocaleController.getString("Sign Out")
                     ) {
-                        window?.topViewController?.showAlert(
-                            LocaleController.getString("Sign Out"),
-                            LocaleController.getString("\$logout_warning")
-                                .toProcessedSpannableStringBuilder(),
-                            LocaleController.getString("Log Out"),
-                            {
-                                signOutPressed()
-                            },
-                            LocaleController.getString("Cancel"),
-                            preferPrimary = false,
-                            primaryIsDanger = true
-                        )
+                        window?.let { window ->
+                            AccountStore.activeAccount?.let { account ->
+                                AccountDialogHelpers.presentSignOut(window, account)
+                            }
+                        }
                     }
                 ),
                 popupWidth = WRAP_CONTENT,
-                aboveView = true
+                positioning = WMenuPopup.Positioning.ALIGNED
             )
         }
         btn
@@ -203,9 +210,9 @@ class SettingsVC(context: Context) : WViewController(context),
 
         recyclerView.setPadding(
             ViewConstants.HORIZONTAL_PADDINGS.dp,
-            0,
+            recyclerView.paddingTop,
             ViewConstants.HORIZONTAL_PADDINGS.dp,
-            navigationController?.getSystemBars()?.bottom ?: 0
+            recyclerView.paddingBottom
         )
 
         view.addView(recyclerView, ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -234,22 +241,40 @@ class SettingsVC(context: Context) : WViewController(context),
                 qrButton,
                 (navigationController?.getSystemBars()?.top ?: 0) + ViewConstants.GAP.dp
             )
-            toEnd(qrButton, 64f)
+            toEnd(qrButton, 56f)
         }
 
         updateTheme()
 
         WalletCore.doOnBridgeReady {
-            settingsVM.fillOtherAccounts()
-            settingsVM.updateWalletConfigSection()
-            settingsVM.updateWalletDataSection()
+            settingsVM.fillOtherAccounts(async = false)
+            settingsVM.updateSettingsSection()
+            settingsVM.updateHelpSection()
+            reloadData()
+        }
+    }
+
+    override fun viewWillAppear() {
+        super.viewWillAppear()
+        if (pendingReload) {
+            updatePadding()
             rvAdapter.reloadData()
+            pendingReload = false
         }
     }
 
     override fun viewDidAppear() {
         super.viewDidAppear()
         headerView.viewDidAppear()
+    }
+
+    override fun viewDidEnterForeground() {
+        super.viewDidEnterForeground()
+        if (pendingReload) {
+            updatePadding()
+            rvAdapter.reloadData()
+            pendingReload = false
+        }
     }
 
     override fun viewWillDisappear() {
@@ -259,8 +284,9 @@ class SettingsVC(context: Context) : WViewController(context),
 
     override fun updateTheme() {
         super.updateTheme()
-        view.setBackgroundColor(WColor.SecondaryBackground.color)
-        rvAdapter.reloadData()
+        recyclerView.setBackgroundColor(WColor.SecondaryBackground.color)
+        if (headerView.parent == headerCell)
+            headerView.updateTheme()
 
         val moreDrawable =
             ContextCompat.getDrawable(
@@ -271,7 +297,7 @@ class SettingsVC(context: Context) : WViewController(context),
             }
 
         moreButton.setImageDrawable(moreDrawable)
-        moreButton.addRippleEffect(WColor.BackgroundRipple.color, 20f.dp)
+        moreButtonRipple.rippleColor = WColor.BackgroundRipple.color
 
         val qrDrawable =
             ContextCompat.getDrawable(
@@ -284,17 +310,12 @@ class SettingsVC(context: Context) : WViewController(context),
     }
 
     override fun updateProtectedView() {
-        rvAdapter.reloadData()
+        reloadData()
     }
 
     override fun insetsUpdated() {
         super.insetsUpdated()
-        recyclerView.setPadding(
-            ViewConstants.HORIZONTAL_PADDINGS.dp,
-            0,
-            ViewConstants.HORIZONTAL_PADDINGS.dp,
-            navigationController?.getSystemBars()?.bottom ?: 0
-        )
+        updatePadding()
         if (headerView.parent == headerCell)
             headerCell?.setConstraints {
                 toCenterX(headerView, -ViewConstants.HORIZONTAL_PADDINGS.toFloat())
@@ -306,20 +327,24 @@ class SettingsVC(context: Context) : WViewController(context),
         recyclerView.layoutManager?.smoothScrollToPosition(recyclerView, null, 0)
     }
 
+    private var isReparenting = false
+
     private fun updateScroll(dy: Int) {
         headerView.updateScroll(dy)
+        if (isReparenting) return
         if (dy > 0) {
             if (headerView.parent == headerCell) {
-                view.post {
-                    if (headerView.parent == headerCell) {
-                        topReversedCornerView?.alpha = 1f
-                        headerCell?.removeView(headerView)
-                        view.addView(headerView, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-                        navigationBar?.bringToFront()
-                        topBlurViewGuideline.bringToFront()
-                        moreButton.bringToFront()
-                        qrButton.bringToFront()
-                    }
+                isReparenting = true
+                try {
+                    topReversedCornerView?.alpha = 1f
+                    headerCell?.removeView(headerView)
+                    view.addView(headerView, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+                    navigationBar?.bringToFront()
+                    topBlurViewGuideline.bringToFront()
+                    moreButton.bringToFront()
+                    qrButton.bringToFront()
+                } finally {
+                    isReparenting = false
                 }
             }
         } else {
@@ -360,117 +385,10 @@ class SettingsVC(context: Context) : WViewController(context),
         return false
     }
 
-    private fun signOutPressed() {
-        val accountIds = WGlobalStorage.accountIds()
-        if (accountIds.size < 2) {
-            // it is the last account id, delete all data and restart app
-            removeAllWallets()
-        } else {
-            val removingAccount = AccountStore.activeAccount!!
-            removeWallet(removingAccount)
-        }
-    }
-
-    private fun removeWallet(removingAccount: MAccount) {
-        val removingAccountId = removingAccount.accountId
-        val accountIds = WGlobalStorage.accountIds()
-        val nextAccountId = accountIds.find { it !== AccountStore.activeAccountId }!!
-        WalletCore.removeAccount(removingAccountId, nextAccountId) { done, error ->
-            if (done == true) {
-                Logger.d(Logger.LogTag.ACCOUNT, "Remove account: $removingAccountId")
-                ActivityStore.removeAccount(removingAccountId)
-                DappsStore.removeAccount(removingAccountId)
-                NftStore.setNfts(
-                    null,
-                    removingAccountId,
-                    notifyObservers = false,
-                    isReorder = false
-                )
-                WGlobalStorage.removeAccount(removingAccountId)
-                StakingStore.setStakingState(removingAccountId, null)
-                BalanceStore.removeBalances(removingAccountId)
-                WCacheStorage.clean(removingAccountId)
-                AirPushNotifications.unsubscribe(removingAccount) {}
-                WalletCore.activateAccount(
-                    nextAccountId,
-                    notifySDK = false
-                ) { activeAccount, err ->
-                    if (activeAccount == null || err != null) {
-                        removeAllWallets()
-                        return@activateAccount
-                    }
-                    WalletCore.notifyEvent(WalletEvent.AccountChangedInApp)
-                }
-            } else {
-                showError(error)
-            }
-        }
-    }
-
-    private fun removeAllWallets() {
-        view.lockView()
-        AccountStore.activeAccount?.let { acc ->
-            AirPushNotifications.unsubscribe(acc) {}
-        }
-        WalletCore.resetAccounts { ok, err ->
-            if (ok != true || err != null) {
-                view.unlockView()
-                showError(err)
-            }
-            Logger.d(Logger.LogTag.ACCOUNT, "Reset accounts from settings")
-            WGlobalStorage.setActiveAccountId(null)
-            WGlobalStorage.deleteAllWallets()
-            WSecureStorage.deleteAllWalletValues()
-            WalletContextManager.delegate?.restartApp()
-        }
-    }
-
     private fun renameWalletPressed() {
-        val input = object : WEditText(context, null, false) {
-            init {
-                setSingleLine()
-                setPadding(8.dp, 8.dp, 8.dp, 8.dp)
-                updateTheme()
-            }
-
-            override fun updateTheme() {
-                setBackgroundColor(WColor.SecondaryBackground.color, 10f.dp)
-            }
-        }.apply {
-            hint = LocaleController.getString("Wallet Name")
-            setText(AccountStore.activeAccount?.name)
+        AccountStore.activeAccount?.let { account ->
+            AccountDialogHelpers.presentRename(this, account)
         }
-        val container = FrameLayout(context).apply {
-            setPadding(24.dp, 0, 24.dp, 0)
-            addView(input, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        }
-
-        WDialog(
-            container,
-            WDialog.Config(
-                title = LocaleController.getString("Rename Wallet"),
-                actionButton = WDialogButton.Config(
-                    title = LocaleController.getString("OK"),
-                    onTap = {
-                        view.hideKeyboard()
-                        val newWalletName = input.text.toString().trim()
-                        if (newWalletName.isNotEmpty()) {
-                            AccountStore.activeAccount?.name = newWalletName
-                            WGlobalStorage.save(
-                                AccountStore.activeAccount!!.accountId,
-                                newWalletName
-                            )
-                            AddressStore.updatedAccountName(
-                                AccountStore.activeAccountId!!,
-                                newWalletName
-                            )
-                            AirPushNotifications.accountNameChanged(AccountStore.activeAccount!!)
-                            WalletCore.notifyEvent(WalletEvent.AccountNameChanged)
-                        }
-                    }
-                )
-            )
-        ).presentOn(this)
     }
 
     private fun itemSelected(item: SettingsItem) {
@@ -478,18 +396,20 @@ class SettingsVC(context: Context) : WViewController(context),
             SettingsItem.Identifier.ADD_ACCOUNT -> {
                 val nav = WNavigationController(
                     window!!,
-                    WNavigationController.PresentationConfig(
+                    PresentationConfig(
                         overFullScreen = false,
                         isBottomSheet = true,
                         aboveKeyboard = true
                     )
                 )
-                nav.setRoot(WalletContextManager.delegate?.getAddAccountVC() as WViewController)
+                nav.setRoot(
+                    WalletContextManager.delegate?.getAddAccountVC(MBlockchainNetwork.MAINNET) as WViewController
+                )
                 window?.present(nav)
             }
 
             SettingsItem.Identifier.ACCOUNT -> {
-                val newAccountId = item.account!!.accountId
+                val newAccountId = item.account?.accountId ?: return
                 WalletCore.activateAccount(
                     newAccountId,
                     notifySDK = true
@@ -498,16 +418,35 @@ class SettingsVC(context: Context) : WViewController(context),
                         // Should not happen!
                         Logger.e(
                             Logger.LogTag.ACCOUNT,
-                            LogMessage.Builder()
+                            Builder()
                                 .append(
-                                    "Activation failed in settings: $err",
+                                    "activateAccount: Failed in settings err=$err",
                                     LogMessage.MessagePartPrivacy.PUBLIC
                                 ).build()
                         )
                     } else {
-                        WalletCore.notifyEvent(WalletEvent.AccountChangedInApp)
+                        WalletCore.notifyEvent(
+                            AccountChangedInApp(
+                                persistedAccountsModified = false
+                            )
+                        )
                     }
                 }
+            }
+
+            SettingsItem.Identifier.SHOW_ALL_WALLETS -> {
+                val navVC = WNavigationController(
+                    window!!, PresentationConfig(
+                        overFullScreen = false,
+                        isBottomSheet = true
+                    )
+                )
+                navVC.setRoot(
+                    WalletContextManager.delegate?.getWalletsTabsVC(
+                        MWalletSettingsViewMode.LIST
+                    ) as WViewController
+                )
+                window?.present(navVC)
             }
 
             SettingsItem.Identifier.NOTIFICATION_SETTINGS -> {
@@ -544,7 +483,7 @@ class SettingsVC(context: Context) : WViewController(context),
                 val nav = navigationController?.tabBarController?.navigationController
                 val passcodeConfirmVC = PasscodeConfirmVC(
                     context,
-                    PasscodeViewState.Default(
+                    Default(
                         LocaleController.getString("Locked"),
                         LocaleController.getString(
                             if (WGlobalStorage.isBiometricActivated() &&
@@ -563,46 +502,97 @@ class SettingsVC(context: Context) : WViewController(context),
                 nav?.push(passcodeConfirmVC)
             }
 
-            SettingsItem.Identifier.QUESTION_AND_ANSWERS -> {
-                val nav = WNavigationController(window!!)
-                nav.setRoot(
-                    InAppBrowserVC(
-                        context,
-                        null,
-                        InAppBrowserConfig(
-                            "https://help.mytonwallet.io/intro/frequently-asked-questions",
-                            injectTonConnectBridge = false,
-                            injectDarkModeStyles = false,
-                            title = item.title
-                        )
-                    )
+            SettingsItem.Identifier.HELP_CENTER -> {
+                openUrl(
+                    item.title,
+                    "https://help.mytonwallet.io/"
                 )
-                window?.present(nav)
             }
 
-            SettingsItem.Identifier.TERMS -> {
-                val nav = WNavigationController(window!!)
-                nav.setRoot(
-                    InAppBrowserVC(
-                        context,
-                        null,
-                        InAppBrowserConfig(
-                            "https://mytonwallet.io/terms-of-use",
-                            injectTonConnectBridge = false,
-                            injectDarkModeStyles = true,
-                            title = item.title
-                        )
-                    )
-                )
-                window?.present(nav)
+            SettingsItem.Identifier.USE_RESPONSIBILITY -> {
+                push(UserResponsibilityVC(context))
             }
 
             SettingsItem.Identifier.WALLET_VERSIONS -> {
-                navigationController?.push(WalletVersionsVC(context))
+                push(WalletVersionsVC(context))
+            }
+
+            SettingsItem.Identifier.ASK_A_QUESTION -> {
+                openExternalUrl("https://t.me/mysupport")
+            }
+
+            SettingsItem.Identifier.MTW_FEATURES -> {
+                openExternalUrl("https://t.me/${TIP_URLS[LocaleController.activeLanguage.langCode] ?: TIP_URLS["en"]}")
+            }
+
+            SettingsItem.Identifier.MTW_CARDS_NFT -> {
+                openUrl(
+                    item.title,
+                    ExplorerHelpers.getMtwCardsUrl(MBlockchainNetwork.MAINNET)
+                )
+            }
+
+            SettingsItem.Identifier.INSTALL_ON_DESKTOP -> {
+                openExternalUrl("https://mytonwallet.io/get/desktop")
+            }
+
+            SettingsItem.Identifier.ABOUT_MTW -> {
+                push(AppInfoVC(context))
             }
 
             else -> {}
         }
+    }
+
+    private fun reloadData() {
+        if (view.isAttachedToWindow) {
+            updatePadding()
+            rvAdapter.reloadData()
+        } else {
+            pendingReload = true
+        }
+    }
+
+    private fun updatePadding() {
+        view.doOnLayout {
+            val additionalPadding =
+                (SettingsHeaderView.HEIGHT_NORMAL - SettingsHeaderView.HEIGHT_COLLAPSED).dp
+            val contentHeight = settingsVM.contentHeight()
+            val topInset = (navigationController?.getSystemBars()?.top ?: 0)
+            val bottomInset = (navigationController?.getSystemBars()?.bottom ?: 0)
+            val recyclerViewPaddingBottom =
+                (view.height - contentHeight - topInset + additionalPadding)
+                    .coerceAtLeast(bottomInset)
+            recyclerView.setPadding(
+                ViewConstants.HORIZONTAL_PADDINGS.dp,
+                recyclerView.paddingTop,
+                ViewConstants.HORIZONTAL_PADDINGS.dp,
+                recyclerViewPaddingBottom
+            )
+        }
+    }
+
+    private fun openUrl(title: String, url: String) {
+        val nav = WNavigationController(window!!)
+        nav.setRoot(
+            InAppBrowserVC(
+                context,
+                null,
+                InAppBrowserConfig(
+                    url,
+                    injectDappConnect = false,
+                    injectDarkModeStyles = false,
+                    title = title
+                )
+            )
+        )
+        window?.present(nav)
+    }
+
+    private fun openExternalUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW)
+        intent.setData(url.toUri())
+        window?.startActivity(intent)
     }
 
     override fun recyclerViewNumberOfSections(rv: RecyclerView): Int {
@@ -613,7 +603,7 @@ class SettingsVC(context: Context) : WViewController(context),
         return when (section) {
             0 -> 1
             settingsVM.settingsSections.size + 1 -> 1
-            else -> settingsVM.settingsSections[section - 1].children.size
+            else -> 1 + settingsVM.settingsSections[section - 1].children.size
         }
     }
 
@@ -621,7 +611,16 @@ class SettingsVC(context: Context) : WViewController(context),
         return when (indexPath.section) {
             0 -> HEADER_CELL
             settingsVM.settingsSections.size + 1 -> VERSION_CELL
-            else -> if (settingsVM.settingsSections[indexPath.section - 1].children[indexPath.row].identifier == SettingsItem.Identifier.ACCOUNT) ACCOUNT_CELL else ITEMS_CELL
+            else -> {
+                if (indexPath.row == 0)
+                    SECTION_HEADER_CELL
+                else when (settingsVM.settingsSections.getOrNull(indexPath.section - 1)?.children?.getOrNull(
+                    indexPath.row - 1
+                )?.identifier) {
+                    SettingsItem.Identifier.ACCOUNT -> ACCOUNT_CELL
+                    else -> ITEMS_CELL
+                }
+            }
         }
     }
 
@@ -633,6 +632,10 @@ class SettingsVC(context: Context) : WViewController(context),
                 headerCell!!
             }
 
+            SECTION_HEADER_CELL -> {
+                HeaderCell(context)
+            }
+
             ACCOUNT_CELL -> {
                 SettingsAccountCell(context)
             }
@@ -642,7 +645,11 @@ class SettingsVC(context: Context) : WViewController(context),
             }
 
             VERSION_CELL -> {
-                SettingsVersionCell(context)
+                SettingsVersionCell(window!!) {
+                    navigationController?.tabBarController?.navigationController?.push(
+                        DebugMenuVC(context)
+                    )
+                }
             }
 
             else -> {
@@ -661,8 +668,7 @@ class SettingsVC(context: Context) : WViewController(context),
                 val cellLayoutParams = RecyclerView.LayoutParams(MATCH_PARENT, 0)
                 val newHeight =
                     (navigationController?.getSystemBars()?.top ?: 0) +
-                        SettingsHeaderView.HEIGHT_NORMAL.dp +
-                        (if (ThemeManager.uiMode.hasRoundedCorners) 0 else ViewConstants.GAP.dp)
+                        SettingsHeaderView.HEIGHT_NORMAL.dp
                 cellLayoutParams.height = newHeight
                 cellHolder.cell.layoutParams = cellLayoutParams
                 return
@@ -671,14 +677,27 @@ class SettingsVC(context: Context) : WViewController(context),
             settingsVM.settingsSections.size + 1 -> {}
 
             else -> {
+                val section = settingsVM.settingsSections.getOrNull(indexPath.section - 1) ?: return
+                if (indexPath.row > section.children.size)
+                    return
+                if (indexPath.row == 0) {
+                    val cell = cellHolder.cell as HeaderCell
+                    cell.configure(
+                        section.title,
+                        WColor.Tint,
+                        topRounding = HeaderCell.TopRounding.NORMAL
+                    )
+                    return
+                }
+                val itemIndex = indexPath.row - 1
                 val item =
-                    settingsVM.settingsSections[indexPath.section - 1].children[indexPath.row]
+                    section.children[itemIndex]
                 val cell = (cellHolder.cell as ISettingsItemCell)
                 cell.configure(
                     item,
-                    settingsVM.valueFor(item),
-                    indexPath.row == 0,
-                    indexPath.row == settingsVM.settingsSections[indexPath.section - 1].children.size - 1
+                    settingsVM.subtitleFor(item),
+                    false,
+                    itemIndex == section.children.size - 1
                 ) {
                     itemSelected(item)
                 }
@@ -688,29 +707,52 @@ class SettingsVC(context: Context) : WViewController(context),
     }
 
     override fun recyclerViewCellItemId(rv: RecyclerView, indexPath: IndexPath): String? {
-        when (indexPath.section) {
-            0, settingsVM.settingsSections.size + 1 -> {}
+        return when (indexPath.section) {
+            0, settingsVM.settingsSections.size + 1 -> null
 
             else -> {
+                if (indexPath.row == 0)
+                    return settingsVM.settingsSections.getOrNull(indexPath.section - 1)?.title
                 val item =
-                    settingsVM.settingsSections[indexPath.section - 1].children[indexPath.row]
-                return item.account?.accountId
+                    settingsVM.settingsSections.getOrNull(indexPath.section - 1)?.children?.getOrNull(
+                        indexPath.row - 1
+                    )
+                when (item?.identifier) {
+                    SettingsItem.Identifier.ACCOUNT -> {
+                        item.account?.accountId
+                    }
+
+                    else -> {
+                        item?.identifier?.name
+                    }
+                }
             }
         }
-        return super.recyclerViewCellItemId(rv, indexPath)
     }
 
     override fun onWalletEvent(walletEvent: WalletEvent) {
         when (walletEvent) {
             is WalletEvent.AccountChanged -> {
                 headerView.configure()
-                settingsVM.fillOtherAccounts()
-                settingsVM.updateWalletDataSection()
-                rvAdapter.reloadData()
+                settingsVM.fillOtherAccounts(
+                    async = walletEvent.fromHome,
+                    onComplete = {
+                        reloadData()
+                    })
+                settingsVM.updateSettingsSection()
             }
 
             WalletEvent.AccountNameChanged -> {
                 headerView.configure()
+                settingsVM.fillOtherAccounts(async = true, onComplete = {
+                    reloadData()
+                })
+            }
+
+            WalletEvent.AccountsReordered, is WalletEvent.AccountRemoved -> {
+                settingsVM.fillOtherAccounts(async = true, onComplete = {
+                    reloadData()
+                })
             }
 
             WalletEvent.BalanceChanged -> {
@@ -718,31 +760,48 @@ class SettingsVC(context: Context) : WViewController(context),
             }
 
             WalletEvent.NotActiveAccountBalanceChanged -> {
-                settingsVM.fillOtherAccounts()
-                rvAdapter.reloadData()
+                settingsVM.fillOtherAccounts(async = true, onComplete = {
+                    reloadData()
+                })
             }
 
             WalletEvent.BaseCurrencyChanged -> {
                 headerView.configureDescriptionLabel()
-                settingsVM.fillOtherAccounts()
-                rvAdapter.reloadData()
+                settingsVM.fillOtherAccounts(async = true, onComplete = {
+                    reloadData()
+                })
             }
 
             WalletEvent.TokensChanged -> {
                 headerView.configureDescriptionLabel()
-                settingsVM.fillOtherAccounts()
-                rvAdapter.reloadData()
+                settingsVM.fillOtherAccounts(async = true, onComplete = {
+                    reloadData()
+                })
             }
 
             WalletEvent.StakingDataUpdated -> {
                 headerView.configureDescriptionLabel()
-                settingsVM.fillOtherAccounts()
-                rvAdapter.reloadData()
+                settingsVM.fillOtherAccounts(async = true, onComplete = {
+                    reloadData()
+                })
             }
 
             WalletEvent.DappsCountUpdated -> {
-                settingsVM.updateWalletConfigSection()
-                rvAdapter.reloadData()
+                settingsVM.updateSettingsSection()
+                reloadData()
+            }
+
+            is WalletEvent.ByChainUpdated -> {
+                settingsVM.fillOtherAccounts(async = true, onComplete = {
+                    reloadData()
+                })
+                headerView.configure()
+            }
+
+            WalletEvent.ConfigReceived -> {
+                val itemsChanged = settingsVM.updateHelpSection()
+                if (itemsChanged)
+                    reloadData()
             }
 
             else -> {}
@@ -752,8 +811,8 @@ class SettingsVC(context: Context) : WViewController(context),
     override fun onBridgeUpdate(update: ApiUpdate) {
         when (update) {
             is ApiUpdate.ApiUpdateWalletVersions -> {
-                settingsVM.updateWalletDataSection()
-                rvAdapter.reloadData()
+                settingsVM.updateSettingsSection()
+                reloadData()
             }
 
             else -> {}
@@ -763,7 +822,10 @@ class SettingsVC(context: Context) : WViewController(context),
     override fun onDestroy() {
         super.onDestroy()
 
-        WalletCore.unsubscribeFromApiUpdates(ApiUpdate.ApiUpdateWalletVersions::class.java, this)
+        WalletCore.unsubscribeFromApiUpdates(
+            ApiUpdate.ApiUpdateWalletVersions::class.java,
+            this
+        )
         recyclerView.removeOnScrollListener(scrollListener)
         recyclerView.adapter = null
         recyclerView.removeAllViews()

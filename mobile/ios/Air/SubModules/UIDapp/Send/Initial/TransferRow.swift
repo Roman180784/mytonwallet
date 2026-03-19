@@ -1,7 +1,6 @@
 
 import SwiftUI
 import UIKit
-import UIPasscode
 import UIComponents
 import WalletCore
 import WalletContext
@@ -9,7 +8,10 @@ import WalletContext
 struct TransferRow: View {
     
     var transfer: ApiDappTransfer
+    var chain: ApiChain
     var action: (ApiDappTransfer) -> ()
+    
+    private var transferToken: ApiToken { transfer.getToken(chain: chain) }
     
     var body: some View {
         InsetButtonCell(alignment: .leading, verticalPadding: 0, action: { action(transfer) }) {
@@ -31,7 +33,7 @@ struct TransferRow: View {
     @ViewBuilder
     var icon: some View {
         WUIIconViewToken(
-            token: .TONCOIN,
+            token: transferToken,
             isWalletView: false,
             showldShowChain: true,
             size: 40,
@@ -43,17 +45,17 @@ struct TransferRow: View {
         )
         .frame(width: 40, height: 40, alignment: .leading)
     }
-    
+        
     @ViewBuilder
     var text: some View {
         HStack(spacing: 8) {
             if transfer.isScam == true {
                 Image.airBundle("ScamBadge")
             }
-            let amount = TokenAmount(transfer.amount, .TONCOIN)
+            let amount = TokenAmount(transfer.effectiveAmount, transferToken)
             AmountText(
                 amount: amount,
-                format: .init(maxDecimals: 4, showMinus: true),
+                format: .init(maxDecimals: 4),
                 integerFont: .systemFont(ofSize: 16, weight: .medium),
                 fractionFont: .systemFont(ofSize: 16, weight: .medium),
                 symbolFont: .systemFont(ofSize: 16, weight: .medium),

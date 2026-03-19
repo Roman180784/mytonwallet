@@ -1,56 +1,64 @@
-//
-//  CustomSegmentedControl.swift
-//  UIComponents
-//
-//  Created by Sina on 11/1/24.
-//
-
 import UIKit
 import WalletContext
 
 public class WChartSegmentedControl: UISegmentedControl, WThemedView {
-    private let segmentInset: CGFloat = 5
-    private var segmentImage: UIImage? = UIImage(color: WTheme.background)
-
+    
     private var isFirstRender = true
+    private var backgroundLayer: CALayer?
+
     public override func layoutSubviews(){
         super.layoutSubviews()
+                
+        if #available(iOS 26, *) {
+           if isFirstRender {
+               for subview in subviews {
+                   if subview is UIImageView {
+                       subview.isHidden = true                       
+                   }
+               }
+               isFirstRender = false
+           }
+        } else {            
+            let imageViews = subviews.compactMap { $0 as? UIImageView }.prefix(numberOfSegments)
+            imageViews.forEach { $0.isHidden = true }            
 
-        if isFirstRender {
-            for i in 0 ... (self.numberOfSegments-1) {
-                let bg = self.subviews[i]
-                bg.isHidden = true
+            if let selectorImageView {
+                let inset: CGFloat = 5
+                selectorImageView.bounds = selectorImageView.bounds.insetBy(dx: inset, dy: inset)
+                selectorImageView.image = nil
+                selectorImageView.layer.cornerRadius = selectorImageView.bounds.height / 2
+                selectorImageView.layer.masksToBounds = true
+                selectorImageView.layer.removeAnimation(forKey: "SelectionBounds")
+                selectorImageView.isHidden = false
             }
-            isFirstRender = false
+
+            // Recreate every time since it may be unpredictably covered by other subviews
+            backgroundLayer?.removeFromSuperlayer()
+            let l = CALayer()
+            l.frame = bounds
+            layer.insertSublayer(l, at: 0)
+            backgroundLayer = l
         }
+        
         layer.cornerRadius = bounds.height / 2
         updateTheme()
     }
-    
+        
     public func updateTheme() {
-        segmentImage = UIImage(color: traitCollection.userInterfaceStyle == .dark ? WTheme.thumbBackground : .white)
-        backgroundColor = WTheme.balanceHeaderView.background
-        let foregroundIndex = numberOfSegments
-        if subviews.indices.contains(foregroundIndex), let foregroundImageView = subviews[foregroundIndex] as? UIImageView {
-            foregroundImageView.bounds = foregroundImageView.bounds.insetBy(dx: segmentInset, dy: segmentInset)
-            foregroundImageView.image = segmentImage
-            foregroundImageView.layer.removeAnimation(forKey: "SelectionBounds") // This removes the weird scaling animation!
-            foregroundImageView.layer.masksToBounds = true
-            foregroundImageView.layer.cornerRadius = foregroundImageView.bounds.height / 2
+        if #available(iOS 26, *) {
+            selectedSegmentTintColor = WTheme.groupedItem
+            backgroundColor = WTheme.balanceHeaderView.background
+        } else {
+            backgroundLayer?.backgroundColor = WTheme.balanceHeaderView.background.resolvedColor(with: traitCollection).cgColor
+            selectorImageView?.layer.backgroundColor  = WTheme.groupedItem.resolvedColor(with: traitCollection).cgColor
         }
     }
-}
-
-fileprivate extension UIImage{
-    convenience init?(color: UIColor, size: CGSize = CGSize(width: 1, height: 1)) {
-        let rect = CGRect(origin: .zero, size: size)
-        UIGraphicsBeginImageContextWithOptions(rect.size, false, 0.0)
-        color.setFill()
-        UIRectFill(rect)
-        let image = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        
-        guard let cgImage = image?.cgImage else { return nil }
-        self.init(cgImage: cgImage)
+    
+    private var selectorImageView: UIImageView? {
+        let selectorIndex = numberOfSegments
+        guard subviews.indices.contains(selectorIndex), let imageView = subviews[selectorIndex] as? UIImageView else {
+            return nil
+        }
+        return imageView
     }
 }

@@ -1,32 +1,26 @@
-//
-//  RateLarge.swift
-//  App
-//
-//  Created by nikstar on 28.09.2025.
-//
-
 import SwiftUI
+import UIComponents
 import WalletCore
 import WalletContext
 
 struct RateLarge: View {
     
-    var rate: DisplayCurrencyAmount
+    var rate: BaseCurrencyAmount
     
     var body: some View {
-        let text = Text(rate.formatted(maxDecimals: rate.adaptiveDecimals()))
+        let text = Text(rate.formatted(.baseCurrencyPrice))
         ViewThatFits(in: .horizontal) {
             text
-                .font(.compactRoundedSemibold(size: 30))
+                .font(.compactRounded(size: 30, weight: .semibold))
                 .fixedSize()
             text
-                .font(.compactRoundedSemibold(size: 28))
+                .font(.compactRounded(size: 28, weight: .semibold))
                 .fixedSize()
             text
-                .font(.compactRoundedSemibold(size: 26))
+                .font(.compactRounded(size: 26, weight: .semibold))
                 .fixedSize()
             text
-                .font(.compactRoundedSemibold(size: 24))
+                .font(.compactRounded(size: 24, weight: .semibold))
                 .fixedSize()
         }
         .foregroundStyle(.white)

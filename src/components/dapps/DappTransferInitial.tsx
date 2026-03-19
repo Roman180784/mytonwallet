@@ -1,10 +1,11 @@
 import React, { memo, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
+import type { StoredDappConnection } from '../../api/dappProtocols/storage';
 import type {
   ApiBaseCurrency,
+  ApiChain,
   ApiCurrencyRates,
-  ApiDapp,
   ApiDappTransfer,
   ApiEmulationResult,
   ApiNft,
@@ -14,16 +15,18 @@ import type {
 } from '../../api/types';
 import type { Account, SavedAddress, Theme } from '../../global/types';
 
-import { TONCOIN, UNKNOWN_TOKEN } from '../../config';
+import { DEFAULT_CHAIN, TONCOIN, UNKNOWN_TOKEN } from '../../config';
 import renderText from '../../global/helpers/renderText';
 import {
   selectAccountStakingStatesBySlug,
+  selectCurrentAccountId,
   selectCurrentAccountState,
   selectCurrentDappTransferTotals,
   selectDappTransferInsufficientTokens,
   selectNetworkAccounts,
 } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
+import { getChainConfig } from '../../util/chain';
 import { toBig, toDecimal } from '../../util/decimals';
 import { formatCurrency } from '../../util/formatNumber';
 import isEmptyObject from '../../util/isEmptyObject';
@@ -60,7 +63,7 @@ interface StateProps {
   isScam: boolean;
   isDangerous: boolean;
   nftCount: number;
-  dapp?: ApiDapp;
+  dapp?: StoredDappConnection;
   isLoading?: boolean;
   tokensBySlug: Record<string, ApiTokenWithPrice>;
   swapTokensBySlug?: Record<string, ApiSwapAsset>;
@@ -74,6 +77,8 @@ interface StateProps {
   accounts?: Record<string, Account>;
   insufficientTokens?: string;
   balancesBySlug?: Record<string, bigint>;
+  chain: ApiChain | undefined;
+  shouldHideTransfers: boolean;
 }
 
 interface SortedDappTransfer extends ApiDappTransfer {
@@ -110,6 +115,8 @@ function DappTransferInitial({
   insufficientTokens,
   balancesBySlug,
   onClose,
+  chain,
+  shouldHideTransfers,
 }: OwnProps & StateProps) {
   const { closeDappTransfer, showDappTransferTransaction, submitDappTransferConfirm } = getActions();
 
@@ -124,13 +131,14 @@ function DappTransferInitial({
   const hasSufficientBalance = !insufficientTokens;
 
   const tokenToDisplay = useMemo(() => (
-    calculateTokenToDisplay(totalAmountsBySlug, balancesBySlug, tokensBySlug)
-  ), [totalAmountsBySlug, balancesBySlug, tokensBySlug]);
+    calculateTokenToDisplay(chain || DEFAULT_CHAIN, totalAmountsBySlug, balancesBySlug, tokensBySlug)
+  ), [chain, totalAmountsBySlug, balancesBySlug, tokensBySlug]);
 
   function renderContent() {
     return (
       <div className={buildClassName(modalStyles.transitionContent, styles.skeletonBackground)}>
         <DappInfoWithAccount
+          chain={chain}
           dapp={dapp}
           customTokenBalance={tokenToDisplay.balance}
           customTokenSymbol={tokenToDisplay.symbol}
@@ -212,10 +220,14 @@ function DappTransferInitial({
 
     return (
       <>
-        <p className={styles.label}>{lang('$many_transactions', renderingTransactions.length, 'i')}</p>
-        <div className={styles.transactionList}>
-          {sortedTransactions?.map(renderTransactionRow)}
-        </div>
+        {!shouldHideTransfers && (
+          <p className={styles.label}>{lang('$many_transactions', renderingTransactions.length, 'i')}</p>
+        )}
+        {!shouldHideTransfers && (
+          <div className={styles.transactionList}>
+            {sortedTransactions?.map(renderTransactionRow)}
+          </div>
+        )}
         {renderingTransactions.length > 1 && hasAmount && (
           <DappAmountField label={lang('Total Amount')} amountsBySlug={totalAmountsBySlug} nftCount={nftCount} />
         )}
@@ -230,6 +242,8 @@ function DappTransferInitial({
 
     const { activities, realFee } = emulation;
 
+    const visibleActivities = activities.filter((activity) => !activity.shouldHide);
+
     return (
       <>
         <p className={styles.label}>
@@ -238,12 +252,12 @@ function DappTransferInitial({
           <IconWithTooltip message={renderText(lang('$preview_not_guaranteed'))} type="warning" size="small" />
         </p>
         <div className={buildClassName(styles.transactionList, styles.emulation)}>
-          {activities.map((activity, index) => (
+          {visibleActivities.map((activity, index) => (
             <Activity
               key={activity.id}
               activity={activity}
               isFuture
-              isLast={index === activities.length - 1}
+              isLast={index === visibleActivities.length - 1}
               tokensBySlug={tokensBySlug}
               swapTokensBySlug={swapTokensBySlug}
               appTheme={appTheme}
@@ -260,7 +274,7 @@ function DappTransferInitial({
         {realFee !== 0n && (
           <FeeLine
             terms={{ native: realFee }}
-            token={TONCOIN}
+            token={getChainConfig(chain || DEFAULT_CHAIN).nativeToken}
             precision="approximate"
             className={styles.emulationFee}
           />
@@ -272,7 +286,13 @@ function DappTransferInitial({
   return (
     <Transition name="semiFade" activeKey={isDappLoading ? 0 : 1} slideClassName={styles.skeletonTransitionWrapper}>
       <ModalHeader
-        title={lang(isNftTransferPayload(renderingTransactions?.[0]?.payload) ? 'Send NFT' : 'Send Transaction')}
+        title={lang(
+          isNftTransferPayload(renderingTransactions?.[0]?.payload)
+            ? 'Send NFT'
+            : (renderingTransactions?.length ?? 0) > 1
+              ? '$classic_confirm_actions'
+              : 'Confirm Action',
+        )}
         onClose={closeDappTransfer}
       />
       {isDappLoading ? <DappSkeletonWithContent rows={skeletonRows} /> : renderContent()}
@@ -281,9 +301,9 @@ function DappTransferInitial({
 }
 
 export default memo(withGlobal<OwnProps>((global): StateProps => {
-  const { isLoading, dapp, transactions, emulation } = global.currentDappTransfer;
+  const { isLoading, dapp, transactions, emulation, operationChain, shouldHideTransfers } = global.currentDappTransfer;
 
-  const accountId = global.currentAccountId!;
+  const accountId = selectCurrentAccountId(global)!;
   const accountState = selectCurrentAccountState(global);
   const accounts = selectNetworkAccounts(global);
 
@@ -315,6 +335,8 @@ export default memo(withGlobal<OwnProps>((global): StateProps => {
     accounts,
     insufficientTokens: selectDappTransferInsufficientTokens(global),
     balancesBySlug: accountState?.balances?.bySlug,
+    chain: operationChain,
+    shouldHideTransfers: !!shouldHideTransfers,
   };
 })(DappTransferInitial));
 
@@ -325,16 +347,18 @@ interface TokenDisplayInfo {
 }
 
 function calculateTokenToDisplay(
+  chain: ApiChain,
   totalAmountsBySlug?: Record<string, bigint>,
   balancesBySlug?: Record<string, bigint>,
   tokensBySlug?: Record<string, ApiTokenWithPrice>,
 ): TokenDisplayInfo {
-  // Default to TON if no data
+  const nativeToken = getChainConfig(chain || DEFAULT_CHAIN).nativeToken;
+  // Default to this operation native coin if no data
   if (!totalAmountsBySlug || !balancesBySlug || !tokensBySlug) {
     return {
-      balance: balancesBySlug?.[TONCOIN.slug] ?? 0n,
-      symbol: TONCOIN.symbol,
-      decimals: TONCOIN.decimals,
+      balance: balancesBySlug?.[nativeToken.slug] ?? 0n,
+      symbol: nativeToken.symbol,
+      decimals: nativeToken.decimals,
     };
   }
 
@@ -417,9 +441,9 @@ function calculateTokenToDisplay(
 
   // Fallback to TON
   return {
-    balance: balancesBySlug[TONCOIN.slug] ?? 0n,
-    symbol: TONCOIN.symbol,
-    decimals: TONCOIN.decimals,
+    balance: balancesBySlug[nativeToken.slug] ?? 0n,
+    symbol: nativeToken.symbol,
+    decimals: nativeToken.decimals,
   };
 }
 

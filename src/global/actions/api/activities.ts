@@ -11,6 +11,7 @@ import { addPastActivities, updateActivity } from '../../reducers';
 import {
   selectAccount,
   selectAccountState,
+  selectCurrentAccountId,
   selectIsHistoryEndReached,
   selectLastActivityTimestamp,
 } from '../../selectors';
@@ -22,7 +23,7 @@ const pastActivityThrottle: Record<string, NoneToVoidFunction> = {};
 const initialActivityWaitingByAccountId: Record<string, Promise<unknown>> = {};
 
 addActionHandler('fetchPastActivities', (global, actions, { slug, shouldLoadWithBudget }) => {
-  const accountId = global.currentAccountId!;
+  const accountId = selectCurrentAccountId(global)!;
   const throttleKey = `${accountId} ${slug ?? '__main__'}`;
 
   // Besides the throttling itself, the `throttle` avoids concurrent activity loading
@@ -52,25 +53,27 @@ async function fetchPastActivities(accountId: string, slug?: string) {
 
   let fetchedActivities: ApiActivity[] = [];
   let toTimestamp = selectLastActivityTimestamp(global, accountId, slug);
-  let shouldFetchMore = true;
+  let hasMore = true;
   let isEndReached = false;
 
-  while (shouldFetchMore) {
+  while (hasMore) {
     const result = await callApi('fetchPastActivities', accountId, PAST_ACTIVITY_BATCH, slug, toTimestamp);
     if (!result) {
       return;
     }
 
+    const { activities, hasMore: apiHasMore } = result;
+
     global = getGlobal();
 
-    if (!result.length) {
+    if (!activities.length) {
       isEndReached = true;
       break;
     }
 
     const { areTinyTransfersHidden } = global.settings;
 
-    const filteredResult = result.filter((tx) => {
+    const filteredResult = activities.filter((tx) => {
       const shouldHide = tx.kind === 'transaction'
         && (
           getIsTransactionWithPoisoning(tx)
@@ -80,9 +83,13 @@ async function fetchPastActivities(accountId: string, slug?: string) {
       return !shouldHide;
     });
 
-    fetchedActivities = mergeSortedActivities(fetchedActivities, result);
-    shouldFetchMore = filteredResult.length < PAST_ACTIVITY_BATCH && fetchedActivities.length < PAST_ACTIVITY_BATCH;
-    toTimestamp = result[result.length - 1].timestamp;
+    fetchedActivities = mergeSortedActivities(fetchedActivities, activities);
+    hasMore = apiHasMore
+      && (
+        filteredResult.length < PAST_ACTIVITY_BATCH
+        && fetchedActivities.length < PAST_ACTIVITY_BATCH
+      );
+    toTimestamp = activities[activities.length - 1].timestamp;
   }
 
   global = addPastActivities(global, accountId, slug, fetchedActivities, isEndReached);
@@ -90,7 +97,7 @@ async function fetchPastActivities(accountId: string, slug?: string) {
 }
 
 addActionHandler('fetchActivityDetails', async (global, actions, { id }) => {
-  const accountId = global.currentAccountId!;
+  const accountId = selectCurrentAccountId(global)!;
   const activity = selectAccountState(global, accountId)?.activities?.byId[id];
 
   if (!activity?.shouldLoadDetails) {

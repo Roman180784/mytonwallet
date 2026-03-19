@@ -4,13 +4,16 @@ import android.app.Activity
 import org.mytonwallet.app_air.walletbasecontext.logger.LogMessage
 import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcontext.secureStorage.WSecureStorage
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.api.activateAccount
-import org.mytonwallet.app_air.walletcore.api.createWallet
+import org.mytonwallet.app_air.walletcore.api.importWallet
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.models.MBridgeError
 import org.mytonwallet.app_air.walletcore.pushNotifications.AirPushNotifications
+import org.mytonwallet.app_air.walletcore.stores.BalanceStore
+import org.mytonwallet.app_air.walletcore.utils.jsonObject
 import java.lang.ref.WeakReference
 
 class WalletCreationVM(delegate: Delegate) {
@@ -24,15 +27,16 @@ class WalletCreationVM(delegate: Delegate) {
     // Create and add the account into logics
     fun finalizeAccount(
         window: Activity,
+        network: MBlockchainNetwork,
         words: Array<String>,
         passcode: String,
         biometricsActivated: Boolean?,
         retriesLeft: Int
     ) {
-        WalletCore.createWallet(words, passcode) { account, error ->
+        WalletCore.importWallet(network, words, passcode, true) { account, error ->
             if (account == null || error != null) {
                 if (retriesLeft > 0) {
-                    finalizeAccount(window, words, passcode, biometricsActivated, retriesLeft)
+                    finalizeAccount(window, network, words, passcode, biometricsActivated, retriesLeft - 1)
                 } else {
                     delegate.get()?.showError(error)
                 }
@@ -42,25 +46,25 @@ class WalletCreationVM(delegate: Delegate) {
                     Logger.LogTag.ACCOUNT,
                     LogMessage.Builder()
                         .append(
-                            createdAccountId,
+                            "finalizeAccount: accountId=$createdAccountId",
                             LogMessage.MessagePartPrivacy.PUBLIC
                         )
                         .append(
-                            "Created",
+                            " address=",
                             LogMessage.MessagePartPrivacy.PUBLIC
                         )
                         .append(
-                            "Address: ${account.tonAddress}",
+                            "${account.tonAddress}",
                             LogMessage.MessagePartPrivacy.REDACTED
                         ).build()
                 )
                 WGlobalStorage.addAccount(
                     accountId = createdAccountId,
                     accountType = MAccount.AccountType.MNEMONIC.value,
-                    address = account.tonAddress,
-                    tronAddress = account.addressByChain["tron"],
+                    byChain = account.byChain.jsonObject,
                     importedAt = account.importedAt
                 )
+                BalanceStore.setBalances(createdAccountId, HashMap(), false)
                 AirPushNotifications.subscribe(account, ignoreIfLimitReached = true)
                 if (biometricsActivated != null) {
                     if (biometricsActivated) {
@@ -77,7 +81,7 @@ class WalletCreationVM(delegate: Delegate) {
                             Logger.LogTag.ACCOUNT,
                             LogMessage.Builder()
                                 .append(
-                                    "Activation failed after wallet creation: $err",
+                                    "activateAccount: Failed after wallet creation err=$err",
                                     LogMessage.MessagePartPrivacy.PUBLIC
                                 ).build()
                         )

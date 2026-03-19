@@ -10,16 +10,6 @@ import UIKit
 import WalletCore
 import WalletContext
 
-fileprivate let popularTokenOrder = [
-  "TON",
-  "USD₮",
-  "USDT",
-  "BTC",
-  "ETH",
-  "jUSDT",
-  "jWBTC",
-]
-
 @MainActor public protocol TokenSelectionVCDelegate: AnyObject {
     func didSelect(token: MTokenBalance)
     func didSelect(token: ApiToken)
@@ -27,54 +17,114 @@ fileprivate let popularTokenOrder = [
 
 public class TokenSelectionVC: WViewController {
     
-    private weak var delegate: TokenSelectionVCDelegate? = nil
-    private var forceAvailable: String? = nil
-    private var otherSymbolOrMinterAddress: String? = nil
+    // MARK: - Diffable Data Source Types
+    
+    private enum Section: Hashable {
+        case myAssets
+        case popular
+        case allAssets
+    }
+    
+    private enum Item: Hashable {
+        case header(Section)
+        case walletToken(MTokenBalance)
+        case apiToken(ApiToken, Section)
+        
+        static func == (lhs: Item, rhs: Item) -> Bool {
+            switch (lhs, rhs) {
+            case (.header(let l), .header(let r)):
+                return l == r
+            case (.walletToken(let l), .walletToken(let r)):
+                return l.tokenSlug == r.tokenSlug
+            case (.apiToken(let lToken, let lSection), .apiToken(let rToken, let rSection)):
+                return lToken.slug == rToken.slug && lSection == rSection
+            default:
+                return false
+            }
+        }
+        
+        func hash(into hasher: inout Hasher) {
+            switch self {
+            case .header(let section):
+                hasher.combine("header")
+                hasher.combine(section)
+            case .walletToken(let token):
+                hasher.combine("wallet")
+                hasher.combine(token.tokenSlug)
+            case .apiToken(let token, let section):
+                hasher.combine("api")
+                hasher.combine(token.slug)
+                hasher.combine(section)
+            }
+        }
+    }
+    
+    // MARK: - Properties
+    
+    private weak var delegate: TokenSelectionVCDelegate?
+    private var forceAvailable: String?
+    private var otherSymbolOrMinterAddress: String?
     private let showMyAssets: Bool
     private let isModal: Bool
-    private let onlyTonChain: Bool
-    private var availablePairs: [MPair]? = nil
+    private let onlySupportedChains: Bool
+    private var availablePairs: [MPair]?
     private let log = Log()
-    var walletTokens = [MTokenBalance]()
-    var showingWalletTokens = [MTokenBalance]()
-    var showingPopularTokens = [ApiToken]()
-    var showingAllAssets = [ApiToken]()
-    var keyword = String()
+    private var walletTokens = [MTokenBalance]()
+    private var showingWalletTokens = [MTokenBalance]()
+    private var showingPopularTokens = [ApiToken]()
+    private var showingAllAssets = [ApiToken]()
+    private var keyword = String()
+    private var searchController: UISearchController?
+
+    @AccountContext(source: .current) private var account: MAccount
     
-    public init(
-        forceAvailable: String? = nil,
-        otherSymbolOrMinterAddress: String? = nil,
-        showMyAssets: Bool = true,
-        title: String,
-        delegate: TokenSelectionVCDelegate?,
-        isModal: Bool,
-        onlyTonChain: Bool) {
-            self.forceAvailable = forceAvailable
-            self.otherSymbolOrMinterAddress = otherSymbolOrMinterAddress
-            self.showMyAssets = showMyAssets
-            self.delegate = delegate
-            self.isModal = isModal
-            self.onlyTonChain = onlyTonChain
-            super.init(nibName: nil, bundle: nil)
-            self.title = title
-            balanceChanged()
+    private var tableView: UITableView!
+    private var activityIndicatorView: WActivityIndicator!
+    private var dataSource: UITableViewDiffableDataSource<Section, Item>!
+    
+    // MARK: - Init
+    
+    public init(forceAvailable: String? = nil,
+                otherSymbolOrMinterAddress: String? = nil,
+                showMyAssets: Bool = true,
+                title: String,
+                delegate: TokenSelectionVCDelegate?,
+                isModal: Bool,
+                onlySupportedChains: Bool) {
+        self.forceAvailable = forceAvailable
+        self.otherSymbolOrMinterAddress = otherSymbolOrMinterAddress
+        self.showMyAssets = showMyAssets
+        self.delegate = delegate
+        self.isModal = isModal
+        self.onlySupportedChains = onlySupportedChains
+        super.init(nibName: nil, bundle: nil)
+        self.title = title
+        updateWalletTokens()
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
+    // MARK: - Lifecycle
+    
     public override func viewDidLoad() {
         super.viewDidLoad()
         setupViews()
+        configureDataSource()
         WalletCoreData.add(eventObserver: self)
-        Task { [weak self] in
-            do {
-                _ = try await TokenStore.updateSwapAssets()
-                self?.filterTokens()
-            } catch {
+        
+        if onlySupportedChains {
+            filterTokens()
+        } else {
+            Task { [weak self] in
+                do {
+                    _ = try await TokenStore.updateSwapAssets()
+                    self?.filterTokens()
+                } catch {}
             }
         }
+        
         if let otherSymbolOrMinterAddress {
             activityIndicatorView.startAnimating(animated: true)
             tableView.alpha = 0
@@ -86,66 +136,63 @@ public class TokenSelectionVC: WViewController {
                     log.error("failed to load swap pairs \(error, .public)")
                 }
                 activityIndicatorView.stopAnimating(animated: true)
-                tableView.reloadData()
+                applySnapshot()
                 UIView.animate(withDuration: 0.2) { [weak self] in
-                    guard let self else {return}
+                    guard let self else { return }
                     tableView.alpha = 1
                     activityIndicatorView.alpha = 0
                 } completion: { [weak self] _ in
-                    guard let self else {return}
+                    guard let self else { return }
                     activityIndicatorView.stopAnimating(animated: true)
                 }
             }
         }
     }
     
-    public override var hideNavigationBar: Bool { true }
+    // MARK: - Setup
     
-    let searchBar = UISearchBar()
-    var tableView: UITableView!
-    var tableViewBackgroundView: UIView!
-    var activityIndicatorView: WActivityIndicator!
     private func setupViews() {
-
-        let goBack = (navigationController?.viewControllers.count ?? 0) > 1
-        addNavigationBar(
-            title: self.title,
-            closeIcon: isModal,
-            addBackButton: goBack ? { [weak self] in self?.navigationController?.popViewController(animated: true) } : nil
-        )
-        navigationBar?.addSearchBar(searchBar)
+        if isModal {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
+                self?.dismiss(animated: true)
+            })
+        }
         
-        searchBar.delegate = self
-        searchBar.searchBarStyle = .minimal
-        searchBar.autocorrectionType = .no
-        searchBar.spellCheckingType = .no
-        searchBar.setShowsCancelButton(false, animated: false)
-        searchBar.placeholder = "Search"
+        let sc = UISearchController(searchResultsController: nil)
+        sc.searchResultsUpdater = self
+        sc.obscuresBackgroundDuringPresentation = false
+        sc.searchBar.autocorrectionType = .no
+        sc.searchBar.spellCheckingType = .no
+        sc.searchBar.placeholder = lang("Search")
+        navigationItem.searchController = sc
+        navigationItem.hidesSearchBarWhenScrolling = false
+        if IOS_26_MODE_ENABLED, #available(iOS 26, iOSApplicationExtension 26, *) {
+            navigationItem.searchBarPlacementAllowsToolbarIntegration = true
+            if !isModal {
+                navigationItem.preferredSearchBarPlacement = .integratedButton
+            }
+        }
+        definesPresentationContext = true
+        self.searchController = sc
         
         tableView = UITableView()
-        tableViewBackgroundView = UIView()
-        tableView.backgroundView = tableViewBackgroundView
         tableView.allowsSelection = false
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(TokenCell.self, forCellReuseIdentifier: "Token")
         tableView.register(TokenHeaderCell.self, forCellReuseIdentifier: "TokenHeader")
         tableView.delegate = self
-        tableView.dataSource = self
         tableView.separatorStyle = .none
         tableView.keyboardDismissMode = .onDrag
         tableView.rowHeight = 56
         tableView.delaysContentTouches = false
         tableView.sectionHeaderTopPadding = 0
-        tableView.contentInset.top = navigationBarHeight
-        tableView.verticalScrollIndicatorInsets.top = navigationBarHeight
-        tableView.contentOffset.y = -navigationBarHeight
         
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(hideKeyboard))
         tapGesture.cancelsTouchesInView = false
         tableView.addGestureRecognizer(tapGesture)
         view.addSubview(tableView)
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
             tableView.leftAnchor.constraint(equalTo: view.leftAnchor),
             tableView.rightAnchor.constraint(equalTo: view.rightAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
@@ -160,198 +207,162 @@ public class TokenSelectionVC: WViewController {
         ])
         
         bringNavigationBarToFront()
-
         updateTheme()
     }
     
-    public override func updateTheme() {
-        navigationController?.navigationBar.barTintColor = WTheme.sheetOpaqueBar
-        navigationController?.navigationBar.backgroundColor = WTheme.sheetOpaqueBar
-        view.backgroundColor = WTheme.pickerBackground
-        tableView.backgroundColor = WTheme.pickerBackground
-        tableViewBackgroundView.backgroundColor = WTheme.pickerBackground
-    }
-    
-    public override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-    }
-    
-    public override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        searchBar.setCenteredPlaceholder()
-    }
-    
-    public override func closeButtonPressed() {
-        super.closeButtonPressed()
-    }
-    
-    @objc func hideKeyboard() {
-        searchBar.endEditing(false)
-    }
-    
-    func filterTokens() {
-        let keyword = self.keyword.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        showingWalletTokens = walletTokens.filter { token in
-            if let token = TokenStore.tokens[token.tokenSlug] {
-                return (!onlyTonChain || token.chain == TON_CHAIN) && token.matchesSearch(keyword)
-            }
-            return false
-        }
-        showingPopularTokens = TokenStore.swapAssets?.filter { swapAsset in
-            guard swapAsset.isPopular == true else { return false }
-            return (!onlyTonChain || swapAsset.chain == TON_CHAIN) && swapAsset.matchesSearch(keyword)
-        } ?? []
-        showingAllAssets = TokenStore.swapAssets?.filter { swapAsset in
-            return (!onlyTonChain || swapAsset.chain == TON_CHAIN) && swapAsset.matchesSearch(keyword)
-        } ?? []
-        tableView?.reloadData()
-    }
-}
-
-extension TokenSelectionVC: UISearchBarDelegate {
-    
-    public func searchBarShouldBeginEditing(_ searchBar: UISearchBar) -> Bool {
-        searchBar.setPositionAdjustment(.init(horizontal: 8, vertical: 0), for: .search)
-        return true
-    }
-    
-    public func searchBarShouldEndEditing(_ searchBar: UISearchBar) -> Bool {
-        guard searchBar.text?.isEmpty != false else {
-            return true
-        }
-        searchBar.setCenteredPlaceholder()
-        return true
-    }
-    
-    public func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
-        keyword = searchBar.text ?? ""
-        filterTokens()
-    }
-    
-    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        updateNavigationBarProgressiveBlur(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
-    }
-}
-
-extension TokenSelectionVC: UITableViewDelegate, UITableViewDataSource {
-    public func numberOfSections(in tableView: UITableView) -> Int {
-        // otherSymbolOrMinterAddress: nil when selling token is selected and no filters are required.
-        // availablePairs: nil when buying token is selected and should filter, but nothing received yet!
-        otherSymbolOrMinterAddress == nil || availablePairs != nil ? 3 : 0
-    }
-    
-    public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch section {
-        case 0:
-            return showingWalletTokens.count > 0 ? 1 + showingWalletTokens.count : 0
-        case 1:
-            return showingPopularTokens.count > 0 ? 1 + showingPopularTokens.count : 0
-        case 2:
-            return showingAllAssets.count > 0 ? 1 + showingAllAssets.count : 0
-        default:
-            fatalError()
+    private func configureDataSource() {
+        dataSource = UITableViewDiffableDataSource<Section, Item>(tableView: tableView) { [weak self] tableView, indexPath, item in
+            guard let self else { return UITableViewCell() }
+            return self.cell(for: item, at: indexPath)
         }
     }
     
-    public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        if indexPath.row == 0 {
+    private func cell(for item: Item, at indexPath: IndexPath) -> UITableViewCell {
+        switch item {
+        case .header(let section):
             let cell = tableView.dequeueReusableCell(withIdentifier: "TokenHeader", for: indexPath) as! TokenHeaderCell
-            // Headers
-            switch indexPath.section {
-            case 0:
-                cell.configure(title: lang("My assets"))
-            case 1:
+            switch section {
+            case .myAssets:
+                cell.configure(title: lang("My"))
+            case .popular:
                 cell.configure(title: lang("Popular"))
-            case 2:
+            case .allAssets:
                 cell.configure(title: lang("A ~ Z"))
-            default:
-                break
+            }
+            return cell
+            
+        case .walletToken(let token):
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Token", for: indexPath) as! TokenCell
+            let isAvailable = isTokenAvailable(slug: token.tokenSlug)
+            cell.configure(with: token, isAvailable: isAvailable) { [weak self] in
+                guard let self, isTokenAvailable(slug: token.tokenSlug) else { return }
+                delegate?.didSelect(token: token)
+                navigationController?.popViewController(animated: true)
+            }
+            return cell
+            
+        case .apiToken(let token, _):
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Token", for: indexPath) as! TokenCell
+            let isAvailable = isTokenAvailable(slug: token.slug)
+            cell.configure(with: token, isAvailable: isAvailable) { [weak self] in
+                guard let self, isTokenAvailable(slug: token.slug) else { return }
+                AccountStore.updateAssetsAndActivityData(forAccountID: account.id, update: { settings in
+                    settings.saveImportedToken(slug: token.slug)
+                })
+                delegate?.didSelect(token: token)
+                navigationController?.popViewController(animated: true)
             }
             return cell
         }
-        
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Token", for: indexPath) as! TokenCell
-        switch indexPath.section {
-        case 0:
-            let token = showingWalletTokens[indexPath.row - 1]
-            let isAvailable = otherSymbolOrMinterAddress == nil || (
-                availablePairs?.contains(where: { pair in
-                    pair.slug == token.tokenSlug
-                }) ?? false
-            )
-            cell.configure(with: token,
-                           isAvailable: isAvailable || token.tokenSlug == forceAvailable) { [weak self] in
-                guard let self else { return }
-                let isAvailable = otherSymbolOrMinterAddress == nil || (
-                    availablePairs?.contains(where: { pair in
-                        pair.slug == token.tokenSlug
-                    }) ?? false
-                )
-                if !isAvailable && token.tokenSlug != forceAvailable {
-                    return
-                }
-                delegate?.didSelect(token: token)
-                navigationController?.popViewController(animated: true)
-            }
-        case 1:
-            let token = showingPopularTokens[indexPath.row - 1]
-            let isAvailable = otherSymbolOrMinterAddress == nil || (
-                availablePairs?.contains(where: { pair in
-                    pair.slug == token.slug
-                }) ?? false
-            )
-            cell.configure(with: token, isAvailable: isAvailable || token.slug == forceAvailable) { [weak self] in
-                guard let self else { return }
-                let isAvailable = otherSymbolOrMinterAddress == nil || (
-                    availablePairs?.contains(where: { pair in
-                        pair.slug == token.slug
-                    }) ?? false
-                )
-                if !isAvailable && token.slug != forceAvailable {
-                    return
-                }
-                delegate?.didSelect(token: token)
-                navigationController?.popViewController(animated: true)
-            }
-        case 2:
-            let token = showingAllAssets[indexPath.row - 1]
-            let isAvailable = otherSymbolOrMinterAddress == nil || (
-                availablePairs?.contains(where: { pair in
-                    pair.slug == token.slug
-                }) ?? false
-            )
-            cell.configure(with: token, isAvailable: isAvailable || token.slug == forceAvailable) { [weak self] in
-                guard let self else { return }
-                let isAvailable = otherSymbolOrMinterAddress == nil || (
-                    availablePairs?.contains(where: { pair in
-                        pair.slug == token.slug
-                    }) ?? false
-                )
-                if !isAvailable && token.slug != forceAvailable {
-                    return
-                }
-                delegate?.didSelect(token: token)
-                navigationController?.popViewController(animated: true)
-            }
-            break
-        default:
-            fatalError()
-        }
-        return cell
     }
     
-    public func balanceChanged() {
-        walletTokens = showMyAssets ? BalanceStore.currentAccountBalanceData?.walletTokens ?? [] : []
+    private func isTokenAvailable(slug: String) -> Bool {
+        if slug == forceAvailable {
+            return true
+        }
+        if otherSymbolOrMinterAddress == nil {
+            return true
+        }
+        return availablePairs?.contains { $0.slug == slug } ?? false
+    }
+    
+    // MARK: - Theme
+    
+    public override func updateTheme() {
+        tableView?.backgroundColor = WTheme.pickerBackground
+    }
+    
+    // MARK: - Actions
+    
+    @objc private func hideKeyboard() {
+        view.endEditing(false)
+    }
+    
+    // MARK: - Data
+    
+    private func updateWalletTokens() {
+        walletTokens = showMyAssets ? $account.balanceData?.walletTokens ?? [] : []
+    }
+    
+    private func filterTokens() {
+        let keyword = self.keyword.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let shouldIncludeChain = { [account, onlySupportedChains] (chain: ApiChain) -> Bool in
+            !onlySupportedChains || account.supports(chain: chain)
+        }
+        
+        showingWalletTokens = walletTokens.filter { token in
+            guard let apiToken = TokenStore.tokens[token.tokenSlug] else { return false }
+            return shouldIncludeChain(apiToken.chain) && apiToken.matchesSearch(keyword)
+        }
+
+        let sourceAssets: [ApiToken] = if onlySupportedChains {
+            TokenStore.tokens.values.map { $0 }
+        } else {
+            TokenStore.swapAssets ?? []
+        }
+        let filteredAssets = sourceAssets
+            .filter { shouldIncludeChain($0.chain) && $0.matchesSearch(keyword) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        showingPopularTokens = filteredAssets.filter { $0.isPopular == true }
+        showingAllAssets = filteredAssets
+        
+        applySnapshot()
+    }
+    
+    private func applySnapshot() {
+        // Don't show anything if waiting for pairs to load
+        guard otherSymbolOrMinterAddress == nil || availablePairs != nil else {
+            let snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+            dataSource?.apply(snapshot, animatingDifferences: false)
+            return
+        }
+        
+        var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+        
+        if !showingWalletTokens.isEmpty {
+            snapshot.appendSections([.myAssets])
+            snapshot.appendItems([.header(.myAssets)], toSection: .myAssets)
+            snapshot.appendItems(showingWalletTokens.map { .walletToken($0) }, toSection: .myAssets)
+        }
+        
+        if !showingPopularTokens.isEmpty {
+            snapshot.appendSections([.popular])
+            snapshot.appendItems([.header(.popular)], toSection: .popular)
+            snapshot.appendItems(showingPopularTokens.map { .apiToken($0, .popular) }, toSection: .popular)
+        }
+        
+        if !showingAllAssets.isEmpty {
+            snapshot.appendSections([.allAssets])
+            snapshot.appendItems([.header(.allAssets)], toSection: .allAssets)
+            snapshot.appendItems(showingAllAssets.map { .apiToken($0, .allAssets) }, toSection: .allAssets)
+        }
+        
+        dataSource?.apply(snapshot, animatingDifferences: false)
+    }
+}
+
+// MARK: - UISearchResultsUpdating
+
+extension TokenSelectionVC: UISearchResultsUpdating {
+    public func updateSearchResults(for searchController: UISearchController) {
+        keyword = searchController.searchBar.text ?? ""
         filterTokens()
     }
 }
+
+// MARK: - UITableViewDelegate
+
+extension TokenSelectionVC: UITableViewDelegate {}
+
+// MARK: - WalletCoreData.EventsObserver
 
 extension TokenSelectionVC: WalletCoreData.EventsObserver {
     public func walletCore(event: WalletCoreData.Event) {
         switch event {
         case .balanceChanged, .tokensChanged:
-            balanceChanged()
-            break
+            updateWalletTokens()
+            filterTokens()
         default:
             break
         }

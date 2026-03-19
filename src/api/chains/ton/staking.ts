@@ -52,7 +52,6 @@ import { NominatorPool } from './contracts/NominatorPool';
 import { fetchStoredChainAccount, fetchStoredWallet } from '../../common/accounts';
 import { callBackendGet } from '../../common/backend';
 import { getAccountCache, getStakingCommonCache, updateAccountCache } from '../../common/cache';
-import { getClientId } from '../../common/other';
 import { buildTokenSlug, getTokenByAddress, getTokenBySlug } from '../../common/tokens';
 import { isKnownStakingPool } from '../../common/utils';
 import { STAKE_COMMENT, TON_GAS, UNSTAKE_COMMENT } from './constants';
@@ -430,7 +429,9 @@ export async function getStakingStates(
     promises.push(buildNominatorsState(options));
   }
 
-  if (TON_USDE.slug in balances && (!commonData.ethena.isDisabled || DEBUG)) {
+  const hasEthenaBalance = TON_USDE.slug in balances || TON_TSUSDE.slug in balances;
+
+  if (hasEthenaBalance && (!commonData.ethena.isDisabled || DEBUG)) {
     promises.push(buildEthenaState(options));
   }
 
@@ -592,7 +593,7 @@ async function buildEthenaState(options: StakingStateOptions): Promise<ApiEthena
   const {
     network, balances, address: walletAddress,
     commonData, commonData: { ethena: { apy, apyVerified } },
-    backendState: { ethena: { isVerified } },
+    backendState: { ethena: { isVerified, isBoostAvailable } },
   } = options;
 
   const rate = network === 'testnet' ? 1 : commonData.ethena.rate;
@@ -618,6 +619,7 @@ async function buildEthenaState(options: StakingStateOptions): Promise<ApiEthena
     tokenBalance,
     unstakeRequestAmount: lockedUsdeBalance,
     unlockTime: unlockTime && lockedUsdeBalance ? unlockTime * 1000 : undefined,
+    isBoostAvailable,
     tsUsdeWalletAddress,
   };
 
@@ -653,11 +655,8 @@ export async function getBackendStakingState(accountId: string): Promise<ApiBack
 }
 
 export async function fetchBackendStakingState(address: string, isViewOnly: boolean): Promise<ApiBackendStakingState> {
-  const clientId = await getClientId();
   const stakingState = await callBackendGet(`/staking/state/${address}`, {
     isViewMode: isViewOnly ? 1 : undefined,
-  }, {
-    'X-App-ClientID': clientId,
   });
 
   stakingState.balance = fromDecimal(stakingState.balance);
@@ -667,7 +666,7 @@ export async function fetchBackendStakingState(address: string, isViewOnly: bool
     throw Error('Unexpected pool address, likely a malicious activity');
   }
 
-  return stakingState;
+  return stakingState as ApiBackendStakingState;
 }
 
 export async function submitTokenStakingClaim(

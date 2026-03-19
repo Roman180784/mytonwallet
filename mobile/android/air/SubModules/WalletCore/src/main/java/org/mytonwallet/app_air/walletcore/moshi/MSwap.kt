@@ -4,6 +4,7 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import org.json.JSONObject
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletcore.models.MBridgeError
 import org.mytonwallet.app_air.walletcore.models.MToken
 import java.math.BigDecimal
@@ -18,7 +19,7 @@ data class MApiSwapAsset(
     val priceUsd: Double? = null,
     override val image: String? = null,
     override val tokenAddress: String? = null,
-    val keywords: List<String>? = null,
+    override val keywords: List<String>? = null,
     val color: String? = null
 ) : IApiToken {
 
@@ -33,7 +34,8 @@ data class MApiSwapAsset(
                 isPopular = token.isPopular,
                 priceUsd = token.priceUsd,
                 image = token.image,
-                tokenAddress = token.tokenAddress
+                tokenAddress = token.tokenAddress,
+                keywords = token.keywords
             )
         }
     }
@@ -331,6 +333,9 @@ enum class MApiSwapCexTransactionStatus {
     @Json(name = "waiting")
     WAITING,
 
+    @Json(name = "confirmed")
+    CONFIRMED,
+
     @Json(name = "confirming")
     CONFIRMING,
 
@@ -368,6 +373,11 @@ enum class MApiSwapCexTransactionStatus {
                 SENDING,
                 HOLD
             )
+        private var FINISHED_STATUSES =
+            listOf(
+                CONFIRMED,
+                FINISHED
+            )
     }
 
     val uiStatus: MApiTransaction.UIStatus
@@ -375,7 +385,7 @@ enum class MApiSwapCexTransactionStatus {
             NEW, WAITING, CONFIRMING, EXCHANGING, SENDING -> MApiTransaction.UIStatus.PENDING
             EXPIRED, REFUNDED, OVERDUE -> MApiTransaction.UIStatus.EXPIRED
             FAILED -> MApiTransaction.UIStatus.FAILED
-            FINISHED -> MApiTransaction.UIStatus.COMPLETED
+            CONFIRMED, FINISHED -> MApiTransaction.UIStatus.COMPLETED
             HOLD -> MApiTransaction.UIStatus.HOLD
         }
 
@@ -385,7 +395,7 @@ enum class MApiSwapCexTransactionStatus {
                 when (this) {
                     WAITING -> "Waiting for Payment"
                     NEW, CONFIRMING, EXCHANGING, SENDING -> "In Progress"
-                    FINISHED -> ""
+                    CONFIRMED, FINISHED -> ""
                     FAILED -> "Failed"
                     REFUNDED -> "Refunded"
                     HOLD -> "On Hold"
@@ -394,8 +404,23 @@ enum class MApiSwapCexTransactionStatus {
             )
         }
 
+    val color: WColor
+        get() {
+            return when (this) {
+                WAITING, NEW, CONFIRMING, EXCHANGING, SENDING -> WColor.SecondaryText
+                CONFIRMED, FINISHED -> WColor.Green
+                FAILED, REFUNDED, OVERDUE, EXPIRED -> WColor.Red
+                HOLD -> WColor.Orange
+            }
+        }
+
     val isInProgress: Boolean
         get() {
             return IN_PROGRESS_STATUSES.contains(this)
+        }
+
+    val isFinished: Boolean
+        get() {
+            return FINISHED_STATUSES.contains(this)
         }
 }

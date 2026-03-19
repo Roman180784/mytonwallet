@@ -67,7 +67,6 @@ let INIT_API = """
         }, 
         {
             isElectron: false,
-            isNativeBottomSheet: false,
             isIosApp: true,
             isAndroidApp: false
         }
@@ -100,27 +99,29 @@ let LOGGING_FETCH = """
 
 private let log = Log("JSWebViewBridge")
 private let console = Log("console")
-private let logUpdate = Log("update")
-
+private let sdkIndexFileURL = AirBundle.url(forResource: "index", withExtension: "html")!
+private let sdkReadAccessURL = sdkIndexFileURL.deletingLastPathComponent()
 
 // The bridge to use mytonwallet js logic in Swift applications.
-class JSWebViewBridge: UIViewController {
+public class JSWebViewBridge: UIViewController {
     
     private var webView: WKWebView?
     private let start = Date()
 
-    let webViewQueue = DispatchQueue(label: "org.mytonwallet.app.webViewBridge_background", attributes: .concurrent)
-    
     private let updateQueue = DispatchQueue(label: "onUpdate", qos: .background, attributes: [.concurrent])
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         
         recreateWebView()
-        view.isHidden = true
+        view.isUserInteractionEnabled = false
+        view.alpha = 0.1
 
         Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.webView?.evaluateJavaScript(";", completionHandler: nil)
+            Task { @MainActor in
+                guard let webView = self?.webView else { return }
+                _ = try? await webView.evaluateJavaScript(";")
+            }
         }
     }
 
@@ -148,8 +149,10 @@ class JSWebViewBridge: UIViewController {
 
         webViewConfiguration.userContentController = userContentController
         // create web view
-        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 100, height: 100),
-                            configuration: webViewConfiguration)
+        webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 1, height: 1),
+            configuration: webViewConfiguration
+        )
         webView?.navigationDelegate = self
         webView?.uiDelegate = self
         #if DEBUG
@@ -157,7 +160,6 @@ class JSWebViewBridge: UIViewController {
             webView?.isInspectable = true
         }
         #endif
-        webView?.isHidden = true
 
         view.addSubview(webView!)
         if isViewAppeared {
@@ -165,8 +167,19 @@ class JSWebViewBridge: UIViewController {
         }
     }
     
+    public func moveToViewController(_ parentViewController: UIViewController) {
+        guard self.parent !== parentViewController else { return }
+        willMove(toParent: nil)
+        view.removeFromSuperview()
+        removeFromParent()
+        parentViewController.addChild(self)
+        parentViewController.view.addSubview(view)
+        didMove(toParent: parentViewController)
+    }
+    
     var isViewAppeared = false
-    override func viewWillAppear(_ animated: Bool) {
+    
+    public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         if !isViewAppeared {
             loadHtml()
@@ -175,11 +188,10 @@ class JSWebViewBridge: UIViewController {
     }
     
     private func loadHtml() {
-        let url = AirBundle.url(forResource: "index", withExtension: "html")!
-        webView?.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        webView?.loadFileURL(sdkIndexFileURL, allowingReadAccessTo: sdkReadAccessURL)
     }
     
-    private func _callApiImpl(methodName: String, args: [AnyEncodable?]) async throws -> Any? {
+    private func _callApiImpl(methodName: String, args: [AnyEncodable?]) async throws -> sending Any? { // todo: check use of sending
         let jsonData = try! JSONEncoder().encode(args)
         let argsString = String(data: jsonData, encoding: .utf8)!
         
@@ -226,24 +238,11 @@ class JSWebViewBridge: UIViewController {
         throw BridgeCallError(message: error.localizedDescription, payload: error)
     }
     
-    func callApi(methodName: String, args: [AnyEncodable?], callback: @escaping (Result<Any?, BridgeCallError>) -> Void) {
-        Task {
-            do {
-                let result = try await _callApiImpl(methodName: methodName, args: args)
-                callback(.success(result))
-            } catch let error as BridgeCallError {
-                callback(.failure(error))
-            } catch {
-                callback(.failure(.unknown(baseError: error)))
-            }
-        }
-    }
-    
-    func callApiRaw<each E: Encodable>(_ methodName: String, _ args: repeat each E) async throws -> Any? {
+    func callApiRaw<each E: Encodable>(_ methodName: String, _ args: repeat each E) async throws -> sending Any? {
         try await _callApiImpl(methodName: methodName, args: asAnyEncodables(repeat each args))
     }
     
-    func callApi<each E: Encodable, T: Decodable>(_ methodName: String, _ args: repeat each E, decoding: T.Type) async throws -> T {
+    func callApi<each E: Encodable & Sendable, T: Decodable & Sendable>(_ methodName: String, _ args: repeat each E, decoding: T.Type) async throws -> T {
         let data = try await _callApiImpl(methodName: methodName, args: asAnyEncodables(repeat each args))
         do {
             return try JSONSerialization.decode(T.self, from: data.orThrow())
@@ -296,12 +295,13 @@ class JSWebViewBridge: UIViewController {
     }
     
     func stop() {
+        webView?.removeFromSuperview()
         webView = nil
     }
 }
 
-extension JSWebViewBridge: WKScriptMessageHandler {
-    func userContentController(_ userContentController: WKUserContentController,
+extension JSWebViewBridge: WKScriptMessageHandler { // todo: move to a separate class
+    public func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         assert(Thread.isMainThread)
         let body = message.body
@@ -316,7 +316,7 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                     body = arr.map { String(describing: $0) }.joined(separator: " ")
                 }
                 let string = "\(body)"
-                console.info("\(string, .public)", fileOnly: string.contains("POST") || string.contains("GET"))
+                console.info("\(string, .public)", fileOnly: string.contains("POST") || string.contains("GET") || string.contains("toncenter: "))
                 
             case "nativeCall":
                 guard let requestNumber = data?["requestNumber"] as? Int,
@@ -452,7 +452,7 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                 else {
                     return
                 }
-//                logUpdate.info("\(updateType, .public)", fileOnly: updateType == "updatingStatus")
+//                log.info("\(updateType, .public)", fileOnly: updateType == "updatingStatus")
                 #if DEBUG
 //                if updateType != "updatingStatus" {
 //                    log.debug("onUpdate: \(updateType)")
@@ -461,19 +461,21 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                 #endif
                 switch updateType {
                 case "updateAccount":
-                    #warning("TODO: updateAccount")
-                    break
+                    do {
+                        let update = try JSONSerialization.decode(ApiUpdate.UpdateAccount.self, from: data)
+                        WalletCoreData.notify(event: .updateAccount(update))
+                    } catch {
+                        log.fault("failed to decode updateAccount \(error, .public)")
+                    }
+
                 case "updateAccountConfig":
-                    #warning("TODO: updateAccountConfig")
+                    // TODO: updateAccountConfig
                     break
                     
                 case "initialActivities":
-                    guard let accountId = data["accountId"] as? String else {
-                        return
-                    }
-                    logUpdate.info("initialActivities - \(accountId, .public)")
                     do {
                         let update = try JSONSerialization.decode(ApiUpdate.InitialActivities.self, from: data)
+                        log.info("initialActivities - \(update.accountId, .public)")
                         WalletCoreData.notify(event: .initialActivities(update))
                     } catch {
                         log.fault("failed to decode initialActivities \(error, .public)")
@@ -508,7 +510,7 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                         return
                     }
                     AccountStore.walletVersionsData = walletVersionsData
-                    WalletCoreData.notify(event: .walletVersionsDataReceived, for: accountId)
+                    WalletCoreData.notify(event: .walletVersionsDataReceived)
                     break
                 case "updateSwapTokens":
                     do {
@@ -592,11 +594,11 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                         return
                     }
                     log.info("updatingStatus \(data["kind"] ?? "?", .public)=\(isUpdating)", fileOnly: true)
-                    WalletCoreData.notify(event: .updatingStatusChanged, for: nil)
+                    WalletCoreData.notify(event: .updatingStatusChanged)
                     break
                 case "updateConfig":
                     do {
-                        var update = try JSONSerialization.decode(ApiUpdate.UpdateConfig.self, from: data)
+                        let update = try JSONSerialization.decode(ApiUpdate.UpdateConfig.self, from: data)
 //                        update.isLimited = true
                         ConfigStore.shared.config = update
                     } catch {
@@ -622,25 +624,25 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                     DappsStore.updateDappCount()
                 case "dappSendTransactions":
                     do {
-                        let value = try JSONSerialization.decode(MDappSendTransactions.self, from: data)
-                        WalletCoreData.notify(event: .dappSendTransactions(value), for: nil)
+                        let value = try JSONSerialization.decode(ApiUpdate.DappSendTransactions.self, from: data)
+                        WalletCoreData.notify(event: .dappSendTransactions(value))
                     } catch {
                         assertionFailure()
                     }
                 case "dappSignData":
                     do {
                         let value = try JSONSerialization.decode(ApiUpdate.DappSignData.self, from: data)
-                        WalletCoreData.notify(event: .dappSignData(value), for: nil)
+                        WalletCoreData.notify(event: .dappSignData(value))
                     } catch {
                         assertionFailure()
                     }
 
                 case "dappDisconnect":
                     if let accountId = data["acountId"] as? String, let origin = data["origin"] as? String {
-                        WalletCoreData.notify(event: .dappDisconnect(accountId: accountId, origin: origin), for: nil)
+                        WalletCoreData.notify(event: .dappDisconnect(accountId: accountId, origin: origin))
                     }
                 case "updateDapps":
-                    WalletCoreData.notify(event: .updateDapps, for: nil)
+                    WalletCoreData.notify(event: .updateDapps)
 
                 case "dappTransferComplete":
                     break
@@ -652,8 +654,12 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                     break
                     
                 case "updateAccountDomainData":
-                    #warning("TODO: updateAccountDomainData")
-                    break
+                    do {
+                        let update = try JSONSerialization.decode(ApiUpdate.UpdateAccountDomainData.self, from: data)
+                        WalletCoreData.notify(event: .updateAccountDomainData(update))
+                    } catch {
+                        log.fault("failed to decode updateAccountDomainData \(error, .public)")
+                    }
 
                 case "showError":
                     if let error = data["error"] as? String {
@@ -677,7 +683,6 @@ extension JSWebViewBridge: WKScriptMessageHandler {
                                 UIApplication.shared.open(URL(string: "tg://resolve")!)
                             }
                         }
-                        #warning("TODO: openUrl")
                         break
                     } catch {
                         log.error("openUrl: \(error, .public)")
@@ -698,25 +703,25 @@ extension JSWebViewBridge: WKScriptMessageHandler {
 }
 
 extension JSWebViewBridge: WKNavigationDelegate, WKUIDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         injectIfNeeded()
     }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
     }
-    func webView(_ webView: WKWebView,
+    public func webView(_ webView: WKWebView,
                         didFailProvisionalNavigation navigation: WKNavigation!,
                         withError error: any Error) {
     }
     
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+    public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         return .allow
     }
     
-    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+    public func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
         return .allow
     }
     
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         log.error("WebView terminated, reloading...")
         recreateWebView {
             if let accountId = AccountStore.account?.id {
@@ -727,7 +732,6 @@ extension JSWebViewBridge: WKNavigationDelegate, WKUIDelegate {
         }
     }
 }
-
 
 fileprivate extension WKWebView {
     func nativeCallOk(requestNumber: Int, result: Any?) async throws {

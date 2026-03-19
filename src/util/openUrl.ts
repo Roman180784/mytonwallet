@@ -3,6 +3,7 @@ import { getActions, getGlobal } from '../global';
 
 import { IFRAME_WHITELIST, IS_CAPACITOR, SUBPROJECT_URL_MASK } from '../config';
 import { closeAllOverlays } from '../global/helpers/misc';
+import { selectCurrentAccount } from '../global/selectors';
 import { isTelegramUrl } from './url';
 
 const [, SUBPROJECT_HOST_ENDING] = SUBPROJECT_URL_MASK.split('*');
@@ -11,11 +12,12 @@ export type OpenUrlOptions = {
   isExternal?: boolean;
   title?: string;
   subtitle?: string;
+  shouldSkipOverlayClose?: boolean;
 };
 
 export async function openUrl(url: string, options?: OpenUrlOptions) {
   if (isSubproject(url)) {
-    url = `${url}#theme=${getGlobal().settings.theme}`;
+    url = `${url}#${buildSubprojectContext()}`;
   }
 
   if (
@@ -24,7 +26,10 @@ export async function openUrl(url: string, options?: OpenUrlOptions) {
     && (IS_CAPACITOR || isSubproject(url) || isInIframeWhitelist(url))
     && !isTelegramUrl(url)
   ) {
-    await closeAllOverlays();
+    if (!options?.shouldSkipOverlayClose) {
+      await closeAllOverlays();
+    }
+
     getActions().openBrowser({
       url,
       title: options?.title,
@@ -38,7 +43,25 @@ export async function openUrl(url: string, options?: OpenUrlOptions) {
   }
 }
 
-function isSubproject(url: string) {
+function buildSubprojectContext() {
+  const global = getGlobal();
+  const { theme, langCode, baseCurrency } = global.settings;
+  const account = selectCurrentAccount(global);
+
+  const addresses = Object.entries(account?.byChain ?? {})
+    .map(([chain, wallet]) => (wallet?.address ? `${chain}:${wallet.address}` : undefined))
+    .filter(Boolean)
+    .join(',');
+
+  return new URLSearchParams({
+    theme,
+    lang: langCode,
+    baseCurrency,
+    ...(addresses && { addresses }),
+  });
+}
+
+export function isSubproject(url: string) {
   const { host } = new URL(url);
   return host.endsWith(SUBPROJECT_HOST_ENDING) || host.startsWith('localhost:432');
 }
@@ -49,9 +72,11 @@ function isInIframeWhitelist(url: string) {
 
 export function handleUrlClick(
   e: React.MouseEvent<HTMLAnchorElement, MouseEvent>,
+  options?: OpenUrlOptions,
 ) {
   e.preventDefault();
   void openUrl(e.currentTarget.href, {
+    ...options,
     isExternal: e.shiftKey || e.ctrlKey || e.metaKey,
   });
 }

@@ -16,27 +16,35 @@ public typealias UnfairLock = OSAllocatedUnfairLock
     func showDebugView()
     func switchToCapacitor()
     func switchToAir()
+    var canSwitchToCapacitor: Bool { get }
+    var isFirstLaunch: Bool { get }
 }
 
-public protocol WalletContextDelegate: NSObject {
+public enum DeeplinkOpenSource {
+    case generic
+    case exploreSearchBar
+}
+
+@MainActor public protocol WalletContextDelegate: NSObject, Sendable {
     func bridgeIsReady()
-    //func bridgeTerminated()
     func walletIsReady(isReady: Bool)
     func switchToCapacitor()
     func restartApp()
-    func addAnotherAccount(wordList: [String], passedPasscode: String?) -> UIViewController
-    func importAnotherAccount(passedPasscode: String?, isLedger: Bool) async -> UIViewController
-    func viewAnyAddress() -> UIViewController
-    func handleDeeplink(url: URL) -> Bool
+    func handleDeeplink(url: URL, source: DeeplinkOpenSource) -> Bool
     var isWalletReady: Bool { get }
     var isAppUnlocked: Bool { get }
-    var isCapacitorAppAvailable: Bool { get }
+}
+
+public extension WalletContextDelegate {
+    func handleDeeplink(url: URL) -> Bool {
+        handleDeeplink(url: url, source: .generic)
+    }
 }
 
 public class WalletContextManager {
     private init() {}
     
-    public static weak var delegate: WalletContextDelegate? = nil
+    @MainActor public static weak var delegate: WalletContextDelegate? = nil
 }
 
 public let AirBundle = Bundle(for: WalletContextManager.self)

@@ -1,4 +1,5 @@
 import type { RefObject, TeactNode } from '../../lib/teact/teact';
+import { useMemo } from '../../lib/teact/teact';
 import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
 
 import type { ApiTokenWithPrice } from '../../api/types';
@@ -32,7 +33,7 @@ interface OwnProps extends AmountInputStateOutput {
   allTokens?: AmountInputToken[];
   isStatic?: boolean;
   hasError: boolean;
-  isMultichainAccount?: boolean;
+  withChainIcon?: boolean;
   isSensitiveDataHidden?: true;
   isMaxAmountLoading?: boolean;
   /** If true, the max amount label will say "All" instead of "Max" and all the amount digits will be shown (made for unstaking) */
@@ -53,7 +54,7 @@ function AmountInput({
   allTokens,
   isStatic,
   hasError,
-  isMultichainAccount,
+  withChainIcon,
   isSensitiveDataHidden,
   isMaxAmountLoading,
   isMaxAmountAllMode,
@@ -69,6 +70,13 @@ function AmountInput({
   const lang = useLang();
   const transitionKey = isBaseCurrency ? 0 : 1;
   const { inputId, onInputFocus, onInputBlur, onClick: keepInputFocus } = useKeepInputFocus(transitionKey);
+  const availableTokens = useMemo(() => {
+    if (isAmountReadonly && token) {
+      return [token];
+    }
+
+    return allTokens;
+  }, [allTokens, isAmountReadonly, token]);
 
   const handleMaxAmountClick = useLastCallback(() => {
     onMaxAmountClick(maxAmount);
@@ -78,11 +86,12 @@ function AmountInput({
   function renderBalance() {
     return (
       <AmountInputMaxButton
-        maxAmount={isAmountReadonly ? undefined : maxAmount}
+        maxAmount={maxAmount}
         token={token}
         isLoading={isMaxAmountLoading}
         isAllMode={isMaxAmountAllMode}
         isSensitiveDataHidden={isSensitiveDataHidden}
+        isDisabled={isAmountReadonly}
         onAmountClick={handleMaxAmountClick}
       />
     );
@@ -128,9 +137,9 @@ function AmountInput({
     return (
       <TokenDropdown<AmountInputToken>
         selectedToken={token}
-        allTokens={allTokens}
+        allTokens={availableTokens}
         isInMode={isBaseCurrency}
-        isMultichainAccount={isMultichainAccount}
+        withChainIcon={withChainIcon}
         onChange={onTokenChange}
       />
     );
@@ -149,10 +158,15 @@ function AmountInput({
     // The main reason to use <button> is preventing the comment type selector (which is also a <button>) from hijacking
     // the clicks on touch screens.
     return (
-      <button type="button" className={styles.alternative} onClick={onClick}>
+      <button
+        type="button"
+        disabled={isAmountReadonly}
+        className={styles.alternative}
+        onClick={isAmountReadonly ? undefined : onClick}
+      >
         ≈&thinsp;
         {formatCurrency(alternativeValue ?? 0, symbol, undefined, true)}
-        <i className={buildClassName(styles.alternative__icon, 'icon-switch')} aria-hidden />
+        {!isAmountReadonly && <i className={buildClassName(styles.alternative__icon, 'icon-switch')} aria-hidden />}
       </button>
     );
   }
@@ -180,8 +194,7 @@ export default memo(AmountInput);
 /**
  * Clicking the currency switch button un-focuses the input. This creates a bad UX with virtual keyboard.
  * To improve the UX, we focus the input back when the user clicks the currency switch button.
- * We focus only if the input was focused before the click, because Native Bottom Sheet renders a couple blank
- * frames when the virtual keyboard is not open and the focus is triggered programmatically.
+ * We focus only if the input was focused before the click to avoid forcing the virtual keyboard open on a cold tap.
  */
 function useKeepInputFocus(transitionKey: number) {
   const inputId = `${useUniqueId()}_${transitionKey}`;

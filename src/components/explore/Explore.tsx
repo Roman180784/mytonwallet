@@ -1,5 +1,5 @@
 import React, {
-  memo, useEffect, useMemo, useRef, useState,
+  memo, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
@@ -9,30 +9,21 @@ import { ANIMATED_STICKER_BIG_SIZE_PX } from '../../config';
 import { selectCurrentAccountState } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import captureEscKeyListener from '../../util/captureEscKeyListener';
-import { stopEvent } from '../../util/domEvents';
-import { vibrate } from '../../util/haptics';
 import resolveSlideTransitionName from '../../util/resolveSlideTransitionName';
 import { captureControlledSwipe } from '../../util/swipeController';
 import useTelegramMiniAppSwipeToClose from '../../util/telegram/hooks/useTelegramMiniAppSwipeToClose';
-import {
-  IS_ANDROID, IS_ANDROID_APP, IS_IOS_APP, IS_TOUCH_ENV,
-} from '../../util/windowEnvironment';
+import { IS_ANDROID_APP, IS_IOS_APP, IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import { SEC } from '../../api/constants';
 import { ANIMATED_STICKERS_PATHS } from '../ui/helpers/animatedAssets';
 import {
   filterSites,
-  findSiteByUrl,
-  generateSearchSuggestions,
-  openSite,
   processSites,
-  type SearchSuggestions,
 } from './helpers/utils';
 
+import useAutoScroll from '../../hooks/useAutoScroll';
 import { useDeviceScreen } from '../../hooks/useDeviceScreen';
-import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
-import useFlag from '../../hooks/useFlag';
-import useHorizontalScroll from '../../hooks/useHorizontalScroll';
+import useDragScroll from '../../hooks/useDragScroll';
 import useLang from '../../hooks/useLang';
-import useLastCallback from '../../hooks/useLastCallback';
 import useModalTransitionKeys from '../../hooks/useModalTransitionKeys';
 import usePrevious2 from '../../hooks/usePrevious2';
 import useScrolledState from '../../hooks/useScrolledState';
@@ -43,8 +34,8 @@ import Spinner from '../ui/Spinner';
 import Transition from '../ui/Transition';
 import Category from './Category';
 import DappFeed from './DappFeed';
-import ExploreSearchSuggestions from './ExploreSearchSuggestions';
-import Site from './Site';
+import ExploreSearch from './ExploreSearch';
+import SiteFeatured from './SiteFeatured';
 import SiteList from './SiteList';
 
 import styles from './Explore.module.scss';
@@ -59,15 +50,15 @@ interface StateProps {
   sites?: ApiSite[];
   featuredTitle?: string;
   shouldRestrict: boolean;
-  browserHistory?: string[];
   currentSiteCategoryId?: number;
 }
 
-const SUGGESTIONS_OPEN_DELAY = 300;
 const enum SLIDES {
   main,
   category,
 }
+
+const SLIDE_DURATION = 4 * SEC;
 
 function Explore({
   isActive,
@@ -75,28 +66,22 @@ function Explore({
   sites: originalSites,
   featuredTitle,
   shouldRestrict,
-  browserHistory,
   currentSiteCategoryId,
   onScroll,
 }: OwnProps & StateProps) {
   const {
     loadExploreSites,
     getDapps,
-    removeSiteFromBrowserHistory,
     openSiteCategory,
     closeSiteCategory,
   } = getActions();
 
-  const inputRef = useRef<HTMLInputElement>();
-  const suggestionsTimeoutRef = useRef<number | undefined>(undefined);
   const transitionRef = useRef<HTMLDivElement>();
   const featuredContainerRef = useRef<HTMLDivElement>();
 
   const lang = useLang();
   const { isLandscape, isPortrait } = useDeviceScreen();
-  const [searchValue, setSearchValue] = useState<string>('');
-  const [isSearchFocused, markSearchFocused, unmarkSearchFocused] = useFlag(false);
-  const [isSuggestionsVisible, showSuggestions, hideSuggestions] = useFlag(false);
+
   const { renderingKey } = useModalTransitionKeys(currentSiteCategoryId || 0, !!isActive);
   const prevSiteCategoryIdRef = useStateRef(usePrevious2(renderingKey));
   const { disableSwipeToClose, enableSwipeToClose } = useTelegramMiniAppSwipeToClose(isActive);
@@ -113,11 +98,6 @@ function Explore({
   );
 
   const filteredSites = useMemo(() => filterSites(originalSites, shouldRestrict), [originalSites, shouldRestrict]);
-
-  const searchSuggestions = useMemo<SearchSuggestions>(
-    () => generateSearchSuggestions(searchValue, browserHistory, filteredSites),
-    [browserHistory, searchValue, filteredSites],
-  );
 
   const { featuredSites, allSites } = useMemo(() => processSites(filteredSites), [filteredSites]);
 
@@ -140,11 +120,16 @@ function Explore({
     });
   }, [disableSwipeToClose, enableSwipeToClose, filteredSites?.length, prevSiteCategoryIdRef]);
 
-  useHorizontalScroll({
+  useAutoScroll({
     containerRef: featuredContainerRef,
-    isDisabled: IS_TOUCH_ENV || featuredSites.length === 0,
-    shouldPreventDefault: true,
-    contentSelector: `.${styles.featuredList}`,
+    itemSelector: `.${styles.featuredItem}`,
+    interval: SLIDE_DURATION,
+    isDisabled: !isActive || featuredSites.length <= 1,
+  });
+
+  useDragScroll({
+    containerRef: featuredContainerRef,
+    isDisabled: !isActive || IS_TOUCH_ENV || featuredSites.length <= 1,
   });
 
   const filteredCategories = useMemo(() => {
@@ -158,98 +143,15 @@ function Explore({
     loadExploreSites({ isLandscape, langCode: lang.code });
   }, [isActive, isLandscape, lang.code]);
 
-  const safeShowSuggestions = useLastCallback(() => {
-    if (searchSuggestions.isEmpty) return;
-
-    // Simultaneous opening of the virtual keyboard and display of Saved Addresses causes animation degradation
-    if (IS_ANDROID) {
-      suggestionsTimeoutRef.current = window.setTimeout(showSuggestions, SUGGESTIONS_OPEN_DELAY);
-    } else {
-      showSuggestions();
-    }
-  });
-
-  const safeHideSuggestions = useLastCallback(() => {
-    if (isSuggestionsVisible) {
-      hideSuggestions();
-    }
-    window.clearTimeout(suggestionsTimeoutRef.current);
-  });
-
-  useEffectWithPrevDeps(([prevIsSearchFocused]) => {
-    if ((prevIsSearchFocused && !isSearchFocused) || searchSuggestions.isEmpty) {
-      safeHideSuggestions();
-    }
-    if (isSearchFocused && !searchSuggestions.isEmpty) {
-      safeShowSuggestions();
-    }
-  }, [isSearchFocused, searchSuggestions.isEmpty]);
-
-  const handleSiteClick = useLastCallback((
-    e: React.SyntheticEvent<HTMLDivElement | HTMLAnchorElement>,
-    url: string,
-  ) => {
-    void vibrate();
-    hideSuggestions();
-    const site = findSiteByUrl(originalSites, url);
-    openSite(url, site?.isExternal, site?.name);
-  });
-
-  const handleSiteClear = useLastCallback((e: React.MouseEvent, url: string) => {
-    stopEvent(e);
-
-    removeSiteFromBrowserHistory({ url });
-  });
-
-  function handleSearchValueChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setSearchValue(e.target.value);
-  }
-
-  const handleMenuClose = useLastCallback(() => {
-    inputRef.current?.blur();
-  });
-
-  function handleSearchSubmit(e: React.FormEvent<HTMLFormElement>) {
-    stopEvent(e);
-
-    handleMenuClose();
-
-    if (searchValue.length > 0) {
-      openSite(searchValue);
-      setSearchValue('');
-    }
-  }
-
-  function renderSearch() {
-    return (
-      <form action="#" onSubmit={handleSearchSubmit} className={styles.searchContainer} autoComplete="off">
-        <i className={buildClassName(styles.searchIcon, 'icon-search')} aria-hidden />
-        <input
-          name="explore-search"
-          className={styles.searchInput}
-          placeholder={lang('Search app or enter address')}
-          value={searchValue}
-          autoCorrect={false}
-          autoCapitalize="none"
-          spellCheck={false}
-          inputMode="url"
-          onChange={handleSearchValueChange}
-          onFocus={markSearchFocused}
-          onBlur={unmarkSearchFocused}
-        />
-      </form>
-    );
-  }
-
   function renderFeatured() {
     return (
-      <div ref={featuredContainerRef} className={styles.featuredSection}>
+      <div className={styles.featuredSection}>
         <h2 className={buildClassName(styles.sectionHeader, styles.sectionHeaderFeatured)}>
           {lang(featuredTitle || 'Trending')}
         </h2>
-        <div className={styles.featuredList}>
+        <div className={buildClassName(styles.featuredList, 'no-swipe')} ref={featuredContainerRef}>
           {featuredSites.map((site) => (
-            <Site key={`${site.url}-${site.name}`} site={site} isFeatured />
+            <SiteFeatured key={`${site.url}-${site.name}`} site={site} className={styles.featuredItem} />
           ))}
         </div>
       </div>
@@ -264,18 +166,10 @@ function Explore({
             className={buildClassName(styles.slide, 'custom-scroll')}
             onScroll={isPortrait ? handleContentScroll : onScroll}
           >
-            <div className={buildClassName(styles.searchWrapper, 'with-notch-on-scroll', isScrolled && 'is-scrolled')}>
-              {renderSearch()}
-              <ExploreSearchSuggestions
-                isSuggestionsVisible={isSuggestionsVisible}
-                searchSuggestions={searchSuggestions}
-                searchValue={searchValue}
-                onSiteClick={handleSiteClick}
-                onSiteClear={handleSiteClear}
-                onClose={handleMenuClose}
-              />
-            </div>
-
+            <ExploreSearch
+              shouldShowNotch={isScrolled}
+              sites={filteredSites}
+            />
             <DappFeed />
 
             {Boolean(featuredSites.length) && renderFeatured()}
@@ -348,7 +242,7 @@ function Explore({
 }
 
 export default memo(withGlobal<OwnProps>((global): StateProps => {
-  const { browserHistory, currentSiteCategoryId } = selectCurrentAccountState(global) || {};
+  const { currentSiteCategoryId } = selectCurrentAccountState(global) || {};
   const { categories, sites, featuredTitle } = global.exploreData || {};
 
   return {
@@ -356,7 +250,6 @@ export default memo(withGlobal<OwnProps>((global): StateProps => {
     categories,
     featuredTitle,
     shouldRestrict: global.restrictions.isLimitedRegion && (IS_IOS_APP || IS_ANDROID_APP),
-    browserHistory,
     currentSiteCategoryId,
   };
 })(Explore));

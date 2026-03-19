@@ -32,8 +32,6 @@ public final class MenuLayerView: UIView {
     private let blurredBackground = BlurredMenuBackground()
     private var portalView: UIView?
     
-    let feedbackGenerator = UIImpactFeedbackGenerator(style: .rigid)
-    
     init() {
         super.init(frame: .zero)
         setup()
@@ -63,25 +61,23 @@ public final class MenuLayerView: UIView {
         addGestureRecognizer(tapGesture)
     }
     
-    public func showMenu(menuContext: MenuContext) {
-        
-        feedbackGenerator.impactOccurred()
+    func showMenu(menuContext: MenuContext) {
+        menuContext.menuTriggered = true
+        Haptics.play(.transition)
         
         if let sourceView = menuContext.sourceView, let window = sourceView.window, let portalView = makePortalView(of: sourceView) {
             addSubview(portalView)
-            var sourceViewFrame = sourceView.convert(sourceView.frame, to: self)
-            sourceViewFrame.origin.y -= 13 // why? i don't know
-            portalView.frame = sourceViewFrame
+            portalView.frame = sourceView.convert(sourceView.bounds, to: self)
             self.portalView = portalView
-            
-            let sourceFrameBounds = window.convert(menuContext.sourceFrame, to: sourceView)
-            let mask = UIView()
-            mask.translatesAutoresizingMaskIntoConstraints = false
-            mask.frame = sourceFrameBounds.insetBy(dx: -16, dy: -16)
-            mask.backgroundColor = .white
-            
-            portalView.mask = mask
-//            portalView.clipsToBounds = true
+
+            let maskFrame = menuContext.sourceViewLayout.portalMaskFrame ?? menuContext.sourceViewLayout.frame
+            if !maskFrame.isEmpty {
+                let sourceFrameInPortal = window.convert(maskFrame, to: portalView)
+                let mask = UIView()
+                mask.frame = sourceFrameInPortal
+                mask.backgroundColor = .white
+                portalView.mask = mask
+            }
         }
         
         if menuContext.sourceView != nil {
@@ -117,6 +113,7 @@ public final class MenuLayerView: UIView {
     
     @objc public func dismissMenu() {
         if let menuContext {
+            menuContext.menuTriggered = false
             menuContext.onDismiss?()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.9, blendDuration: 1)) {
                 menuContext.menuShown = false

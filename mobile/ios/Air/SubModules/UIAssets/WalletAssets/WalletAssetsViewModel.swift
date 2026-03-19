@@ -7,69 +7,129 @@ import GRDB
 private let log = Log("WalletAssetsViewModel")
 
 @MainActor public protocol WalletAssetsViewModelDelegate: AnyObject {
-    func displayTabsChanged()
+    func walletAssetModelDidChangeDisplayTabs()
+    func walletAssetModelDidStartReordering()
+    func walletAssetModelDidStopReordering(isCanceled: Bool)
 }
 
-public enum DisplayAssetTab: Hashable {
+public enum DisplayAssetTab: Hashable, Sendable {
     case tokens
     case nfts
     case nftCollectionFilter(NftCollectionFilter)
+    
+    var debugDescription: String {
+        switch self {
+        case .tokens: return "tokens"
+        case .nfts: return "nfts"
+        case .nftCollectionFilter(let filter): return "nftCollectionFilter(\(filter.displayTitle))"
+        }
+    }
 }
 
-public actor WalletAssetsViewModel: WalletCoreData.EventsObserver {
+@MainActor
+public final class WalletAssetsViewModel: WalletCoreData.EventsObserver {
+        
+    public private(set) var displayTabs: [DisplayAssetTab] = []
     
-    public static let shared = WalletAssetsViewModel()
+    public weak var delegate: WalletAssetsViewModelDelegate?
     
-    @MainActor public var displayTabs: [DisplayAssetTab] = [.tokens, .nfts]
+    private let accountIdProvider: AccountIdProvider
+    private var accountId: String { accountIdProvider.accountId }
     
-    @MainActor public weak var delegate: WalletAssetsViewModelDelegate?
-    
-    private var accountId: String
     private var _tabs: [WalletAssetsTab]?
     private var isAutoTelegramGiftsHidden: Bool = false
     private var observation: Task<Void, Never>?
     
+    private var tabsOrderingSnapshot: [DisplayAssetTab]?
+    private var nftsOrderingSnapshot: NtfsOrderingSnapshot?
+    private var _isReordering: Bool = false
+    
+    public var isReordering: Bool { _isReordering }
+    
     // dependencies
     private var db: (any DatabaseWriter)? { WalletCore.db }
     private var nftStore: _NftStore { NftStore }
-    
-    public init() {
-        self.accountId = AccountStore.accountId ?? DUMMY_ACCOUNT.id
+        
+    public init(accountSource: AccountSource) {
+        self.accountIdProvider = AccountIdProvider(source: accountSource)
         WalletCoreData.add(eventObserver: self)
-        Task {
-            await setupTabsObservation()
+        let snapshot = try? WalletCore.db?.read { db in
+            try AssetTabsSnapshot.fetchOne(db, key: accountId)
+        }
+        loadTabsFromDB(snapshot)
+        setupTabsObservation()
+    }
+
+    deinit {
+        observation?.cancel()
+    }
+    
+    public func startOrdering() {
+        guard !isReordering else {
+            assertionFailure()
+            return
+        }
+        _isReordering = true
+        
+        // make backup for possible cancellation
+        nftsOrderingSnapshot = nftStore.getOrderingSnapshot(accountId: accountId)
+        tabsOrderingSnapshot = displayTabs
+        
+        delegate?.walletAssetModelDidStartReordering()
+    }
+    
+    public func stopReordering(isCanceled: Bool, restoreTabsOnCancel: Bool = false) {
+        guard isReordering else { return }
+
+        _isReordering = false
+        delegate?.walletAssetModelDidStopReordering(isCanceled: isCanceled)
+        
+        // restore orders on cancellation
+        if isCanceled {
+           if let nftsOrderingSnapshot {
+                nftStore.restoreOrderingWithSnapshot(nftsOrderingSnapshot, accountId: accountId)
+           }
+           if restoreTabsOnCancel, let tabsOrderingSnapshot {
+               Task { [weak self] in
+                   guard let viewModel = self else { return }
+                   try? await viewModel.setOrder(displayTabs: tabsOrderingSnapshot)
+               }
+           }
         }
     }
     
     nonisolated public func walletCore(event: WalletCoreData.Event) {
-        Task {
-            await handleEvent(event)
+        Task { [weak self] in
+            guard let viewModel = self else { return }
+            await viewModel.handleEvent(event)
         }
     }
     
     private func handleEvent(_ event: WalletCoreData.Event) async {
         switch event {
-        case .accountChanged(let accountId, _):
-            self.accountId = accountId
-            await setupTabsObservation()
+        case .accountChanged(_, _):
+            setupTabsObservation()
         case .nftsChanged(accountId: accountId):
             if self.accountId == accountId {
-                await updateDisplayTabs()
+                updateDisplayTabs()
             }
         default:
             break
         }
     }
     
-    private func setupTabsObservation() async {
+    public func changeAccountTo(accountId: String) {
+        self.accountIdProvider.accountId = accountId
+        setupTabsObservation()
+    }
+    
+    private func setupTabsObservation() {
         let accountId = self.accountId
         if let db = self.db {
-            let snapshot = try? await db.read { db in
+            let snapshot = try? db.read { db in
                 try AssetTabsSnapshot.fetchOne(db, key: accountId)
             }
-            self._tabs = snapshot?.tabs
-            self.isAutoTelegramGiftsHidden = snapshot?.auto_telegram_gifts_hidden ?? false
-            await updateDisplayTabs()
+            loadTabsFromDB(snapshot)
 
             observation?.cancel()
             
@@ -78,12 +138,11 @@ public actor WalletAssetsViewModel: WalletCoreData.EventsObserver {
             }
             
             observation?.cancel()
-            observation = Task {
+            observation = Task { [weak self] in
                 do {
                     for try await snapshot in o.values(in: db) {
-                        self._tabs = snapshot?.tabs
-                        self.isAutoTelegramGiftsHidden = snapshot?.auto_telegram_gifts_hidden ?? false
-                        await updateDisplayTabs()
+                        guard let viewModel = self else { return }
+                        viewModel.loadTabsFromDB(snapshot)
                     }
                 } catch {
                 }
@@ -91,7 +150,7 @@ public actor WalletAssetsViewModel: WalletCoreData.EventsObserver {
         }
     }
     
-    private func updateDisplayTabs() async {
+    private func updateDisplayTabs() {
         let displayTabs: [DisplayAssetTab]
         if let _tabs {
             displayTabs = _tabs.compactMap(storedTabToDisplay)
@@ -100,13 +159,13 @@ public actor WalletAssetsViewModel: WalletCoreData.EventsObserver {
         } else {
             displayTabs = [.tokens, .nfts, .nftSuperCollection(TELEGRAM_GIFTS_SUPER_COLLECTION)].compactMap(storedTabToDisplay)
         }
-        await MainActor.run {
+        if self.displayTabs != displayTabs {
             self.displayTabs = displayTabs
-            delegate?.displayTabsChanged()
+            delegate?.walletAssetModelDidChangeDisplayTabs()
         }
     }
     
-    func storedTabToDisplay(_ tab: WalletAssetsTab) -> DisplayAssetTab? {
+    private func storedTabToDisplay(_ tab: WalletAssetsTab) -> DisplayAssetTab? {
         switch tab {
         case .tokens:
             return .tokens
@@ -125,7 +184,7 @@ public actor WalletAssetsViewModel: WalletCoreData.EventsObserver {
         }
     }
     
-    nonisolated func displayTabToStored(_ tab: DisplayAssetTab) -> WalletAssetsTab? {
+    private nonisolated func displayTabToStored(_ tab: DisplayAssetTab) -> WalletAssetsTab? {
         switch tab {
         case .tokens:
             return .tokens
@@ -136,43 +195,51 @@ public actor WalletAssetsViewModel: WalletCoreData.EventsObserver {
             case .none:
                 return nil
             case .collection(let nftCollection):
-                return .nftCollection(nftCollection.address)
+                return .nftCollection(nftCollection.id)
             case .telegramGifts:
                 return .nftSuperCollection("super:telegram-gifts")
             }
         }
     }
     
-    @MainActor public func isFavorited(filter: NftCollectionFilter) -> Bool {
+    public func isFavorited(filter: NftCollectionFilter) -> Bool {
         displayTabs.contains {
             $0 == .nftCollectionFilter(filter)
         }
     }
     
-    @MainActor public func setIsFavorited(filter: NftCollectionFilter, isFavorited: Bool) async throws {
+    public func setIsFavorited(filter: NftCollectionFilter, isFavorited: Bool) async throws {
         var displayTabs = self.displayTabs
         if !displayTabs.contains(.nftCollectionFilter(filter)) && isFavorited {
             displayTabs.append(.nftCollectionFilter(filter))
         } else if !isFavorited {
             displayTabs = displayTabs.filter { $0 != .nftCollectionFilter(filter) }
         }
-        let stored = displayTabs.compactMap(displayTabToStored)
-        let accountId = await self.accountId
-        try await db?.write { db in
-            try AssetTabsSnapshot(account_id: accountId, tabs: stored).upsert(db)
-        }
+        try await self.saveTabsToDB(displayTabs: displayTabs)
     }
     
-    @MainActor public func setOrder(displayTabs: [DisplayAssetTab]) async throws {
+    public func setOrder(displayTabs: [DisplayAssetTab]) async throws {
+        try await self.saveTabsToDB(displayTabs: displayTabs)
+    }
+    
+    // MARK: - DB
+    
+    private func loadTabsFromDB(_ snapshot: AssetTabsSnapshot?) {
+        self._tabs = snapshot?.tabs
+        self.isAutoTelegramGiftsHidden = snapshot?.auto_telegram_gifts_hidden ?? false
+        updateDisplayTabs()
+    }
+    
+    private func saveTabsToDB(displayTabs: [DisplayAssetTab]) async throws {
+        let accountId = self.accountId
         let stored = displayTabs.compactMap(displayTabToStored)
-        let accountId = await self.accountId
         try await db?.write { db in
             try AssetTabsSnapshot(account_id: accountId, tabs: stored).upsert(db)
         }
     }
 }
 
-struct AssetTabsSnapshot: Codable, PersistableRecord, FetchableRecord {
+private struct AssetTabsSnapshot: Codable, PersistableRecord, FetchableRecord {
     var account_id: String
     var tabs: [WalletAssetsTab]?
     var auto_telegram_gifts_hidden: Bool?
@@ -180,7 +247,7 @@ struct AssetTabsSnapshot: Codable, PersistableRecord, FetchableRecord {
     static let databaseTableName = "asset_tabs"
 }
 
-enum WalletAssetsTab: Codable, Hashable {
+private enum WalletAssetsTab: Codable, Hashable {
     case tokens
     case nfts
     case nftCollection(String)

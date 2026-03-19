@@ -9,9 +9,8 @@ import UIKit
 import UIComponents
 import SwiftUI
 import WalletContext
-import WalletCore
 
-public class IntroVC: WViewController {
+public class IntroVC: CreateWalletBaseVC {
 
     let introModel: IntroModel
     
@@ -54,8 +53,7 @@ public class IntroVC: WViewController {
 #if DEBUG
 @available(iOS 18.0, *)
 #Preview {
-    let _ = UIFont.registerAirFonts()
     LocalizationSupport.shared.setLanguageCode("ru")
-    return UINavigationController(rootViewController: IntroVC(introModel: IntroModel(password: nil)))
+    return UINavigationController(rootViewController: IntroVC(introModel: IntroModel(network: .mainnet, password: nil)))
 }
 #endif

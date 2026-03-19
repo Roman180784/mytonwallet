@@ -17,6 +17,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WLinearLayout
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 
@@ -31,7 +32,7 @@ class StakeDetailView(
             context,
             layoutParams = ConstraintLayout.LayoutParams(
                 ConstraintLayout.LayoutParams.MATCH_PARENT,
-                56.dp
+                50.dp
             )
         )
 
@@ -59,7 +60,7 @@ class StakeDetailView(
         val wView = WView(
             context, layoutParams = ConstraintLayout.LayoutParams(
                 ConstraintLayout.LayoutParams.MATCH_PARENT,
-                56.dp
+                50.dp
             )
         )
         wView
@@ -89,9 +90,9 @@ class StakeDetailView(
             ConstraintLayout.LayoutParams.WRAP_CONTENT
         )
         setGradientColor(
-            intArrayOf(
-                WColor.EarnGradientLeft.color,
-                WColor.EarnGradientRight.color
+            arrayOf(
+                WColor.EarnGradientLeft,
+                WColor.EarnGradientRight
             )
         )
         setPadding(4.dp, 7.dp, 0, 0)
@@ -102,7 +103,7 @@ class StakeDetailView(
         val wView = WView(
             context, layoutParams = ConstraintLayout.LayoutParams(
                 ConstraintLayout.LayoutParams.MATCH_PARENT,
-                56.dp
+                50.dp
             )
         )
         wView.addRippleEffect(WColor.SecondaryBackground.color)
@@ -116,20 +117,6 @@ class StakeDetailView(
         setLineHeight(24f)
         setTextColor(WColor.Tint.color)
         setPadding(0, 5.dp, 0, 1.dp)
-    }
-
-    private val separatorView1 = WBaseView(context).apply {
-        setBackgroundColor(WColor.Separator.color)
-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 1).apply {
-            marginStart = 20.dp
-        }
-    }
-
-    private val separatorView2 = WBaseView(context).apply {
-        setBackgroundColor(WColor.Separator.color)
-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 1).apply {
-            marginStart = 20.dp
-        }
     }
 
     init {
@@ -166,9 +153,7 @@ class StakeDetailView(
         }
 
         addView(apyRow)
-        addView(separatorView1)
         addView(earningRow)
-        addView(separatorView2)
         addView(whySafeRow)
     }
 
@@ -181,8 +166,6 @@ class StakeDetailView(
     }
 
     override fun updateTheme() {
-        separatorView1.setBackgroundColor(WColor.Separator.color)
-        separatorView2.setBackgroundColor(WColor.Separator.color)
         apyStartLabel.setTextColor(WColor.Tint.color)
         earningStartLabel.setTextColor(WColor.Tint.color)
         whySafeStartLabel.setTextColor(WColor.Tint.color)

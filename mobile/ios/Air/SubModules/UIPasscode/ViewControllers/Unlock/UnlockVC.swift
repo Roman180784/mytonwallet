@@ -9,7 +9,6 @@ import UIKit
 import UIComponents
 import WalletCore
 import WalletContext
-import LocalAuthentication
 
 // Used for AppUnlock and other actions that require user to unlock using passcode or biometric, first.
 public class UnlockVC: WViewController {
@@ -58,7 +57,7 @@ public class UnlockVC: WViewController {
             return
         }
         
-        func _makeUnlockVC(useBioOnPresent: Bool = false) -> UIViewController {
+        func _makeUnlockVC(useBioOnPresent: Bool) -> UIViewController {
             let unlockVC =  UnlockVC(
                 title: title,
                 replacedTitle: replacedTitle,
@@ -79,22 +78,26 @@ public class UnlockVC: WViewController {
                 return unlockVC
             }
         }
-
-        let context = LAContext()
-        var error: NSError?
-        let canUseBiometric = AppStorageHelper.isBiometricActivated() &&
-            context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+        
+        let canUseBiometric = AppStorageHelper.isBiometricActivated() && BiometricHelper.biometryType != nil
         if onAuthTask == nil && canUseBiometric {
-            let reason = lang("MyTonWallet uses biometric authentication to unlock and authorize transactions")
-            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) {
-                [weak vc] success, authenticationError in
-                DispatchQueue.main.async { [weak vc] in
-                    if success {
-                        onDone(KeychainHelper.biometricPasscode())
-                    } else {
-                        // error
-                        vc?.present(_makeUnlockVC(), animated: true)
+            Task { @MainActor [weak vc] in
+                let result = await BiometricHelper.authenticate()
+                switch result {
+                case .success:
+                    let passcode = KeychainHelper.biometricPasscode()
+                    do {
+                        guard try await AuthSupport.verifyPassword(password: passcode) else {
+                            vc?.present(_makeUnlockVC(useBioOnPresent: false), animated: true)
+                            return
+                        }
+                        onDone(passcode)
+                    } catch {
+                        vc?.present(_makeUnlockVC(useBioOnPresent: false), animated: true)
                     }
+                    
+                case .canceled, .error, .userDeniedBiometrics:
+                    vc?.present(_makeUnlockVC(useBioOnPresent: false), animated: true)
                 }
             }
         } else {
@@ -132,7 +135,7 @@ public class UnlockVC: WViewController {
         return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             var nillableContinuation: CheckedContinuation<String?, Never>? = continuation
 
-            UnlockVC.presentAuth(
+            presentAuth(
                 on: vc,
                 title: title,
                 replacedTitle: replacedTitle,
@@ -226,15 +229,27 @@ public class UnlockVC: WViewController {
     
     private(set) public var passcodeScreenView: PasscodeScreenView!
     private var indicatorView: WActivityIndicator!
+    
+    var shouldShowEmptyNavigationBar: Bool {
+        IOS_26_MODE_ENABLED && customHeaderVC != nil
+    }
 
     public override var hideNavigationBar: Bool {
-        return customHeaderVC != nil
+        return !IOS_26_MODE_ENABLED && customHeaderVC != nil
     }
     
+    public override func viewIsAppearing(_ animated: Bool) {
+        if shouldShowEmptyNavigationBar,
+           let navbarHeight = navigationController?.navigationBar.frame.height {
+            if IOS_26_MODE_ENABLED {
+                additionalSafeAreaInsets.top = -navbarHeight
+            }
+        }
+    }
+
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         self.viewStartedDismissing = true
-        passcodeScreenView?.cancelBiometric()
     }
     
     private func setupViews() {
@@ -245,12 +260,21 @@ public class UnlockVC: WViewController {
         
         // legacy
         if cancellable && !compactLayout {
-            addCloseToNavBar(color: shouldBeThemedLikeHeader ? WTheme.unlockScreen.tint : nil)
+            addCloseNavigationItemIfNeeded()
         }
 
         // init views
         
-        if showNavBar {
+        if shouldShowEmptyNavigationBar {
+            addNavigationBar(
+                centerYOffset: 1,
+                title: nil,
+                closeIcon: false,
+                addBackButton: { [weak self] in
+                    self?.navigationController?.popViewController(animated: true)
+                }
+            )
+        } else if showNavBar {
             addNavigationBar(
                 centerYOffset: 1,
                 title: unlockTitle,
@@ -259,6 +283,7 @@ public class UnlockVC: WViewController {
                     self?.navigationController?.popViewController(animated: true)
                 }
             )
+            navigationItem.hidesBackButton = true
         }
         
         passcodeScreenView = PasscodeScreenView(
@@ -266,7 +291,7 @@ public class UnlockVC: WViewController {
             replacedTitle: replacedTitle,
             subtitle: subtitle,
             compactLayout: customHeader != nil,
-            biometricPassAllowed: AppStorageHelper.isBiometricActivated(),
+            biometricPassAllowed: true,
             delegate: self,
             matchHeaderColors: shouldBeThemedLikeHeader
         )
@@ -328,12 +353,8 @@ public class UnlockVC: WViewController {
         }
         super.viewDidDisappear(animated)
     }
-    
-    public override func closeButtonPressed() {
-        presentingViewController?.dismiss(animated: true)
-    }
 
-    // when this function is called, `UnlockVC` retries to use biometric
+    // when this function is called, `UnlockVC` tries to use biometric
     public func tryBiometric() {
         passcodeScreenView.tryBiometric()
     }
@@ -369,8 +390,7 @@ extension UnlockVC: PasscodeScreenViewDelegate {
                 passcodeScreenView.isUserInteractionEnabled = true
                 passcodeScreenView.passcodeInputView.currentPasscode = ""
                 passcodeScreenView.wrongPassFeedback()
-                let tapticFeedback = UINotificationFeedbackGenerator()
-                tapticFeedback.notificationOccurred(.error)
+                Haptics.play(.error)
             }
         }
     }
@@ -410,6 +430,8 @@ extension UnlockVC: PasscodeScreenViewDelegate {
     }
 
     func onAuthenticated(taskDone: Bool, passcode: String) {
+        navigationItem.setHidesBackButton(true, animated: true)
+        Haptics.prepare(.success)
         if taskDone == false && (isBeingDismissed || view.superview == nil || viewStartedDismissing)  {
             return
         }

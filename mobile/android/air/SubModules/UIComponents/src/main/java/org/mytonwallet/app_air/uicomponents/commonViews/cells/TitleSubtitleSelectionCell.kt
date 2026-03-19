@@ -2,11 +2,11 @@ package org.mytonwallet.app_air.uicomponents.commonViews.cells
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.content.ContextCompat
 import org.mytonwallet.app_air.uicomponents.R
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.widgets.WBaseView
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
@@ -17,9 +17,8 @@ import org.mytonwallet.app_air.walletbasecontext.theme.color
 
 @SuppressLint("ViewConstructor")
 class TitleSubtitleSelectionCell(
-    context: Context,
-    layoutParams: LayoutParams
-) : WCell(context, layoutParams), WThemedView {
+    context: Context
+) : WCell(context, LayoutParams(MATCH_PARENT, 60.dp)), WThemedView {
 
     private val selectionImageView: AppCompatImageView by lazy {
         val img = AppCompatImageView(context)
@@ -39,28 +38,19 @@ class TitleSubtitleSelectionCell(
         lbl
     }
 
-    private val separatorView: WBaseView by lazy {
-        val v = WBaseView(context)
-        v
-    }
-
     override fun setupViews() {
         super.setupViews()
 
         addView(selectionImageView, LayoutParams(40.dp, 40.dp))
         addView(titleLabel)
         addView(subtitleLabel)
-        addView(separatorView, LayoutParams(0, 1))
         setConstraints {
             toCenterY(selectionImageView)
             toStart(selectionImageView, 12f)
-            toTop(titleLabel, 13.75f)
+            toTop(titleLabel, 7.75f)
             toStart(titleLabel, 64f)
-            toTop(subtitleLabel, 37.75f)
+            toTop(subtitleLabel, 31.75f)
             toStart(subtitleLabel, 64f)
-            toStart(separatorView, 64f)
-            toBottom(separatorView)
-            toEnd(separatorView)
         }
 
         setOnClickListener {
@@ -71,8 +61,8 @@ class TitleSubtitleSelectionCell(
     override fun updateTheme() {
         setBackgroundColor(
             WColor.Background.color,
-            if (isFirst) ViewConstants.TOP_RADIUS.dp else 0f,
-            if (isLast) ViewConstants.BIG_RADIUS.dp else 0f
+            if (isFirst) ViewConstants.TOOLBAR_RADIUS.dp else 0f,
+            if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f
         )
         addRippleEffect(WColor.SecondaryBackground.color)
         selectionImageView.setImageDrawable(
@@ -85,7 +75,6 @@ class TitleSubtitleSelectionCell(
         )
         titleLabel.setTextColor(WColor.PrimaryText.color)
         subtitleLabel.setTextColor(WColor.SecondaryText.color)
-        separatorView.setBackgroundColor(WColor.Separator.color)
     }
 
     private var isSelected = true
@@ -107,7 +96,6 @@ class TitleSubtitleSelectionCell(
         updateTheme()
         titleLabel.text = title
         subtitleLabel.text = subtitle
-        separatorView.visibility = if (isLast) INVISIBLE else VISIBLE
         this.onClick = onClick
     }
 

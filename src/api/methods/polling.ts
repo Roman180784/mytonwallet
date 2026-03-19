@@ -14,7 +14,7 @@ import type {
   OnApiUpdate,
 } from '../types';
 
-import { IS_AIR_APP, IS_CORE_WALLET, IS_STAKING_DISABLED, TONCOIN } from '../../config';
+import { IS_CORE_WALLET, IS_STAKING_DISABLED, TONCOIN } from '../../config';
 import { parseAccountId } from '../../util/account';
 import { areDeepEqual } from '../../util/areDeepEqual';
 import { omit } from '../../util/iteratees';
@@ -35,6 +35,7 @@ import { setBackendConfigCache } from '../common/cache';
 import { pollingLoop } from '../common/polling/utils';
 import { getTokensCache, loadTokensCache, sendUpdateTokens, tokensPreload, updateTokens } from '../common/tokens';
 import { MINUTE, SEC } from '../constants';
+import { storage } from '../storages';
 import { resolveDataPreloadPromise } from './preload';
 import { tryUpdateStakingCommonData } from './staking';
 import { swapGetAssets } from './swap';
@@ -50,7 +51,7 @@ const MAX_POST_TOKENS = 1500;
 let onUpdate: OnApiUpdate;
 let stopCommonBackendPolling: NoneToVoidFunction | undefined;
 let stopActiveAccountPolling: NoneToVoidFunction | undefined;
-const inactiveAccountPolling = IS_AIR_APP ? createInactiveAccountsPollingManager() : undefined;
+const inactiveAccountPolling = createInactiveAccountsPollingManager();
 const setUpdatingStatus = createUpdatingStatusManager();
 
 export function initPolling(_onUpdate: OnApiUpdate) {
@@ -191,7 +192,9 @@ export async function tryUpdateConfig() {
       supportAccountsCount = 1,
       now: serverUtc,
       country: countryCode,
+      shouldAutoSwitchToAir,
       swapVersion,
+      seasonalTheme,
       isUpdateRequired: isAppUpdateRequired,
     } = config;
 
@@ -201,8 +204,10 @@ export async function tryUpdateConfig() {
       isCopyStorageEnabled,
       supportAccountsCount,
       countryCode,
+      shouldAutoSwitchToAir,
       isAppUpdateRequired,
       swapVersion,
+      seasonalTheme,
     });
 
     const localUtc = (new Date()).getTime();
@@ -285,7 +290,11 @@ function setupAccountConfigPolling(accountId: string, account: ApiAccountAny) {
     period: ACCOUNT_CONFIG_INTERVAL,
     async poll() {
       try {
-        const accountConfig = await callBackendPost<ApiAccountConfig>('/account-config', partialAccount);
+        const langCode = await storage.getItem('langCode');
+        const accountConfig = await callBackendPost<ApiAccountConfig>('/account-config', {
+          ...partialAccount,
+          langCode,
+        });
 
         if (!areDeepEqual(accountConfig, lastResult)) {
           lastResult = accountConfig;

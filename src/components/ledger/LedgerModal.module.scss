@@ -14,10 +14,6 @@
   }
 }
 
-:global(.is-native-bottom-sheet) .modalDialogInsideSettings {
-  height: 100% !important;
-}
-
 .slide {
   padding-top: 0 !important;
 }
@@ -144,11 +140,14 @@
     flex-direction: column;
     gap: 0.5rem;
     width: 100%;
-    padding: 0 1rem;
   }
 
   &Horizontal {
     flex-direction: row-reverse;
+  }
+
+  &Static {
+    padding: 0 1rem;
   }
 }
 
@@ -276,10 +275,7 @@
     background-color: var(--color-add-wallet-background-hover) !important;
   }
 
-  &:active {
-    // Optimization
-    transition: none;
-  }
+  @include mixins.active-transition-optimization();
 }
 
 .addAccountIconTransition {

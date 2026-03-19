@@ -13,6 +13,7 @@ import me.vkryl.android.animator.ReplaceAnimator
 import me.vkryl.android.animatorx.BoolAnimator
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.extensions.exactly
 import org.mytonwallet.app_air.uicomponents.helpers.ViewHelpers
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.helpers.typeface
@@ -21,7 +22,7 @@ import org.mytonwallet.app_air.uicomponents.image.WCustomImageView
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
-import org.mytonwallet.app_air.walletcore.models.MBlockchain
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.models.MToken
 import org.mytonwallet.app_air.walletcore.moshi.ApiTokenWithPrice
 import org.mytonwallet.app_air.walletcore.moshi.IApiToken
@@ -134,18 +135,18 @@ open class WTokenSymbolIconView(context: Context) : FrameLayout(context), Replac
 
     var defaultSymbol: String? = null
 
-    fun setTonAsset(alwaysShowChain: Boolean = false) {
+    fun setTonAsset(showChain: Boolean = false) {
         setAsset(
             MApiSwapAsset(
                 slug = MBlockchain.ton.nativeSlug,
                 symbol = "TON",
                 chain = "ton",
                 decimals = 9
-            ), alwaysShowChain
+            ), showChain
         )
     }
 
-    fun setAsset(asset: MToken, alwaysShowChain: Boolean) {
+    fun setAsset(asset: MToken, showChain: Boolean) {
         setAsset(
             ApiTokenWithPrice(
                 slug = asset.slug,
@@ -157,11 +158,11 @@ open class WTokenSymbolIconView(context: Context) : FrameLayout(context), Replac
                 priceUsd = asset.priceUsd,
                 percentChange24h = asset.percentChange24hReal,
             ),
-            alwaysShowChain
+            showChain
         )
     }
 
-    fun setAsset(asset: IApiToken?, alwaysShowChain: Boolean = false) {
+    fun setAsset(asset: IApiToken?, showChain: Boolean = false) {
         if (this.asset == asset && !animator.isEmpty) {
             return
         }
@@ -177,7 +178,7 @@ open class WTokenSymbolIconView(context: Context) : FrameLayout(context), Replac
                 chainSize = 10.dp
                 chainSizeGap = 1f.dp
             }.apply {
-                set(Content.of(it, alwaysShowChain))
+                set(Content.of(it, showChain))
             }
         }
 
@@ -224,10 +225,7 @@ open class WTokenSymbolIconView(context: Context) : FrameLayout(context), Replac
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(
-            MeasureSpec.makeMeasureSpec(calcMeasuredWidth(), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(36.dp, MeasureSpec.EXACTLY)
-        )
+        super.onMeasure(calcMeasuredWidth().exactly, 36.dp.exactly)
         prepare()
     }
 

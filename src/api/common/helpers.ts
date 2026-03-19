@@ -1,9 +1,9 @@
 import type * as tonSdk from '../chains/ton';
+import type { StoredDappsState } from '../dappProtocols/storage';
 import type { ApiDbSseConnection } from '../db';
 import type { StorageKey } from '../storages/types';
 import type {
   ApiActivity,
-  ApiDappsState,
   ApiLocalTransactionParams,
   ApiTonAccount,
   ApiTonWallet,
@@ -35,7 +35,6 @@ import {
 import { hexToBytes } from './utils';
 
 const actualStateVersion = 21;
-let migrationEnsurePromise: Promise<void>;
 
 export function buildLocalTransaction(
   params: ApiLocalTransactionParams,
@@ -63,15 +62,15 @@ export function updateActivityMetadata<T extends ApiActivity>(activity: T): T {
   }
 
   const {
-    normalizedAddress, comment, isIncoming, nft,
+    normalizedAddress, comment, isIncoming, type, nft, status,
   } = activity;
   let { metadata = {} } = activity;
-
-  const isNftTransfer = Boolean(nft);
   const knownAddresses = getKnownAddresses();
   const hasScamMarkers = comment ? getScamMarkers().some((sm) => sm.test(comment)) : false;
-  const shouldCheckComment = !hasScamMarkers && comment && isIncoming
-    && (isNftTransfer || comment.toLowerCase().includes('claim'));
+  const isBounced = type === 'bounced';
+  const isNft = Boolean(nft);
+  const shouldCheckComment = !hasScamMarkers && comment && (isIncoming || isBounced)
+    && (isNft || comment.toLowerCase().includes('claim') || isBounced || status === 'failed');
   const hasScamInComment = shouldCheckComment
     ? (checkHasScamLink(comment) || checkHasTelegramBotMention(comment))
     : false;
@@ -101,20 +100,16 @@ export function isUpdaterAlive(onUpdate: OnApiUpdate) {
   return currentOnUpdate === onUpdate;
 }
 
-export function startStorageMigration(onUpdate: OnApiUpdate, ton: typeof tonSdk, accountIds?: string[]) {
-  migrationEnsurePromise = migrateStorage(onUpdate, ton, accountIds)
-    .catch((err) => {
-      logDebugError('Migration error', err);
-      currentOnUpdate?.({
-        type: 'showError',
-        error: 'Migration error',
-      });
+export async function tryMigrateStorage(onUpdate: OnApiUpdate, ton: typeof tonSdk, accountIds?: string[]) {
+  try {
+    return await migrateStorage(onUpdate, ton, accountIds);
+  } catch (err) {
+    logDebugError('Migration error', err);
+    onUpdate?.({
+      type: 'showError',
+      error: 'Migration error',
     });
-  return migrationEnsurePromise;
-}
-
-export function waitStorageMigration() {
-  return migrationEnsurePromise;
+  }
 }
 
 export async function migrateStorage(onUpdate: OnApiUpdate, ton: typeof tonSdk, accountIds?: string[]) {
@@ -217,7 +212,7 @@ export async function migrateStorage(onUpdate: OnApiUpdate, ton: typeof tonSdk, 
   }
 
   if (version === 5) {
-    const dapps = await storage.getItem('dapps') as ApiDappsState;
+    const dapps = await storage.getItem('dapps') as StoredDappsState;
     if (dapps) {
       for (const accountDapps of Object.values(dapps)) {
         for (const dapp of Object.values(accountDapps as Record<string, any>)) {
@@ -290,7 +285,7 @@ export async function migrateStorage(onUpdate: OnApiUpdate, ton: typeof tonSdk, 
 
   if (version === 8) {
     if (getEnvironment().isSseSupported) {
-      const dapps = await storage.getItem('dapps') as ApiDappsState;
+      const dapps = await storage.getItem('dapps') as StoredDappsState;
 
       if (dapps) {
         const items: ApiDbSseConnection[] = [];
@@ -485,7 +480,6 @@ async function migrateCoreWallet(onUpdate: OnApiUpdate) {
     words,
     publicKey,
     isTonProxyEnabled,
-    isTonMagicEnabled,
   ] = await Promise.all([
     currentStorage.getItem('walletVersion' as StorageKey),
     currentStorage.getItem('isTestnet' as StorageKey),
@@ -493,7 +487,6 @@ async function migrateCoreWallet(onUpdate: OnApiUpdate) {
     currentStorage.getItem('words' as StorageKey),
     currentStorage.getItem('publicKey' as StorageKey),
     currentStorage.getItem('proxy' as StorageKey),
-    currentStorage.getItem('magic' as StorageKey),
   ]);
 
   if (isTestnet) {
@@ -550,12 +543,11 @@ async function migrateCoreWallet(onUpdate: OnApiUpdate) {
       secondAccountId,
       secondAddress,
       isTonProxyEnabled,
-      isTonMagicEnabled,
     });
 
     // Clean up storage after migrate the app from Core Wallet
     [
-      'walletVersion', 'isTestnet', 'words', 'address', 'publicKey', 'magic', 'proxy', 'isLedger',
+      'walletVersion', 'isTestnet', 'words', 'address', 'publicKey', 'proxy', 'isLedger',
       'ledgerTransportType', '__time', 'isDebug',
     ].forEach((key) => {
       void currentStorage.removeItem(key as StorageKey);

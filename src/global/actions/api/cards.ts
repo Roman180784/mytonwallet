@@ -1,18 +1,20 @@
 import type { ApiSubmitTransferOptions } from '../../../api/types';
-import type { GlobalState } from '../../types';
+import type { AccountSettings, GlobalState } from '../../types';
 import { MintCardState } from '../../types';
 
-import { IS_CORE_WALLET, MINT_CARD_ADDRESS, MINT_CARD_COMMENT, TONCOIN } from '../../../config';
+import { DEFAULT_CHAIN, IS_CORE_WALLET, MINT_CARD_ADDRESS, MINT_CARD_COMMENT } from '../../../config';
 import { fromDecimal } from '../../../util/decimals';
-import { IS_DELEGATED_BOTTOM_SHEET } from '../../../util/windowEnvironment';
+import { debounce } from '../../../util/schedulers';
 import { callApi } from '../../../api';
 import { handleTransferResult, prepareTransfer } from '../../helpers/transfer';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { updateAccountSettings, updateAccountState, updateMintCards } from '../../reducers';
-import { selectAccountState } from '../../selectors';
+import { selectAccountState, selectCurrentAccountId, selectMycoin } from '../../selectors';
+
+const CHECK_OWNERSHIP_DEBOUNCE_MS = 3000;
 
 addActionHandler('submitMintCard', async (global, actions, { password } = {}) => {
-  const accountId = global.currentAccountId!;
+  const accountId = selectCurrentAccountId(global)!;
 
   if (!await prepareTransfer(MintCardState.ConfirmHardware, updateMintCards, password)) {
     return;
@@ -34,6 +36,7 @@ addActionHandler('submitMintCard', async (global, actions, { password } = {}) =>
 function createTransferOptions(globalState: GlobalState, password?: string): ApiSubmitTransferOptions {
   const { currentAccountId, currentMintCard } = globalState;
   const { config } = selectAccountState(globalState, currentAccountId!)!;
+  const mycoin = selectMycoin(globalState);
   const { cardsInfo } = config!;
   const type = currentMintCard!.type!;
   const cardInfo = cardsInfo![type];
@@ -42,51 +45,80 @@ function createTransferOptions(globalState: GlobalState, password?: string): Api
     accountId: currentAccountId!,
     password,
     toAddress: MINT_CARD_ADDRESS,
-    amount: fromDecimal(cardInfo.price, TONCOIN.decimals),
+    amount: fromDecimal(cardInfo.price, mycoin.decimals),
+    tokenAddress: mycoin.tokenAddress,
     payload: { type: 'comment', text: MINT_CARD_COMMENT },
   };
 }
 
-addActionHandler('checkCardNftOwnership', (global) => {
-  if (IS_DELEGATED_BOTTOM_SHEET || IS_CORE_WALLET) return;
+// Debounced to avoid API rate limits: NFT update events fire per-account, causing a burst of ownership checks
+const accountIdsToCheckCardNftOwnership = new Set<string>();
 
-  const { byAccountId } = global.settings;
+const checkCardNftOwnershipDebounced = debounce(() => {
+  const byAccountId = getGlobal().settings.byAccountId;
 
-  Object.entries(byAccountId).forEach(async ([accountId, settings]) => {
-    const cardBackgroundNftAddress = settings.cardBackgroundNft?.address;
-    const accentColorNftAddress = settings.accentColorNft?.address;
-
-    if (!cardBackgroundNftAddress && !accentColorNftAddress) return;
-
-    const promises = [
-      cardBackgroundNftAddress
-        ? callApi('checkNftOwnership', accountId, cardBackgroundNftAddress)
-        : undefined,
-      accentColorNftAddress && accentColorNftAddress !== cardBackgroundNftAddress
-        ? callApi('checkNftOwnership', accountId, accentColorNftAddress)
-        : undefined,
-    ];
-
-    const [isCardBackgroundNftOwned, isAccentColorNftOwned] = await Promise.all(promises);
-
-    let newGlobal = getGlobal();
-
-    if (cardBackgroundNftAddress && isCardBackgroundNftOwned === false) {
-      newGlobal = updateAccountSettings(newGlobal, accountId, {
-        cardBackgroundNft: undefined,
-      });
+  accountIdsToCheckCardNftOwnership.forEach((accountId) => {
+    const settings = byAccountId[accountId];
+    if (settings) {
+      void checkOwnershipForAccount(accountId, settings);
     }
+  });
 
-    if (accentColorNftAddress && (
+  accountIdsToCheckCardNftOwnership.clear();
+}, CHECK_OWNERSHIP_DEBOUNCE_MS, false, true);
+
+addActionHandler('checkCardNftOwnership', (global, actions, payload) => {
+  if (IS_CORE_WALLET) return;
+
+  const { accountId } = payload || {};
+
+  if (accountId) {
+    accountIdsToCheckCardNftOwnership.add(accountId);
+  } else {
+    Object.keys(global.settings.byAccountId).forEach((id) => accountIdsToCheckCardNftOwnership.add(id));
+  }
+
+  checkCardNftOwnershipDebounced();
+});
+
+async function checkOwnershipForAccount(accountId: string, settings: AccountSettings) {
+  const cardBackgroundNftAddress = settings.cardBackgroundNft?.address;
+  const accentColorNftAddress = settings.accentColorNft?.address;
+
+  if (!cardBackgroundNftAddress && !accentColorNftAddress) return;
+
+  const chain = settings.accentColorNft?.chain || DEFAULT_CHAIN;
+
+  const [isCardBackgroundNftOwned, isAccentColorNftOwned] = await Promise.all([
+    cardBackgroundNftAddress
+      ? callApi('checkNftOwnership', chain, accountId, cardBackgroundNftAddress)
+      : undefined,
+    accentColorNftAddress && accentColorNftAddress !== cardBackgroundNftAddress
+      ? callApi('checkNftOwnership', chain, accountId, accentColorNftAddress)
+      : undefined,
+  ]);
+
+  let newGlobal = getGlobal();
+  const newAccountSettings = newGlobal.settings.byAccountId[accountId];
+
+  if (cardBackgroundNftAddress && isCardBackgroundNftOwned === false
+    && newAccountSettings?.cardBackgroundNft?.address === cardBackgroundNftAddress) {
+    newGlobal = updateAccountSettings(newGlobal, accountId, {
+      cardBackgroundNft: undefined,
+    });
+  }
+
+  if (accentColorNftAddress
+    && newAccountSettings?.accentColorNft?.address === accentColorNftAddress
+    && (
       (accentColorNftAddress === cardBackgroundNftAddress && isCardBackgroundNftOwned === false)
       || (accentColorNftAddress !== cardBackgroundNftAddress && isAccentColorNftOwned === false)
     )) {
-      newGlobal = updateAccountSettings(newGlobal, accountId, {
-        accentColorNft: undefined,
-        accentColorIndex: undefined,
-      });
-    }
+    newGlobal = updateAccountSettings(newGlobal, accountId, {
+      accentColorNft: undefined,
+      accentColorIndex: undefined,
+    });
+  }
 
-    setGlobal(newGlobal);
-  });
-});
+  setGlobal(newGlobal);
+}

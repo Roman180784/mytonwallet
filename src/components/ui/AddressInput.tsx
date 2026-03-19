@@ -2,21 +2,29 @@ import type { ClipboardEvent } from 'react';
 import React, {
   type ElementRef,
   memo,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from '../../lib/teact/teact';
-import { getActions } from '../../global';
+import { getActions, withGlobal } from '../../global';
 
 import type { ApiChain } from '../../api/types';
 import type { Account, SavedAddress } from '../../global/types';
 
+import {
+  selectCurrentAccount,
+  selectCurrentAccountId,
+  selectCurrentAccountState,
+  selectNetworkAccounts,
+} from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import { readClipboardContent } from '../../util/clipboard';
-import { isDnsDomain } from '../../util/dns';
+import { isTonChainDns } from '../../util/dns';
 import { getLocalAddressName } from '../../util/getLocalAddressName';
-import { isValidAddressOrDomain } from '../../util/isValidAddressOrDomain';
+import { isTonsiteAddress, isValidAddressOrDomain } from '../../util/isValidAddress';
 import { shortenAddress } from '../../util/shortenAddress';
+import { getHostnameFromUrl } from '../../util/url';
 import {
   getIsMobileTelegramApp,
   IS_ANDROID,
@@ -26,13 +34,16 @@ import {
 
 import useEffectOnce from '../../hooks/useEffectOnce';
 import useFlag from '../../hooks/useFlag';
+import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useQrScannerSupport from '../../hooks/useQrScannerSupport';
 import useUniqueId from '../../hooks/useUniqueId';
+import useAddressBookItems from './hooks/useAddressBookItems';
 
 import DeleteSavedAddressModal from '../main/modals/DeleteSavedAddressModal';
 import AddressBook from './AddressBook';
+import { SUGGESTION_ITEM_CLASS_NAME } from './AddressBookItem';
 import Button from './Button';
 import Input from './Input';
 import Transition from './Transition';
@@ -47,18 +58,26 @@ interface OwnProps {
   value: string;
   chain?: ApiChain;
   isStatic?: boolean;
+  isReadonly?: boolean;
   withQrScan?: boolean;
+  withCurrentAccount?: boolean;
   address: string;
   addressName: string;
   addressBookChain?: ApiChain;
-  accounts?: Record<string, Account>;
-  currentAccountId: string;
   savedAddresses?: SavedAddress[];
-  validateAddress?: ({ address }: { address?: string }) => void;
+  validateAddress?: ({ address }: { address?: string; chain?: ApiChain }) => void;
   error?: string;
   onInput: (value: string, isValueReplaced?: boolean) => void;
   onPaste?: (value: string) => void;
   onClose: NoneToVoidFunction;
+}
+
+interface StateProps {
+  currentAccountId: string | undefined;
+  savedAddresses?: SavedAddress[];
+  accounts?: Record<string, Account>;
+  supportedChains?: Partial<Record<ApiChain, unknown>>;
+  orderedAccountIds?: string[];
 }
 
 const SHORT_ADDRESS_SHIFT = 4;
@@ -72,43 +91,52 @@ function AddressInput({
   value,
   chain,
   isStatic,
+  isReadonly,
   withQrScan,
+  withCurrentAccount,
   address,
   addressName,
   addressBookChain,
   accounts,
-  currentAccountId,
+  currentAccountId = '',
   savedAddresses,
+  supportedChains,
+  orderedAccountIds,
   validateAddress,
   error,
   onInput,
   onPaste,
   onClose,
-}: OwnProps) {
+}: OwnProps & StateProps) {
   const {
-    showNotification,
+    showToast,
     requestOpenQrScanner,
   } = getActions();
 
   const lang = useLang();
 
   const addressBookTimeoutRef = useRef<number>();
+  const isAddressBookSelectionRef = useRef<boolean>(false);
 
   const [addressForDeletion, setAddressForDeletion] = useState<string | undefined>();
   const [chainForDeletion, setChainForDeletion] = useState<ApiChain | undefined>();
+  const [localError, setLocalError] = useState<string | undefined>(undefined);
   const [isAddressBookOpen, openAddressBook, closeAddressBook] = useFlag();
   const [isFocused, markFocused, unmarkFocused] = useFlag();
   const [shouldRenderPasteButton, setShouldRenderPasteButton] = useState(IS_CLIPBOARDS_SUPPORTED);
   const isQrScannerSupported = useQrScannerSupport();
   const inputId = useUniqueId('address-');
 
-  const isAddressValid = chain ? isValidAddressOrDomain(value, chain) : undefined;
-  const hasAddressError = value.length > 0 && !isAddressValid;
-  const localError = hasAddressError ? lang('Incorrect address') : undefined;
-
   const addressBookAccountIds = useMemo(() => {
-    return accounts ? Object.keys(accounts).filter((accountId) => accountId !== currentAccountId) : [];
-  }, [currentAccountId, accounts]);
+    if (!accounts) return [];
+
+    const allAccountIds = Object.keys(accounts);
+
+    return withCurrentAccount
+      ? allAccountIds
+      : allAccountIds.filter((accountId) => accountId !== currentAccountId);
+  }, [currentAccountId, accounts, withCurrentAccount]);
+
   const shouldUseAddressBook = useMemo(() => {
     return addressBookAccountIds.length > 0 || (savedAddresses && savedAddresses.length > 0);
   }, [addressBookAccountIds.length, savedAddresses]);
@@ -123,9 +151,42 @@ function AddressInput({
     }) : undefined;
   }, [accounts, chain, currentAccountId, savedAddresses, value]);
 
+  const addressBookItems = useAddressBookItems({
+    savedAddresses,
+    accounts,
+    supportedChains,
+    otherAccountIds: addressBookAccountIds,
+    currentChain: addressBookChain,
+    searchValue: value,
+    orderedAccountIds,
+  });
+
+  const handleAddressBookItemSelect = useLastCallback((address: string) => {
+    isAddressBookSelectionRef.current = true;
+    onInput(address, true);
+    onPaste?.(address);
+    closeAddressBook();
+  });
+
+  const {
+    activeIndex,
+    listRef: menuRef,
+    handleKeyDown,
+    resetIndex,
+  } = useKeyboardListNavigation(
+    isAddressBookOpen,
+    (index) => {
+      const item = addressBookItems[index];
+      if (item) {
+        handleAddressBookItemSelect(item.address);
+      }
+    },
+    `.${SUGGESTION_ITEM_CLASS_NAME}`,
+  );
+
   const withPasteButton = shouldRenderPasteButton && !value;
   const withQrButton = withQrScan && isQrScannerSupported;
-  const withButton = withQrButton || withPasteButton || !!value.length;
+  const withButton = (withQrButton || withPasteButton || !!value.length) && !isReadonly;
 
   useEffectOnce(() => {
     return () => {
@@ -134,6 +195,14 @@ function AddressInput({
       }
     };
   });
+
+  useEffect(() => {
+    if (value) {
+      handleAddressErrorCheck(value);
+    }
+    // Only re-validate when chain changes, not on every value change
+    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
+  }, [chain]);
 
   const addressOverlay = useMemo(() => {
     if (!address) return undefined;
@@ -158,14 +227,15 @@ function AddressInput({
       const { type, text } = await readClipboardContent();
 
       if (type === 'text/plain') {
-        const newValue = text.trim();
+        const newValue = cleanTonsiteAddress(text.trim());
         onInput(newValue, true);
         onPaste?.(newValue);
 
-        handleAddressCheck(newValue);
+        handleAddressValidate(newValue);
+        handleAddressErrorCheck(newValue);
       }
     } catch (err: any) {
-      showNotification({ message: lang('Error reading clipboard') });
+      showToast({ message: lang('Error reading clipboard') });
       setShouldRenderPasteButton(false);
     }
   });
@@ -180,16 +250,40 @@ function AddressInput({
     onClose();
   });
 
-  const handleAddressCheck = useLastCallback((address?: string) => {
+  const handleAddressValidate = useLastCallback((address?: string) => {
     if (!validateAddress) return;
 
+    if (address) {
+      address = cleanTonsiteAddress(address);
+    }
+
     if ((address && chain && isValidAddressOrDomain(address, chain)) || !address) {
-      validateAddress({ address });
+      validateAddress({ address, chain });
     }
   });
 
+  function handleAddressErrorCheck(address?: string) {
+    // Skip error check if address was just selected from AddressBook
+    if (isAddressBookSelectionRef.current) {
+      isAddressBookSelectionRef.current = false;
+      return;
+    }
+
+    if (!address) return;
+
+    const isAddressValid = chain ? isValidAddressOrDomain(address, chain) : undefined;
+    const hasAddressError = address.length > 0 && !isAddressValid;
+
+    if (hasAddressError) {
+      setLocalError(lang('Incorrect address'));
+    } else {
+      setLocalError(undefined);
+    }
+  }
+
   const handleAddressFocus = useLastCallback(() => {
     markFocused();
+    setLocalError(undefined);
 
     if (shouldUseAddressBook) {
       // Simultaneous opening of the virtual keyboard and display of Saved Addresses causes animation degradation
@@ -206,13 +300,14 @@ function AddressInput({
 
     if (e.relatedTarget?.id === INPUT_CLEAR_BUTTON_ID) {
       handleAddressBookClose();
-      handleAddressCheck(value);
+      handleAddressValidate(value);
+      handleAddressErrorCheck(value);
 
       return;
     }
 
-    let addressToCheck = value;
-    if (isDnsDomain(value) && value !== value.toLowerCase()) {
+    let addressToCheck = cleanTonsiteAddress(value);
+    if (isTonChainDns(value) && value !== value.toLowerCase()) {
       addressToCheck = value.toLowerCase().trim();
       onInput(addressToCheck);
     } else if (value !== value.trim()) {
@@ -222,26 +317,36 @@ function AddressInput({
 
     requestAnimationFrame(() => {
       handleAddressBookClose();
-      handleAddressCheck(addressToCheck);
+      handleAddressValidate(addressToCheck);
+      handleAddressErrorCheck(value);
     });
   });
 
+  function hanldeInputChange(value: string) {
+    onInput(value);
+    setLocalError(undefined);
+  }
+
   const handleAddressPaste = useLastCallback((event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     event.preventDefault();
-    const value = event.clipboardData.getData('text');
+    let value = event.clipboardData.getData('text');
+    value = cleanTonsiteAddress(value);
     onInput(value, false);
     onPaste?.(value);
+    handleAddressErrorCheck(value);
   });
 
   const handleAddressClear = useLastCallback(() => {
     onInput('');
-    handleAddressCheck();
+    handleAddressValidate();
+    setLocalError(undefined);
   });
 
   const handleAddressBookClose = useLastCallback(() => {
     if (!shouldUseAddressBook || !isAddressBookOpen) return;
 
     closeAddressBook();
+    resetIndex();
 
     if (addressBookTimeoutRef.current) {
       window.clearTimeout(addressBookTimeoutRef.current);
@@ -257,12 +362,6 @@ function AddressInput({
   const handleDeleteSavedAddressModalClose = useLastCallback(() => {
     setAddressForDeletion(undefined);
     setChainForDeletion(undefined);
-  });
-
-  const handleAddressBookItemSelect = useLastCallback((address: string) => {
-    onInput(address, true);
-    onPaste?.(address);
-    closeAddressBook();
   });
 
   function renderInputActions() {
@@ -316,26 +415,28 @@ function AddressInput({
         className={buildClassName(isStatic && styles.inputStatic, withButton && styles.inputWithIcon)}
         isRequired
         isStatic={isStatic}
+        isDisabled={isReadonly}
         label={label}
         placeholder={lang('Wallet address or domain')}
         value={value}
         error={localError || error}
         autoCorrect={false}
         valueOverlay={!localError ? addressOverlay : undefined}
-        onInput={onInput}
+        onInput={hanldeInputChange}
         onPaste={handleAddressPaste}
+        onKeyDown={handleKeyDown}
         onFocus={handleAddressFocus}
         onBlur={handleAddressBlur}
       >
-        {renderInputActions()}
+        {!isReadonly && renderInputActions()}
       </Input>
       {shouldUseAddressBook && (
         <>
           <AddressBook
             isOpen={isAddressBookOpen}
-            currentChain={addressBookChain}
-            currentAddress={value}
-            otherAccountIds={addressBookAccountIds}
+            items={addressBookItems}
+            menuRef={menuRef}
+            activeIndex={activeIndex}
             onAddressSelect={handleAddressBookItemSelect}
             onSavedAddressDelete={handleDeleteSavedAddressClick}
             onClose={closeAddressBook}
@@ -352,4 +453,24 @@ function AddressInput({
   );
 }
 
-export default memo(AddressInput);
+export default memo(withGlobal<OwnProps>((global): StateProps => {
+  const currentAccountId = selectCurrentAccountId(global);
+  const account = selectCurrentAccount(global);
+  const accountState = selectCurrentAccountState(global);
+
+  return {
+    savedAddresses: accountState?.savedAddresses,
+    supportedChains: account?.byChain,
+    accounts: selectNetworkAccounts(global),
+    currentAccountId,
+    orderedAccountIds: global.settings.orderedAccountIds,
+  };
+})(AddressInput));
+
+function cleanTonsiteAddress(address: string) {
+  if (isTonsiteAddress(address)) {
+    return getHostnameFromUrl(address);
+  } else {
+    return address;
+  }
+}

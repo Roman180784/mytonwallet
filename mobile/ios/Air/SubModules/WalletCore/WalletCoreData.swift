@@ -9,10 +9,13 @@ import Foundation
 import WalletContext
 import UIKit
 import GRDB
+import Dependencies
+
+private let log = Log("WalletCoreData")
 
 public struct WalletCoreData {
     public enum Event: @unchecked Sendable {
-        case balanceChanged(isFirstUpdate: Bool)
+        case balanceChanged(accountId: String, isFirstUpdate: Bool)
         case notActiveAccountBalanceChanged
         case tokensChanged
         case swapTokensChanged
@@ -26,6 +29,7 @@ public struct WalletCoreData {
         case accountChanged(accountId: String, isNew: Bool)
         case accountNameChanged
         case accountDeleted(accountId: String)
+        case accountsReset
         case stakingAccountData(MStakingData)
         case assetsAndActivityDataUpdated
         case hideTinyTransfersChanged
@@ -39,9 +43,9 @@ public struct WalletCoreData {
         
         case updateDapps
         case activeDappLoaded(dapp: ApiDapp)
-        case dappsCountUpdated
+        case dappsCountUpdated(accountId: String)
         case dappConnect(request: ApiUpdate.DappConnect)
-        case dappSendTransactions(MDappSendTransactions)
+        case dappSendTransactions(ApiUpdate.DappSendTransactions)
         case dappSignData(ApiUpdate.DappSignData)
         case dappDisconnect(accountId: String, origin: String)
         case dappLoading(ApiUpdate.DappLoading)
@@ -52,6 +56,8 @@ public struct WalletCoreData {
         case newActivities(ApiUpdate.NewActivities)
         case newLocalActivity(ApiUpdate.NewLocalActivities)
         case initialActivities(ApiUpdate.InitialActivities)
+        case updateAccount(ApiUpdate.UpdateAccount)
+        case updateAccountDomainData(ApiUpdate.UpdateAccountDomainData)
         case updateBalances(ApiUpdate.UpdateBalances)
         case updateCurrencyRates(ApiUpdate.UpdateCurrencyRates)
         case updateStaking(ApiUpdate.UpdateStaking)
@@ -66,8 +72,6 @@ public struct WalletCoreData {
         case isLedgerUnsafeSupported(callback: @Sendable (Bool?) async -> ())
         case getLedgerDeviceModel(callback: @Sendable (ApiLedgerDeviceModel?) async -> ())
         
-        case minimizedSheetChanged(_ state: MinimizedSheetState)
-        case sheetDismissed(UIViewController)
     }
     
     public protocol EventsObserver: AnyObject {
@@ -75,39 +79,31 @@ public struct WalletCoreData {
     }
 
     private init() {}
-    static let queue = DispatchQueue(label: "org.mytonwallet.app.wallet_core_background", attributes: .concurrent)
-    static let processorQueue = DispatchQueue(label: "org.mytonwallet.app.wallet_core_background_processor", attributes: .concurrent)
 
     // ability to observe events
-    class WeakEventsObserver {
+    final class WeakEventsObserver {
         weak var value: EventsObserver?
         init(value: EventsObserver?) {
             self.value = value
         }
     }
     @MainActor private(set) static var eventObservers = [WeakEventsObserver]()
-    public static func add(eventObserver: EventsObserver) {
+    public static func add(eventObserver: EventsObserver & Sendable) {
         Task { @MainActor in
             WalletCoreData.eventObservers.append(WeakEventsObserver(value: eventObserver))
         }
     }
-    public static func remove(observer: EventsObserver) {
-        Task { @MainActor in
-            WalletCoreData.eventObservers.removeAll { $0.value === nil || $0.value === observer }
-        }
+    @MainActor public static func remove(observer: EventsObserver) {
+        WalletCoreData.eventObservers.removeAll { $0.value === nil || $0.value === observer }
     }
     @MainActor public static func removeObservers() {
         eventObservers.removeAll { it in
             (it.value is UIViewController) ||
-            (it.value is UIView) ||
-            (it.value is (any ObservableObject))
+            (it.value is UIView)
         }
     }
 
-    public static func notify(event: WalletCoreData.Event, for accountId: String? = nil) {
-        guard accountId == nil || accountId == AccountStore.account?.id else {
-            return
-        }
+    public static func notify(event: WalletCoreData.Event) {
         DispatchQueue.main.async {
             WalletCoreData.eventObservers = WalletCoreData.eventObservers.compactMap { observer in
                 if let observerInstance = observer.value {
@@ -120,28 +116,46 @@ public struct WalletCoreData {
     }
 
     public static func notifyAccountChanged(to account: MAccount, isNew: Bool) {
+        @Dependency(\.accountSettings) var _accountSettings
+        let accountSettings = _accountSettings.for(accountId: account.id)
         DispatchQueue.main.async {
             AccountStore.walletVersionsData = nil
-            AccountStore.setAssetsAndActivityData(accountId: account.id, value: MAssetsAndActivityData(dictionary: AppStorageHelper.assetsAndActivityData(for: account.id)))
+            // Improvement: data race – reading via assetsAndActivityData(for:) can be called while writing
+            let assetsAndActivityData = MAssetsAndActivityData(dictionary: AppStorageHelper.assetsAndActivityData(for: account.id))
+            AccountStore.setAssetsAndActivityData(assetsAndActivityData, forAccountID: account.id)
             DappsStore.updateDappCount()
-            changeThemeColors(to: AccountStore.currentAccountAccentColorIndex)
-            (UIApplication.shared.sceneKeyWindow as? WThemedView)?.updateTheme()
+            changeThemeColors(to: accountSettings.accentColorIndex)
+            UIApplication.shared.sceneKeyWindow?.updateTheme()
             for observer in WalletCoreData.eventObservers {
                 observer.value?.walletCore(event: .accountChanged(accountId: account.id, isNew: isNew))
             }
         }
     }
 
-    public static func start(db: any DatabaseWriter) async {
+    @MainActor public static func start(db: any DatabaseWriter) async {
         _ = LogStore.shared
-        Log.shared.info("**** WalletCoreData.start() **** \(Date().formatted(.iso8601), .public)")
+        log.info("**** WalletCoreData.start() **** \(Date().formatted(.iso8601), .public)")
         await ActivityStore.use(db: db)
         AccountStore.use(db: db)
         let accountIds = Set(AccountStore.accountsById.keys)
+        log.info("AcountStore loaded \(accountIds.count) accounts")
+        
+        // Detect if this is new install and delete old keychain storage if needed
+        let isFirstLaunch = (UIApplication.shared.delegate as? MtwAppDelegateProtocol)?.isFirstLaunch == true
+        if isFirstLaunch {
+            log.info("First launch detected. Will check if accounts from previous install should can be deleted.")
+        }
+        if isFirstLaunch && accountIds.isEmpty && GlobalStorage.keysIn(key: "accounts")?.isEmpty != false {
+            log.info("Deleting accounts from previous install")
+            KeychainHelper.deleteAccountsFromPreviousInstall()
+        }
+        
         TokenStore.loadFromCache()
-        await StakingStore.use(db: db)
+        StakingStore.use(db: db)
         BalanceStore.loadFromCache(accountIds: accountIds)
         NftStore.loadFromCache(accountIds: accountIds)
+        _ = AccountSettingsStore.liveValue
+        _ = DomainsStore.liveValue
         _ = AutolockStore.shared
     }
 

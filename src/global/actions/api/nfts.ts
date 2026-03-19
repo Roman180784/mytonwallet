@@ -1,17 +1,48 @@
-import { BURN_ADDRESS, NOTCOIN_EXCHANGERS, NOTCOIN_VOUCHERS_ADDRESS, TONCOIN } from '../../../config';
-import { findDifference } from '../../../util/iteratees';
-import { IS_DELEGATING_BOTTOM_SHEET } from '../../../util/windowEnvironment';
+import { DEFAULT_CHAIN } from '../../../config';
+import { getChainConfig } from '../../../util/chain';
+import { findDifference, omit } from '../../../util/iteratees';
 import { callApi } from '../../../api';
-import { addActionHandler } from '../../index';
-import { updateCurrentAccountState } from '../../reducers';
-import { selectCurrentAccountState } from '../../selectors';
+import { NFT_COLLECTION_CACHE_TTL } from '../../../api/constants';
+import { addActionHandler, setGlobal } from '../../index';
+import { updateAccountState, updateCurrentAccountState } from '../../reducers';
+import { selectAccountState, selectCurrentAccountId, selectCurrentAccountState } from '../../selectors';
 
 import { getIsPortrait } from '../../../hooks/useDeviceScreen';
 
-const NBS_INIT_TIMEOUT = IS_DELEGATING_BOTTOM_SHEET ? 100 : 0;
+addActionHandler('fetchNftsFromCollection', (global, actions, { collection }) => {
+  const accountId = selectCurrentAccountId(global);
+  // Can be `undefined` during logout or before any account is selected
+  if (!accountId) return;
 
-addActionHandler('fetchNftsFromCollection', (global, actions, { collectionAddress }) => {
-  void callApi('fetchNftsFromCollection', global.currentAccountId!, collectionAddress);
+  const accountState = selectAccountState(global, accountId);
+  const lastLoadedAt = accountState?.nfts?.collectionLoadedTimestamps?.[collection.address];
+  const now = Date.now();
+
+  if (lastLoadedAt !== undefined && (now - lastLoadedAt) < NFT_COLLECTION_CACHE_TTL) {
+    return;
+  }
+
+  actions.clearNftCollectionLoading({ collection });
+  void callApi('fetchNftsFromCollection', accountId, collection);
+});
+
+addActionHandler('clearNftCollectionLoading', (global, actions, { collection }) => {
+  const currentAccountId = selectCurrentAccountId(global);
+  // Can be `undefined` during logout or before any account is selected
+  if (!currentAccountId) return;
+
+  const accountState = selectAccountState(global, currentAccountId);
+  global = updateAccountState(global, currentAccountId, {
+    nfts: {
+      ...accountState?.nfts,
+      isLoadedByAddress: omit(accountState?.nfts?.isLoadedByAddress ?? {}, [collection.address]),
+      collectionLoadedTimestamps: omit(
+        accountState?.nfts?.collectionLoadedTimestamps ?? {},
+        [collection.address],
+      ),
+    },
+  });
+  setGlobal(global);
 });
 
 addActionHandler('burnNfts', (global, actions, { nfts }) => {
@@ -20,16 +51,17 @@ addActionHandler('burnNfts', (global, actions, { nfts }) => {
     nfts,
   });
 
-  const isNotcoinVouchers = nfts.some((n) => n.collectionAddress === NOTCOIN_VOUCHERS_ADDRESS);
+  const chain = nfts?.[0].chain || DEFAULT_CHAIN;
 
-  setTimeout(() => {
-    actions.submitTransferInitial({
-      tokenSlug: TONCOIN.slug,
-      amount: 0n,
-      toAddress: isNotcoinVouchers ? NOTCOIN_EXCHANGERS[0] : BURN_ADDRESS,
-      nfts,
-    });
-  }, NBS_INIT_TIMEOUT);
+  const NFT_BURN_PLACEHOLDER_ADDRESS = 'placeholder_address';
+
+  actions.submitTransferInitial({
+    tokenSlug: getChainConfig(chain).nativeToken.slug,
+    amount: 0n,
+    toAddress: NFT_BURN_PLACEHOLDER_ADDRESS, // Define real inside action
+    nfts,
+    isNftBurn: true,
+  });
 });
 
 addActionHandler('addNftsToBlacklist', (global, actions, { addresses: nftAddresses }) => {
@@ -95,10 +127,16 @@ addActionHandler('closeHideNftModal', (global) => {
   });
 });
 
-addActionHandler('openNftAttributesModal', (global, actions, { nft }) => {
-  return updateCurrentAccountState(global, { currentNftForAttributes: nft });
+addActionHandler('openNftAttributesModal', (global, actions, { nft, withOwner }) => {
+  return updateCurrentAccountState(global, {
+    currentNftForAttributes: nft,
+    shouldShowOwnerInNftAttributes: withOwner,
+  });
 });
 
 addActionHandler('closeNftAttributesModal', (global) => {
-  return updateCurrentAccountState(global, { currentNftForAttributes: undefined });
+  return updateCurrentAccountState(global, {
+    currentNftForAttributes: undefined,
+    shouldShowOwnerInNftAttributes: undefined,
+  });
 });

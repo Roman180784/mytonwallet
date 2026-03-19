@@ -24,7 +24,7 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
     private let amountLabel = {
         let lbl = UILabel()
         lbl.translatesAutoresizingMaskIntoConstraints = false
-        lbl.font = .rounded(ofSize: 48, weight: .bold)
+        lbl.font = .compactRounded(ofSize: 48, weight: .bold)
         lbl.text = "0"
         return lbl
     }()
@@ -44,13 +44,20 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
         return v
     }()
     
+    private lazy var currentlyStakedLabel = {
+        let lbl = UILabel()
+        lbl.font = .systemFont(ofSize: 15)
+        lbl.textAlignment = .center
+        lbl.text = lang("Currently Staked")
+        return lbl
+    }()
+    
     private lazy var yourBalanceHintLabel = {
         let lbl = UILabel()
-        lbl.text = lang("Your staking balance")
         lbl.font = .systemFont(ofSize: 16)
         lbl.numberOfLines = 0
         lbl.textAlignment = .center
-        lbl.text = lang("Your staking balance") + "\n"
+        lbl.text = "\n"
         return lbl
     }()
     
@@ -58,6 +65,7 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
         let btn = WButton(style: .primary)
         btn.setTitle(lang("Add Stake"), for: .normal)
         btn.addTarget(self, action: #selector(addStakePressed), for: .touchUpInside)
+        btn.isEnabled = false
         return btn
     }()
     
@@ -65,6 +73,7 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
         let btn = WButton(style: .secondary)
         btn.setTitle(lang("Unstake"), for: .normal)
         btn.addTarget(self, action: #selector(unstakePressed), for: .touchUpInside)
+        btn.isEnabled = false
         return btn
     }()
     
@@ -93,8 +102,9 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
         v.axis = .vertical
         amountContainer.addContent(amountView)
         v.addArrangedSubview(amountContainer, spacing: 16)
+        v.addArrangedSubview(currentlyStakedLabel, spacing: 16)
         v.addArrangedSubview(yourBalanceHintLabel, spacing: 9)
-        v.addArrangedSubview(actionsStackView, margin: .init(top: 14, left: 16, bottom: 16, right: 16))
+        v.addArrangedSubview(actionsStackView, margin: .init(top: 16, left: 16, bottom: 16, right: 16))
         let actionsWidthAnchor = actionsStackView.widthAnchor.constraint(equalToConstant: 500)
         actionsWidthAnchor.priority = .defaultHigh
         NSLayoutConstraint.activate([
@@ -146,6 +156,7 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
     }
 
     public func updateTheme() {
+        currentlyStakedLabel.textColor = WTheme.secondaryLabel
         yourBalanceHintLabel.textColor = WTheme.secondaryLabel
         bottomCornersViewContainer.backgroundColor = WTheme.groupedItem
         bottomCornersView.backgroundColor = WTheme.sheetBackground
@@ -153,53 +164,66 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
     
     private func updateUnstakingInfo() {
         guard let stakingConfig,
-              let stakingState = stakingConfig.stakingState,
-              let unstakingAt = stakingConfig.unstakeTime,
+              let stakingState = stakingConfig.stakingState(stakingData: stakingData),
+              let unstakingAt = stakingConfig.unstakeTime(stakingData: stakingData),
               let amnt = stakingState.unstakeRequestAmount, amnt > 0 else { return }
         let time = unstakingAt.remainingFromNow
+        let amount = TokenAmount(amnt, stakingConfig.baseToken).formatted(.none, maxDecimals: 4)
+
         if stakingState.type == .ethena {
-            let amount = TokenAmount(amnt, stakingConfig.baseToken).formatted(maxDecimals: 4)
             yourBalanceHintLabel.text = lang("$unstaking_when_receive_with_amount_ethena", arg1: amount, arg2: time)
         } else if stakingState.type == .nominators {
             yourBalanceHintLabel.text = lang("$unstaking_when_receive", arg1: time)
+        } else {
+            yourBalanceHintLabel.text = lang("$unstaking_when_receive_with_amount", arg1: amount, arg2: time)
         }
         layoutIfNeeded()
     }
     
     private weak var earnVC: EarnVC? = nil
     private var stakingConfig: StakingConfig? = nil
+    private var stakingData: MStakingData? = nil
     private var timer: Timer? = nil
     
-    func configure(config: StakingConfig, delegate: EarnVC) {
+    func configure(config: StakingConfig, stakingData: MStakingData?, supportsEarn: Bool, delegate: EarnVC) {
         let token = config.baseToken
-        if config.stakingState != nil {
-            let stakingBalance = config.fullStakingBalance ?? 0
-            amountLabel.attributedText = TokenAmount(stakingBalance, token).formatAttributed(
-                format: .init(maxDecimals: 4),
-                integerFont: .rounded(ofSize: 48, weight: .bold),
-                fractionFont: .rounded(ofSize: 32, weight: .bold),
-                symbolFont: .rounded(ofSize: 32, weight: .bold),
+        addStakeButton.isEnabled = supportsEarn
+        unstakeButton.isEnabled = supportsEarn
+        if let stakingState = config.stakingState(stakingData: stakingData) {
+            let stakingBalance = config.fullStakingBalance(stakingData: stakingData) ?? 0
+            let tokenAmount = TokenAmount(stakingBalance, token)
+            let isLargeAmount = abs(tokenAmount.doubleValue) >= 10
+            amountLabel.attributedText = tokenAmount.formatAttributed(
+                format: .init(preset: .defaultAdaptive),
+                integerFont: .compactRounded(ofSize: 48, weight: .bold),
+                fractionFont: .compactRounded(ofSize: 32, weight: .bold),
+                symbolFont: .compactRounded(ofSize: 32, weight: .bold),
                 integerColor: WTheme.primaryLabel,
-                fractionColor: WTheme.primaryLabel,
+                fractionColor: isLargeAmount ? WTheme.secondaryLabel : WTheme.primaryLabel,
                 symbolColor: WTheme.secondaryLabel
             )
             unstakeButton.isHidden = stakingBalance == 0
             self.stakingConfig = config
-            if let amount = config.stakingState?.unstakeRequestAmount, amount > 0, let unstakingAt = config.unstakeTime {
+            self.stakingData = stakingData
+            if let amount = stakingState.unstakeRequestAmount,
+               amount > 0,
+               let unstakingAt = config.unstakeTime(stakingData: stakingData) {
                 if unstakingAt > Date() {
                     self.updateUnstakingInfo()
                     if timer == nil {
                         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                            self?.updateUnstakingInfo()
+                            Task { @MainActor in
+                                self?.updateUnstakingInfo()
+                            }
                         }
                     }
                 } else {
                     timer?.invalidate()
-                    yourBalanceHintLabel.text = lang("Your staking balance") + "\n"
+                    yourBalanceHintLabel.text = "\n"
                 }
             } else {
                 timer?.invalidate()
-                yourBalanceHintLabel.text = lang("Your staking balance") + "\n"
+                yourBalanceHintLabel.text = "\n"
             }
             self.earnVC = delegate
             if stackView.alpha == 0 {
@@ -216,9 +240,9 @@ class EarnHeaderCell: UITableViewCell, WThemedView {
             indicatorView.startAnimating(animated: true)
             indicatorView.isHidden = false
         }
-        if let readyToUnstakeAmount = config.readyToUnstakeAmount {
+        if let readyToUnstakeAmount = config.readyToUnstakeAmount(stakingData: stakingData) {
             let amount = TokenAmount(readyToUnstakeAmount, config.baseToken)
-            unstakeButton.setTitle(lang("Unstake %amount%", arg1: amount.formatted(maxDecimals: 2)), for: .normal)
+            unstakeButton.setTitle(lang("Unstake %amount%", arg1: amount.formatted(.none, maxDecimals: 2)), for: .normal)
         } else {
             unstakeButton.setTitle(lang("Unstake"), for: .normal)
         }

@@ -1,7 +1,6 @@
 
 import SwiftUI
 import UIKit
-import UIPasscode
 import UIComponents
 import WalletCore
 import WalletContext
@@ -9,10 +8,9 @@ import WalletContext
 
 struct DappSendTransactionDetailView: View {
     
+    var accountContext: AccountContext
     var message: ApiDappTransfer
-    var onScroll: (CGFloat) -> ()
-    
-    @Namespace var ns
+    var chain: ApiChain
     
     var isScam: Bool { message.isScam == true }
     
@@ -25,27 +23,28 @@ struct DappSendTransactionDetailView: View {
                     .padding(.bottom, 2)
             }
             
-            InsetSection {
-                InsetCell {
-                    TappableAddressFull(address: message.toAddress)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, 3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            if !message.toAddress.isEmpty {
+                InsetSection {
+                    InsetCell {
+                        TappableAddressFull(accountContext: accountContext, model: .init(chain: chain, apiAddress: message.toAddress))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } header: {
+                    Text(lang("Receiving address"))
                 }
-            } header: {
-                Text(lang("Receiving address"))
             }
-            .scrollPosition(ns: ns, offset: isScam ? 32 : 0, callback: onScroll)
 
             InsetSection {
-                TransactionAmountRow(transfer: message)
+                TransactionAmountRow(transfer: message, chain: chain)
             } header: {
                 Text(lang("Amount"))
             }
             
             InsetSection {
-                TransactionFeeRow(transfer: message)
+                TransactionFeeRow(transfer: message, chain: chain)
             } header: {
                 Text(lang("Fee"))
             }
@@ -62,7 +61,7 @@ struct DappSendTransactionDetailView: View {
                 InsetSection {
                     InsetExpandableCell(content: stateInit)
                 } header: {
-                    Text(lang("StateInit"))
+                    Text("StateInit")
                 }
             }
             
@@ -72,7 +71,6 @@ struct DappSendTransactionDetailView: View {
                     .padding(.top, 8)
             }
         }
-        .coordinateSpace(name: ns)
-        .navigationBarInset(68)
+        .navigationBarInset(12)
     }
 }

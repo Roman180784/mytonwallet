@@ -9,6 +9,7 @@ import { Dictionary } from '@ton/core/dist/dict/Dictionary';
 
 import type {
   ApiActivity,
+  ApiAnyDisplayError,
   ApiMtwCardBorderShineType,
   ApiMtwCardTextType,
   ApiMtwCardType,
@@ -108,12 +109,16 @@ const jettonOnChainMetadataSpec: {
   custom_payload_api_uri: 'ascii',
 };
 
-export async function fetchJettonMetadata(network: ApiNetwork, address: string) {
-  const { content } = await getJettonMinterData(network, address);
+export async function fetchJettonMetadata(
+  network: ApiNetwork,
+  address: string,
+): Promise<JettonMetadata | { error: ApiAnyDisplayError }> {
+  const minterData = await getJettonMinterData(network, address);
+  if ('error' in minterData) return minterData;
 
   let metadata: JettonMetadata;
 
-  const slice = content.asSlice();
+  const slice = minterData.content.asSlice();
   const prefix = slice.loadUint(8);
 
   if (prefix === OFFCHAIN_CONTENT_PREFIX) {
@@ -499,6 +504,18 @@ export async function parsePayloadSlice(
   return undefined;
 }
 
+export function parseBidaskPayload(base64: string) {
+  const slice = dataToSlice(base64);
+  const _opCode = slice.loadUint(32);
+  const queryId = slice.loadUintBig(64);
+  const amount = slice.loadCoins();
+
+  return {
+    queryId,
+    amount,
+  };
+}
+
 function dataToSlice(data: string | Buffer | Uint8Array): Slice {
   let buffer: Buffer;
   if (typeof data === 'string') {
@@ -671,6 +688,8 @@ export function parseTonapiioNft(
     };
 
     return omitUndefined<ApiNft>({
+      chain: 'ton',
+      interface: 'default',
       index,
       name,
       ownerAddress: owner ? toBase64Address(owner.address, false, network) : undefined,

@@ -7,18 +7,15 @@ import WalletContext
 
 private let log = Log("NotificationsSettingsVC")
 
-final class NotificationsSettingsVC: WViewController {
+final class NotificationsSettingsVC: SettingsBaseVC {
     
     var hostingController: UIHostingController<NotificationsSettingsView>?
     let viewModel = NotificationsSettingsViewModel()
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        addNavigationBar(
-            title: lang("Notifications & Sounds"),
-            addBackButton: weakifyGoBack(),
-        )
+
+        navigationItem.title = lang("Notifications & Sounds")
         
         hostingController = addHostingController(makeView(), constraints: .fill)
         
@@ -30,8 +27,6 @@ final class NotificationsSettingsVC: WViewController {
     func makeView() -> NotificationsSettingsView {
         NotificationsSettingsView(
             viewModel: viewModel,
-            navigationBarHeight: navigationBarHeight,
-            onScroll: weakifyUpdateProgressiveBlur(),
         )
     }
     

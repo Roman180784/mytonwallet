@@ -7,17 +7,14 @@ import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import androidx.core.content.ContextCompat
-import androidx.core.view.isGone
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.image.Content
 import org.mytonwallet.app_air.uicomponents.image.WCustomImageView
-import org.mytonwallet.app_air.uicomponents.widgets.WBaseView
+import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
-import org.mytonwallet.app_air.uicomponents.widgets.addRippleEffect
-import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
@@ -29,7 +26,11 @@ import org.mytonwallet.app_air.walletcore.moshi.IDapp
 
 @SuppressLint("ViewConstructor")
 class SearchDappCell(context: Context, private val onTap: (site: IDapp) -> Unit) :
-    WCell(context, LayoutParams(MATCH_PARENT, 64.dp)), WThemedView {
+    WCell(context, LayoutParams(MATCH_PARENT, 60.dp)), WThemedView {
+
+    private val openButtonRipple = WRippleDrawable.create(16f.dp)
+    private val ripple = WRippleDrawable.create(0f)
+    private val rippleLastItem = WRippleDrawable.create(0f, 0f, ViewConstants.BLOCK_RADIUS.dp, ViewConstants.BLOCK_RADIUS.dp)
 
     private val dappImageView: WCustomImageView by lazy {
         WCustomImageView(context).apply {
@@ -63,16 +64,12 @@ class SearchDappCell(context: Context, private val onTap: (site: IDapp) -> Unit)
         gravity = Gravity.CENTER
         setTextColor(WColor.Tint)
         setPadding(10.dp, 0, 10.dp, 0)
+        background = openButtonRipple
         setOnClickListener {
             site?.let {
                 onTap(it)
             }
         }
-    }
-
-    private val separatorView: WBaseView by lazy {
-        val sw = WBaseView(context)
-        sw
     }
 
     override fun setupViews() {
@@ -81,23 +78,19 @@ class SearchDappCell(context: Context, private val onTap: (site: IDapp) -> Unit)
         addView(titleLabel, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         addView(subtitleLabel, LayoutParams(0, WRAP_CONTENT))
         addView(openButton, LayoutParams(WRAP_CONTENT, 28.dp))
-        addView(separatorView, LayoutParams(0, 1))
         setConstraints {
             toStart(dappImageView, 18f)
             toCenterY(dappImageView)
             constrainedWidth(titleLabel.id, true)
             setHorizontalBias(titleLabel.id, 0f)
             toStart(titleLabel, 56f)
-            toTop(titleLabel, 11.5f)
+            toTop(titleLabel, 9.5f)
             endToStart(titleLabel, openButton, 10f)
             toStart(subtitleLabel, 56f)
             topToBottom(subtitleLabel, titleLabel, 1f)
             endToStart(subtitleLabel, openButton, 10f)
             toEnd(openButton, 12f)
             toCenterY(openButton)
-            toBottom(separatorView)
-            toEnd(separatorView, 0f)
-            toStart(separatorView, 56f)
         }
 
         setOnClickListener {
@@ -128,14 +121,13 @@ class SearchDappCell(context: Context, private val onTap: (site: IDapp) -> Unit)
                 ""
             }
         }
-        separatorView.isGone = isLastItem
 
         updateTheme()
     }
 
     override fun updateTheme() {
-        openButton.setBackgroundColor(WColor.SecondaryBackground.color, 16f.dp)
-        openButton.addRippleEffect(WColor.BackgroundRipple.color, 16f.dp)
+        openButtonRipple.backgroundColor = WColor.SecondaryBackground.color
+        openButtonRipple.rippleColor = WColor.BackgroundRipple.color
         if ((site as? MExploreSite)?.isTelegram == true) {
             val telegramIcon = ContextCompat.getDrawable(
                 context,
@@ -153,17 +145,10 @@ class SearchDappCell(context: Context, private val onTap: (site: IDapp) -> Unit)
                 null, null, null, null
             )
         }
-        setBackgroundColor(
-            WColor.Background.color,
-            0f,
-            if (isLastItem) ViewConstants.STANDARD_ROUNDS.dp else 0f
-        )
-        addRippleEffect(
-            WColor.BackgroundRipple.color,
-            0f,
-            if (isLastItem) ViewConstants.STANDARD_ROUNDS.dp else 0f
-        )
-        separatorView.setBackgroundColor(WColor.Separator.color)
+        val currentRipple = if (isLastItem) rippleLastItem else ripple
+        background = currentRipple
+        currentRipple.backgroundColor = WColor.Background.color
+        currentRipple.rippleColor = WColor.BackgroundRipple.color
     }
 
 }

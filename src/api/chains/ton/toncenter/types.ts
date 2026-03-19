@@ -100,6 +100,8 @@ export type AnyAction = TonTransferAction
   | SubscribeAction
   | UnsubscribeAction;
 
+export type DnsAction = ChangeDnsAction | RenewDnsAction | DeleteDnsAction;
+
 export type MetadataMap = Record<string, {
   is_indexed: boolean;
   token_info: AnyTokenMetadata[];
@@ -156,6 +158,7 @@ export type NftTransferAction = BaseAction & {
     forward_amount: string | null;
     price: string | null;
     marketplace: MarketplaceSlug | null;
+    payout_amount: string | null;
   };
 };
 
@@ -555,20 +558,25 @@ type BaseSocketMessage = {
   id?: string;
 };
 
-export type ConfigureSocketMessage = BaseSocketMessage & {
-  operation: 'configure';
-  include_address_book: boolean;
-  include_metadata: boolean;
+export type SocketFinality = 'pending' | 'confirmed' | 'signed' | 'finalized';
+
+export type SocketSubscriptionEvent = 'actions' | 'transactions' | 'account_state_change' | 'jettons_change';
+
+export type SubscribeSocketMessage = BaseSocketMessage & {
+  operation: 'subscribe';
+  addresses: string[];
+  types: SocketSubscriptionEvent[];
+  min_finality?: SocketFinality;
+  include_address_book?: boolean;
+  include_metadata?: boolean;
+  action_types?: string[];
   /** @default ['latest'] */
   supported_action_types?: ('v1' | 'v2' | 'latest')[];
 };
 
-export type SocketSubscriptionEvent = 'actions' | 'pending_actions' | 'account_state_change' | 'jettons_change';
-
-export type SetSubscriptionSocketMessage = BaseSocketMessage & {
-  operation: 'set_subscription';
-  /** The keys are the addresses to subscribe to in any format */
-  subscriptions: Record<string, SocketSubscriptionEvent[]>;
+export type UnsubscribeSocketMessage = BaseSocketMessage & {
+  operation: 'unsubscribe';
+  addresses: string[];
 };
 
 export type PingSocketMessage = BaseSocketMessage & {
@@ -576,18 +584,28 @@ export type PingSocketMessage = BaseSocketMessage & {
 };
 
 export type ClientSocketMessage =
-  | ConfigureSocketMessage
-  | SetSubscriptionSocketMessage
+  | SubscribeSocketMessage
+  | UnsubscribeSocketMessage
   | PingSocketMessage;
 
 export type StatusSocketMessage = BaseSocketMessage & {
-  status: 'subscription_set' | 'configured' | 'pong';
+  status: 'subscribed' | 'unsubscribed' | 'pong';
 };
 
 export type ActionsSocketMessage = BaseSocketMessage & {
-  type: 'actions' | 'pending_actions';
+  type: 'actions';
+  finality: SocketFinality;
   trace_external_hash_norm: string;
   actions: AnyAction[];
+  address_book: AddressBook;
+  metadata: MetadataMap;
+};
+
+export type TransactionsSocketMessage = BaseSocketMessage & {
+  type: 'transactions';
+  finality: SocketFinality;
+  trace_external_hash_norm: string;
+  transactions: TransactionMessage[];
   address_book: AddressBook;
   metadata: MetadataMap;
 };
@@ -599,6 +617,7 @@ export type InvalidationSocketMessage = BaseSocketMessage & {
 
 export type AccountStateChangeSocketMessage = BaseSocketMessage & {
   type: 'account_state_change';
+  finality: Exclude<SocketFinality, 'pending'>;
   /** Raw address */
   account: string;
   state: {
@@ -616,6 +635,7 @@ export type AccountStateChangeSocketMessage = BaseSocketMessage & {
 
 export type JettonChangeSocketMessage = BaseSocketMessage & {
   type: 'jettons_change';
+  finality: Exclude<SocketFinality, 'pending'>;
   jetton: {
     /** The token wallet raw address */
     address: string;
@@ -632,9 +652,11 @@ export type JettonChangeSocketMessage = BaseSocketMessage & {
   metadata: MetadataMap;
 };
 
+/** Server messages from the streaming API */
 export type ServerSocketMessage =
   | StatusSocketMessage
   | ActionsSocketMessage
+  | TransactionsSocketMessage
   | InvalidationSocketMessage
   | AccountStateChangeSocketMessage
   | JettonChangeSocketMessage;

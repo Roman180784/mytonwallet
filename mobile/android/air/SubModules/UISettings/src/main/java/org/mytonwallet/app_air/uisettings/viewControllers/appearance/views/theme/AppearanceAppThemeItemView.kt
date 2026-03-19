@@ -16,6 +16,7 @@ import org.mytonwallet.app_air.uisettings.R
 import org.mytonwallet.app_air.walletcontext.WalletContextManager
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
@@ -54,6 +55,7 @@ class AppearanceAppThemeItemView(
 
     private val nameLabel: WLabel by lazy {
         val lbl = WLabel(context)
+        lbl.setStyle(14f, WFont.DemiBold)
         lbl.text = when (identifier) {
             ThemeManager.THEME_SYSTEM -> {
                 LocaleController.getString("System")
@@ -88,6 +90,7 @@ class AppearanceAppThemeItemView(
         }
 
         setOnClickListener {
+            Logger.d(Logger.LogTag.SETTINGS, "themeChanged: theme=$identifier")
             WGlobalStorage.setActiveTheme(identifier)
             WalletContextManager.delegate?.themeChanged()
         }
@@ -95,6 +98,7 @@ class AppearanceAppThemeItemView(
         updateTheme()
     }
 
+    override val isTinted = true
     override fun updateTheme() {
         val borderPadding = if (isActive) 3 else 1
         imageView.setBackgroundColor(
@@ -103,7 +107,6 @@ class AppearanceAppThemeItemView(
         )
         imageView.setPadding(borderPadding)
         nameLabel.setTextColor((if (isActive) WColor.Tint else WColor.SecondaryText).color)
-        nameLabel.setStyle(16f, if (isActive) WFont.Medium else WFont.Regular)
     }
 
 }

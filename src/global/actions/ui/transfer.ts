@@ -2,21 +2,13 @@ import { ActiveTab, TransferState } from '../../types';
 
 import { getInMemoryPassword } from '../../../util/authApi/inMemoryPasswordStore';
 import { fromDecimal, toDecimal } from '../../../util/decimals';
-import { callActionInMain, callActionInNative } from '../../../util/multitab';
 import { getChainBySlug } from '../../../util/tokens';
-import { IS_DELEGATED_BOTTOM_SHEET, IS_DELEGATING_BOTTOM_SHEET } from '../../../util/windowEnvironment';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { resetHardware, setCurrentTransferAddress, updateCurrentTransfer } from '../../reducers';
 import { selectIsHardwareAccount } from '../../selectors';
 
 addActionHandler('startTransfer', (global, actions, payload) => {
-  const isOpen = global.currentTransfer.state !== TransferState.None;
-  if (IS_DELEGATED_BOTTOM_SHEET && !isOpen) {
-    callActionInMain('startTransfer', payload);
-    return;
-  }
-
-  const { isPortrait, ...rest } = payload ?? {};
+  const { isPortrait, isOfframp, ...rest } = payload ?? {};
 
   const nftTokenSlug = Symbol('nft');
   const previousFeeTokenSlug = global.currentTransfer.nfts?.length ? nftTokenSlug : global.currentTransfer.tokenSlug;
@@ -28,10 +20,21 @@ addActionHandler('startTransfer', (global, actions, payload) => {
     error: undefined,
     ...(shouldClearFee ? { fee: undefined, realFee: undefined, diesel: undefined } : {}),
     ...rest,
+    isOfframp,
   }));
 
   if (!isPortrait) {
     actions.setLandscapeActionsActiveTabIndex({ index: ActiveTab.Transfer });
+  }
+
+  // For offramp mode, automatically submit to calculate fee and go to Confirm screen
+  if (isOfframp && payload?.tokenSlug && payload?.amount && payload?.toAddress) {
+    actions.submitTransferInitial({
+      tokenSlug: payload.tokenSlug,
+      amount: payload.amount,
+      toAddress: payload.toAddress,
+      comment: payload.comment,
+    });
   }
 });
 
@@ -109,10 +112,6 @@ addActionHandler('clearTransferError', (global) => {
 });
 
 addActionHandler('dismissTransferScamWarning', (global) => {
-  if (IS_DELEGATING_BOTTOM_SHEET) {
-    callActionInNative('dismissTransferScamWarning');
-  }
-
   global = updateCurrentTransfer(global, { scamWarningType: undefined });
   setGlobal(global);
 });

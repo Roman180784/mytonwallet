@@ -1,6 +1,7 @@
 import { TronWeb } from 'tronweb';
 
 import type { ApiActivity, ApiFetchActivitySliceOptions, ApiNetwork, ApiTransactionActivity } from '../../types';
+import { TronContractMethodSignature } from './types';
 
 import { TRX } from '../../../config';
 import { parseAccountId } from '../../../util/account';
@@ -12,6 +13,7 @@ import { getTokenSlugs } from './util/tokens';
 import { fetchStoredWallet } from '../../common/accounts';
 import { updateActivityMetadata } from '../../common/helpers';
 import { buildTokenSlug, getTokenBySlug } from '../../common/tokens';
+import { SEC } from '../../constants';
 import { NETWORK_CONFIG } from './constants';
 
 export async function fetchActivitySlice({
@@ -56,18 +58,20 @@ export async function getTokenActivitySlice(
 
   if (slug === TRX.slug) {
     const rawTransactions = await getTrxTransactions(network, address, {
-      min_timestamp: fromTimestamp ? fromTimestamp + 1000 : undefined,
-      max_timestamp: toTimestamp ? toTimestamp - 1000 : undefined,
+      min_timestamp: fromTimestamp ? fromTimestamp + SEC : undefined,
+      max_timestamp: toTimestamp ? toTimestamp - SEC : undefined,
       limit,
       search_internal: false, // The parsing is not supported and not needed currently
     });
-    activities = rawTransactions.map((rawTx) => parseRawTrxTransaction(address, rawTx));
+    activities = rawTransactions
+      .map((rawTx) => parseRawTrxTransaction(address, rawTx))
+      .filter((activity) => !activity.shouldHide);
   } else {
     const { tokenAddress } = getTokenBySlug(slug) || {};
     const rawTransactions = await getTrc20Transactions(network, address, {
       contract_address: tokenAddress,
-      min_timestamp: fromTimestamp ? fromTimestamp + 1000 : undefined,
-      max_timestamp: toTimestamp ? toTimestamp - 1000 : undefined,
+      min_timestamp: fromTimestamp ? fromTimestamp + SEC : undefined,
+      max_timestamp: toTimestamp ? toTimestamp - SEC : undefined,
       limit,
     });
     activities = rawTransactions.map((rawTx) => parseRawTrc20Transaction(address, rawTx));
@@ -141,12 +145,24 @@ async function getTrxTransactions(
   return result.data;
 }
 
-function parseRawTrxTransaction(address: string, rawTx: any): ApiTransactionActivity {
+function isTokenTransferTransaction(rawTx: any): boolean {
+  const rawData = rawTx.raw_data;
+  if (!rawData?.contract?.[0]) return false;
+
+  const contract = rawData.contract[0];
+  if (contract.type !== 'TriggerSmartContract') return false;
+
+  const data = contract.parameter?.value?.data;
+  if (!data) return false;
+
+  return data.startsWith(TronContractMethodSignature.Transfer)
+    || data.startsWith(TronContractMethodSignature.TransferFrom);
+}
+
+export function parseRawTrxTransaction(address: string, rawTx: any): ApiTransactionActivity {
   const {
     raw_data: rawData,
     txID: txId,
-    energy_fee: energyFee,
-    net_fee: netFee,
     block_timestamp: timestamp,
   } = rawTx;
 
@@ -160,9 +176,9 @@ function parseRawTrxTransaction(address: string, rawTx: any): ApiTransactionActi
   const slug = TRX.slug;
   const isIncoming = toAddress === address;
   const normalizedAddress = isIncoming ? fromAddress : toAddress;
-  const fee = BigInt(energyFee + netFee);
+  const fee = BigInt(rawTx.ret?.[0].fee ?? 0);
   const type = rawData.contract[0].type === 'TriggerSmartContract' ? 'callContract' : undefined;
-  const shouldHide = rawData.contract[0].type === 'TransferAssetContract';
+  const shouldHide = rawData.contract[0].type === 'TransferAssetContract' || isTokenTransferTransaction(rawTx);
 
   return updateActivityMetadata({
     id: txId,
@@ -181,7 +197,7 @@ function parseRawTrxTransaction(address: string, rawTx: any): ApiTransactionActi
   });
 }
 
-async function getTrc20Transactions(
+export async function getTrc20Transactions(
   network: ApiNetwork,
   address: string,
   queryParams: {
@@ -205,7 +221,7 @@ async function getTrc20Transactions(
   return result.data;
 }
 
-function parseRawTrc20Transaction(address: string, rawTx: any): ApiTransactionActivity {
+export function parseRawTrc20Transaction(address: string, rawTx: any): ApiTransactionActivity {
   const {
     transaction_id: txId,
     block_timestamp: timestamp,
@@ -266,7 +282,9 @@ export function mergeActivities(txsBySlug: Record<string, ApiActivity[]>): ApiAc
         }),
     ),
     // Because of `isSeenTxId`, it's necessary to filter the TRX transactions after the token transactions
-    trxTxs.filter((trxTx) => !isSeenTxId(trxTx.id) && (trxTx.kind !== 'transaction' || trxTx.toAddress)),
+    trxTxs.filter(
+      (trxTx) => !isSeenTxId(trxTx.id) && !trxTx.shouldHide && (trxTx.kind !== 'transaction' || trxTx.toAddress),
+    ),
   );
 }
 

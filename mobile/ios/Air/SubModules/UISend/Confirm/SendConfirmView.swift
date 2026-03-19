@@ -6,115 +6,65 @@ import UIKit
 import UIComponents
 import WalletCore
 import WalletContext
-
+import Perception
+import Dependencies
 
 struct SendConfirmView: View {
     
-    @ObservedObject var model: SendModel
-    var navigationBarInset: CGFloat
-    var onScrollPositionChange: (CGFloat) -> ()
-    
-    @Namespace private var ns
+    let model: SendModel
     
     var body: some View {
-        InsetList {
-            ToSection()
-                .scrollPosition(ns: ns, offset: 8, callback: onScrollPositionChange)
-            NftSection()
-            AmountSection()
-            CommentSection()
+        WithPerceptionTracking {
+            InsetList {
+                ToSection(model: model)
+                NftSection(model: model)
+                AmountSection(model: model)
+                CommentSection(model: model)
+            }
         }
-        .coordinateSpace(name: ns)
-        .environmentObject(model)
-        .navigationBarInset(navigationBarInset)
     }
 }
 
 
 fileprivate struct ToSection: View {
-    @EnvironmentObject private var model: SendModel
+    let model: SendModel
     
     var body: some View {
-        InsetSection {
-            AddressCellView()
-        } header: {
-            Text(lang("Send to"))
-        } footer: {}
-    }
-}
-
-
-fileprivate struct AddressCellView: View {
-    
-    @EnvironmentObject private var model: SendModel
-    
-    var body: some View {
-        Menu {
-            AddressActions(address: model.resolvedAddress ?? model.addressOrDomain, showSaveToFavorites: true)
-        } label: {
-            InsetCell {
-                let more: Text = Text(
-                    Image(systemName: "chevron.down")
-                )
-                    .font(.system(size: 14))
-                    .foregroundColor(Color(WTheme.secondaryLabel))
-            
-                Group {
-                    if let resolvedAddress = model.resolvedAddress, resolvedAddress != model.addressOrDomain {
-                        let addr = Text(model.addressOrDomain).foregroundColor(Color(WTheme.primaryLabel))
-                        let resolvedAddress = Text(
-                            formatAddressAttributed(
-                                resolvedAddress,
-                                startEnd: false,
-                                primaryColor: WTheme.secondaryLabel
-                            )
-                        )
-                
-                        Text("\(addr)\u{A0}·\u{A0}\(resolvedAddress) \(more)") // non-breaking spaces
-                        
-                    } else {
-                        let addr = Text(
-                            formatAddressAttributed(
-                                model.addressOrDomain,
-                                startEnd: false
-                            )
-                        )
-                        
-                        Text("\(addr) \(more)")
-                    }
-
+        WithPerceptionTracking {
+            InsetSection {
+                InsetCell {
+                    TappableAddressFull(accountContext: model.$account, model: model.addressViewModel, compactAddressWithName: false)
                 }
-                .multilineTextAlignment(.leading)
-                .font16h22()
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .contentShape(.rect)
+            } header: {
+                Text(lang("Recipient Address"))
+            } footer: {}
         }
     }
 }
 
-
 fileprivate struct AmountSection: View {
     
-    @EnvironmentObject private var model: SendModel
+    let model: SendModel
+    
+    @Dependency(\.tokenStore) private var tokenStore
     
     var body: some View {
-        if let amount = model.amount {
-            InsetSection {
-                AmountCell(amount: amount, token: model.token!)
-            } header: {
-                Text(lang("Amount"))
-            } footer: {
-                HStack(alignment: .firstTextBaseline) {
-                    if let amount = model.amountInBaseCurrency, let baseCurrency = TokenStore.baseCurrency {
-                        Text(
-                            amount: DecimalAmount(amount, baseCurrency),
-                            format: .init()
-                        )
-                    }
-                    Spacer()
-                    if let token = model.token, let nativeToken = model.nativeToken {
-                        FeeView(token: token, nativeToken: nativeToken, fee: model.showingFee, explainedTransferFee: nil, includeLabel: true)
+        WithPerceptionTracking {
+            if let amount = model.amount {
+                InsetSection {
+                    AmountCell(amount: amount, token: model.token)
+                } header: {
+                    Text(lang("Amount"))
+                } footer: {
+                    HStack(alignment: .firstTextBaseline) {
+                        if let amount = model.amountInBaseCurrency {
+                            Text(
+                            amount: DecimalAmount(amount, model.baseCurrency),
+                                format: .init()
+                            )
+                        }
+                        Spacer()
+                        FeeView(token: model.token, nativeToken: tokenStore.getNativeToken(chain: model.token.chain), fee: model.showingFee, explainedTransferFee: nil, includeLabel: true)
                     }
                 }
             }
@@ -125,14 +75,16 @@ fileprivate struct AmountSection: View {
 
 
 fileprivate struct CommentSection: View {
-
-    @EnvironmentObject private var model: SendModel
-
+    
+    let model: SendModel
+    
     var body: some View {
-        if model.binaryPayload?.nilIfEmpty != nil {
-            binaryPayloadSection
-        } else {
-            commentSection
+        WithPerceptionTracking {
+            if model.binaryPayload?.nilIfEmpty != nil {
+                binaryPayloadSection
+            } else {
+                commentSection
+            }
         }
     }
     
@@ -159,7 +111,7 @@ fileprivate struct CommentSection: View {
             } header: {
                 Text(lang("Signing Data"))
             } footer: {
-                WarningView(text: "Signing custom data is very dangerous. Use it only if you trust the source of it.")
+                WarningView(text: lang("$signature_warning"))
                     .padding(.vertical, 11)
                     .padding(.horizontal, -16)
             }

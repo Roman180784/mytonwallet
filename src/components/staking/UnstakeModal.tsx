@@ -17,9 +17,9 @@ import {
 import renderText from '../../global/helpers/renderText';
 import {
   selectAccountStakingState,
+  selectCurrentAccountId,
   selectCurrentAccountTokens,
   selectIsCurrentAccountViewMode,
-  selectIsMultichainAccount,
 } from '../../global/selectors';
 import { getDoesUsePinPad } from '../../util/biometrics';
 import buildClassName from '../../util/buildClassName';
@@ -63,7 +63,6 @@ type StateProps = GlobalState['currentStaking'] & {
   baseCurrency: ApiBaseCurrency;
   isNominators?: boolean;
   theme: Theme;
-  isMultichainAccount: boolean;
   stakingState?: ApiStakingState;
   isSensitiveDataHidden?: true;
 };
@@ -76,12 +75,6 @@ const IS_OPEN_STATES = new Set([
   StakingState.UnstakeComplete,
 ]);
 
-const FULL_SIZE_NBS_STATES = new Set([
-  StakingState.UnstakePassword,
-  StakingState.UnstakeConnectHardware,
-  StakingState.UnstakeConfirmHardware,
-]);
-
 const UPDATE_UNSTAKE_DATE_INTERVAL_MS = 30000; // 30 sec
 
 function UnstakeModal({
@@ -92,7 +85,6 @@ function UnstakeModal({
   tokens,
   baseCurrency,
   isNominators,
-  isMultichainAccount,
   theme,
   amount,
   stakingState,
@@ -196,7 +188,7 @@ function UnstakeModal({
     return (
       <TransactionBanner
         tokenIn={token}
-        withChainIcon={isMultichainAccount}
+        withChainIcon
         color="green"
         text={formatCurrency(toDecimal(unstakeAmount, token.decimals), token.symbol)}
         className={!getDoesUsePinPad() ? styles.transactionBanner : undefined}
@@ -343,6 +335,10 @@ function UnstakeModal({
   }
 
   function renderPassword(isActive: boolean) {
+    const placeholder = getDoesUsePinPad()
+      ? 'Confirm action with your passcode'
+      : 'Confirm action with your password';
+
     return (
       <>
         {!getDoesUsePinPad() && (
@@ -354,13 +350,12 @@ function UnstakeModal({
           withCloseButton={IS_CAPACITOR}
           operationType="unstaking"
           error={error}
-          placeholder="Confirm operation with your password"
+          placeholder={lang(placeholder)}
           submitLabel={lang('Confirm')}
           cancelLabel={lang('Back')}
           onSubmit={handleTransferSubmit}
           onCancel={handleBackClick}
           onUpdate={clearStakingError}
-          skipAuthScreen
         >
           {renderTransactionBanner()}
         </PasswordForm>
@@ -422,7 +417,7 @@ function UnstakeModal({
       case StakingState.UnstakeConfirmHardware:
         return (
           <LedgerConfirmOperation
-            text={lang('Please confirm operation on your Ledger')}
+            text={lang('Please confirm action on your Ledger')}
             error={error}
             onClose={cancelStaking}
             onTryAgain={handleLedgerConnect}
@@ -440,8 +435,6 @@ function UnstakeModal({
       hasCloseButton
       noBackdropClose
       dialogClassName={styles.modalDialog}
-      nativeBottomSheetKey="unstake"
-      forceFullNative={FULL_SIZE_NBS_STATES.has(renderingKey)}
       onClose={cancelStaking}
       onCloseAnimationEnd={updateNextKey}
     >
@@ -460,10 +453,9 @@ function UnstakeModal({
 }
 
 export default memo(withGlobal((global): StateProps => {
-  const accountId = global.currentAccountId!;
+  const accountId = selectCurrentAccountId(global)!;
   const tokens = selectCurrentAccountTokens(global);
   const { baseCurrency = DEFAULT_PRICE_CURRENCY, isSensitiveDataHidden } = global.settings;
-  const isMultichainAccount = selectIsMultichainAccount(global, accountId);
   const stakingState = selectAccountStakingState(global, accountId);
   const isNominators = stakingState?.type === 'nominators';
 
@@ -473,7 +465,6 @@ export default memo(withGlobal((global): StateProps => {
     baseCurrency,
     isNominators,
     theme: global.settings.theme,
-    isMultichainAccount,
     stakingState,
     isSensitiveDataHidden,
     isViewMode: selectIsCurrentAccountViewMode(global),

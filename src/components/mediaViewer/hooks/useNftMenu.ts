@@ -2,27 +2,32 @@ import type React from '../../../lib/teact/teact';
 import { useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
-import type { ApiNft } from '../../../api/types';
+import type { ApiChain, ApiNft } from '../../../api/types';
 import type { DropdownItem } from '../../ui/Dropdown';
 
 import {
-  GETGEMS_BASE_MAINNET_URL,
-  GETGEMS_BASE_TESTNET_URL,
   IS_CORE_WALLET,
   MTW_CARDS_COLLECTION,
 } from '../../../config';
-import { isTonDnsNft } from '../../../util/dns';
+import { isDotTonDomainNft, isLinkableDnsNft, isRenewableDnsNft } from '../../../util/dns';
 import { compact } from '../../../util/iteratees';
 import { openUrl } from '../../../util/openUrl';
-import { getExplorerName, getExplorerNftUrl } from '../../../util/url';
+import { getShareIcon, shareUrl } from '../../../util/share';
+import {
+  getExplorerName,
+  getExplorerNftUrl,
+  getMarketplaceName,
+  getMarketplaceNftUrl,
+  getViewNftUrl,
+} from '../../../util/url';
 
 import { getIsPortrait } from '../../../hooks/useDeviceScreen';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
-export type NftMenuHandler = 'send' | 'tondns' | 'fragment' | 'getgems' | 'tonExplorer' | 'collection' | 'hide'
+export type NftMenuHandler = 'send' | 'tondns' | 'fragment' | 'marketplace' | 'explorer' | 'collection' | 'hide'
   | 'unhide' | 'not_scam' | 'burn' | 'select' | 'installCard' | 'resetCard' | 'installAccentColor' | 'resetAccentColor'
-  | 'renew' | 'linkDomain';
+  | 'renew' | 'linkDomain' | 'shareLink';
 
 const ON_SALE_ITEM: DropdownItem<NftMenuHandler> = {
   name: 'Cannot be sent',
@@ -30,7 +35,7 @@ const ON_SALE_ITEM: DropdownItem<NftMenuHandler> = {
   description: 'NFT is for sale',
   isDisabled: true,
 };
-const TON_DNS_ITEM: DropdownItem<NftMenuHandler> = {
+const TON_DOMAIN_ITEM: DropdownItem<NftMenuHandler> = {
   name: 'Configure DNS',
   value: 'tondns',
   fontIcon: 'external',
@@ -38,22 +43,23 @@ const TON_DNS_ITEM: DropdownItem<NftMenuHandler> = {
 const SEND_ITEM: DropdownItem<NftMenuHandler> = {
   name: 'Send',
   value: 'send',
+  withDelimiter: true,
 };
 const FRAGMENT_ITEM: DropdownItem<NftMenuHandler> = {
   name: 'Fragment',
   value: 'fragment',
   fontIcon: 'external',
 };
-const GETGEMS_ITEM: DropdownItem<NftMenuHandler> = {
-  name: 'Getgems',
-  value: 'getgems',
+const getMarketplaceItem = (chain: ApiChain): DropdownItem<NftMenuHandler> => ({
+  name: getMarketplaceName(chain),
+  value: 'marketplace',
   fontIcon: 'external',
-};
-const TON_EXPLORER_ITEM: DropdownItem<NftMenuHandler> = {
-  name: getExplorerName('ton'),
-  value: 'tonExplorer',
+});
+const getExplorerItem = (chain: ApiChain): DropdownItem<NftMenuHandler> => ({
+  name: getExplorerName(chain),
+  value: 'explorer',
   fontIcon: 'external',
-};
+});
 const COLLECTION_ITEM: DropdownItem<NftMenuHandler> = {
   name: 'Collection',
   value: 'collection',
@@ -108,6 +114,11 @@ const CHANGE_LINKED_ADDRESS: DropdownItem<NftMenuHandler> = {
   name: 'Change Wallet',
   value: 'linkDomain',
 };
+const SHARE_LINK_ITEM: DropdownItem<NftMenuHandler> = {
+  name: 'Share Link',
+  value: 'shareLink',
+  fontIcon: getShareIcon(),
+};
 
 export default function useNftMenu({
   nft,
@@ -118,6 +129,7 @@ export default function useNftMenu({
   isNftWhitelisted,
   isNftInstalled,
   isNftAccentColorInstalled,
+  isTestnet,
 }: {
   nft?: ApiNft;
   isViewMode: boolean;
@@ -127,6 +139,7 @@ export default function useNftMenu({
   isNftWhitelisted?: boolean;
   isNftInstalled?: boolean;
   isNftAccentColorInstalled?: boolean;
+  isTestnet?: boolean;
 }) {
   const {
     startTransfer,
@@ -157,7 +170,7 @@ export default function useNftMenu({
     value: NftMenuHandler,
     e?: React.MouseEvent,
   ) => {
-    const { isTestnet } = getGlobal().settings;
+    const { isTestnet, selectedExplorerIds } = getGlobal().settings;
     const isExternal = e?.shiftKey || e?.ctrlKey || e?.metaKey;
 
     switch (value) {
@@ -171,20 +184,27 @@ export default function useNftMenu({
         break;
       }
 
-      case 'tonExplorer': {
-        const url = getExplorerNftUrl(nft!.address, isTestnet)!;
+      case 'explorer': {
+        const url = getExplorerNftUrl(
+          nft!.chain,
+          nft!.address,
+          isTestnet,
+          selectedExplorerIds?.ton,
+        )!;
 
         void openUrl(url, { isExternal });
         break;
       }
 
-      case 'getgems': {
-        const getgemsBaseUrl = isTestnet ? GETGEMS_BASE_TESTNET_URL : GETGEMS_BASE_MAINNET_URL;
-        const getgemsUrl = nft!.collectionAddress
-          ? `${getgemsBaseUrl}collection/${nft!.collectionAddress}/${nft!.address}`
-          : `${getgemsBaseUrl}nft/${nft!.address}`;
-
-        void openUrl(getgemsUrl, { isExternal });
+      case 'marketplace': {
+        const url = getMarketplaceNftUrl(
+          nft?.chain,
+          nft?.address,
+          isTestnet,
+        );
+        if (url) {
+          void openUrl(url);
+        }
         break;
       }
 
@@ -234,7 +254,7 @@ export default function useNftMenu({
       }
 
       case 'collection': {
-        openNftCollection({ address: nft!.collectionAddress! }, { forceOnHeavyAnimation: true });
+        openNftCollection({ chain: nft!.chain, address: nft!.collectionAddress! }, { forceOnHeavyAnimation: true });
         closeOverlays();
 
         break;
@@ -268,7 +288,7 @@ export default function useNftMenu({
       }
 
       case 'select': {
-        selectNfts({ addresses: [nft!.address] });
+        selectNfts({ nfts: [nft!] });
         break;
       }
 
@@ -281,6 +301,11 @@ export default function useNftMenu({
         openDomainLinkingModal({ address: nft!.address });
         break;
       }
+
+      case 'shareLink': {
+        void shareUrl(getViewNftUrl(nft!.address, isTestnet));
+        break;
+      }
     }
   });
 
@@ -290,18 +315,28 @@ export default function useNftMenu({
     const {
       collectionAddress, isOnSale, isOnFragment, isScam,
     } = nft;
-    const isTonDns = isTonDnsNft(nft);
+    const isDotTon = isDotTonDomainNft(nft);
+    const isRenewable = isRenewableDnsNft(nft);
+    const isLinkable = isLinkableDnsNft(nft);
     const isCard = !IS_CORE_WALLET && nft.collectionAddress === MTW_CARDS_COLLECTION;
 
     return compact([
+      ...(isCard ? [!isNftInstalled ? INSTALL_CARD : RESET_CARD] : []),
+      ...(isCard ? [!isNftAccentColorInstalled ? INSTALL_ACCENT_COLOR : RESET_ACCENT_COLOR] : []),
+      isOnFragment && FRAGMENT_ITEM,
       !isViewMode && (isOnSale ? ON_SALE_ITEM : SEND_ITEM),
-      !isViewMode && isTonDns && !isOnSale && dnsExpireInDays !== undefined && {
+      !isViewMode && isLinkable && !isOnSale && (linkedAddress ? CHANGE_LINKED_ADDRESS : LINK_TO_ADDRESS),
+      isDotTon && !isViewMode && TON_DOMAIN_ITEM,
+      !isViewMode && isRenewable && !isOnSale && dnsExpireInDays !== undefined && {
         ...RENEW_ITEM,
         description: dnsExpireInDays < 0
           ? 'Expired'
           : lang('$expires_in %days%', { days: lang('$in_days', dnsExpireInDays) }, undefined, 1),
       },
-      !isViewMode && isTonDns && !isOnSale && (linkedAddress ? CHANGE_LINKED_ADDRESS : LINK_TO_ADDRESS),
+      getMarketplaceItem(nft.chain),
+      getExplorerItem(nft.chain),
+      SHARE_LINK_ITEM,
+      collectionAddress && COLLECTION_ITEM,
       !IS_CORE_WALLET && ((!isScam && !isNftBlacklisted) || isNftWhitelisted) && HIDE_ITEM,
       !IS_CORE_WALLET && isScam && !isNftWhitelisted && NOT_SCAM,
       !IS_CORE_WALLET && !isScam && isNftBlacklisted && UNHIDE,
@@ -309,14 +344,6 @@ export default function useNftMenu({
         BURN_ITEM,
         SELECT_ITEM,
       ] : []),
-      collectionAddress && COLLECTION_ITEM,
-      isTonDns && !isViewMode && TON_DNS_ITEM,
-      ...(isCard ? [!isNftInstalled ? INSTALL_CARD : RESET_CARD] : []),
-      ...(isCard ? [!isNftAccentColorInstalled ? INSTALL_ACCENT_COLOR : RESET_ACCENT_COLOR] : []),
-
-      isOnFragment && FRAGMENT_ITEM,
-      GETGEMS_ITEM,
-      TON_EXPLORER_ITEM,
     ]);
   }, [
     nft, isViewMode, dnsExpireInDays, lang, linkedAddress, isNftBlacklisted,

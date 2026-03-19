@@ -27,6 +27,7 @@ import java.lang.ref.WeakReference
 
 class BaseCurrencyVC(context: Context) : WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource {
+    override val TAG = "BaseCurrency"
 
     companion object {
         val baseCurrencies = arrayOf(
@@ -116,14 +117,12 @@ class BaseCurrencyVC(context: Context) : WViewController(context),
             HEADER_CELL -> {
                 HeaderCell(
                     context,
+                    20f
                 )
             }
 
             else -> {
-                TitleSubtitleSelectionCell(
-                    context,
-                    ConstraintLayout.LayoutParams(MATCH_PARENT, 72.dp)
-                )
+                TitleSubtitleSelectionCell(context)
             }
         }
     }
@@ -137,7 +136,7 @@ class BaseCurrencyVC(context: Context) : WViewController(context),
             0 -> {
                 (cellHolder.cell as HeaderCell).configure(
                     title = LocaleController.getString("Base Currency"),
-                    titleColor = WColor.Tint.color
+                    titleColor = WColor.Tint
                 )
             }
 

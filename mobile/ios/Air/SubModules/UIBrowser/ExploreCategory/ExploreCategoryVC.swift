@@ -5,236 +5,187 @@
 //  Created by Sina on 6/25/24.
 //
 
-import UIKit
-import UIComponents
-import WalletCore
-import WalletContext
-import SwiftUI
+import Combine
 import Kingfisher
+import SwiftUI
+import UIComponents
+import UIKit
+import WalletContext
+import WalletCore
 
+final class ExploreCategoryVC: WViewController {
+    private let exploreVM: ExploreVM
+    private let categoryId: Int
 
-class ExploreCategoryVC: WViewController {
-    
-    var exploreVM: ExploreVM
-    var categoryId: Int
-    
-    private var collectionView: UICollectionView!
-    private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
-    private var gestureRecognizer: UIGestureRecognizer!
-    private var shadowView: UIView!
-    
-    enum Section: Equatable, Hashable {
-        case main
-    }
-    enum Item: Equatable, Hashable {
-        case dapp(String)
-    }
+    private let collectionView = UICollectionView(frame: .zero, collectionViewLayout: ExploreCategoryVC.makeLayout())
+    private let dataSource: UICollectionViewDiffableDataSource<Section, Item>
 
-    public override var hideNavigationBar: Bool { true }
+    private let viewOutput = ViewOutput()
+
+    private let backgroundColor: UIColor = .air.background
+    private let backgroundColorSUI: Color = .air.background
+
+    private var cancelBag = Set<AnyCancellable>()
 
     init(exploreVM: ExploreVM, categoryId: Int) {
         self.exploreVM = exploreVM
         self.categoryId = categoryId
+        dataSource = Self.makeDataSource(collectionView: collectionView,
+                                         categoryId: categoryId,
+                                         exploreVM: exploreVM,
+                                         viewOutput: viewOutput,
+                                         backgroundColorSUI: backgroundColorSUI)
         super.init(nibName: nil, bundle: nil)
     }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    // MARK: - Load and SetupView Functions
-    override func loadView() {
-        super.loadView()
-        setupViews()
-    }
-    
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // MARK: - Overriden
+
+    override var hideNavigationBar: Bool { false }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        exploreVM.refresh()
+        initialSetup()
+
+        applySnapshot(animated: false)
+        exploreVM.refresh() // for what? all data exist when screen opened
+
+        cancelBag.formUnion([
+            viewOutput.dappItemTap.sink(withUnretained: self) { uSelf, site in uSelf.openDapp(site: site) },
+        ])
     }
-    struct Constants {
-        static let background = "background"
-        static let groupHeader = "groupHeader"
-        static let sectionHeader = "sectionHeader"
+    
+    override func updateMaxContentWidthIfNeeded() {} // superclass imp breaks layout, override with empty imp
+    override func updateBottomBarBlurConstraint() {} // superclass imp breaks layout, override with empty imp
+    
+    override func scrollToTop(animated: Bool) {
+        collectionView.setContentOffset(.zero, animated: animated)
     }
 
-    
-    private func setupViews() {
-        title = lang("Explore")
-        navigationBar?.isHidden = true
+    // MARK: - Initial Setup
+
+    private func initialSetup() {
+        navigationItem.title = exploreVM.exploreCategories[categoryId]?.displayName ?? ""
         
-        // Configure collection view with list layout
-        let layout = makeLayout()
+        view.backgroundColor = backgroundColor
+        view.addStretchedToSafeArea(subview: collectionView,
+                                    top: \.topAnchor,
+                                    insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
         
-        collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.delegate = self
         collectionView.alwaysBounceVertical = true
         collectionView.delaysContentTouches = false
+        collectionView.clipsToBounds = false
         
-        edgesForExtendedLayout = .bottom
-        view.addSubview(collectionView)
-        NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            collectionView.leftAnchor.constraint(equalTo: view.leftAnchor),
-            collectionView.rightAnchor.constraint(equalTo: view.rightAnchor)
-        ])
-
-        gestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(onTap))
-        view.addGestureRecognizer(gestureRecognizer)
-        gestureRecognizer.delegate = self
+        collectionView.contentInsetAdjustmentBehavior = .automatic
         
-        shadowView = UIView()
-        shadowView.translatesAutoresizingMaskIntoConstraints = false
-        shadowView.backgroundColor = .white
-        shadowView.layer.shadowColor = UIColor.black.withAlphaComponent(0.1).cgColor
-        shadowView.layer.shadowRadius = 32
-        shadowView.layer.shadowOpacity = 1
-        shadowView.layer.cornerRadius = 16
-        collectionView.insertSubview(shadowView, at: 0)
-        
-        dataSource = makeDataSource()
-        applySnapshot(animated: false)
-        
-        DispatchQueue.main.async { [self] in
-            let visibleCells = collectionView.visibleCells
-            if let first = visibleCells.first {
-                let frame = visibleCells
-                    .map(\.frame)
-                    .reduce(first.frame) { $0.union($1) }
-                shadowView.frame = frame
-                collectionView.sendSubviewToBack(shadowView)
-            }
-        }
-        
-        updateTheme()
-    }
-    
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        collectionView.contentInset.top = max((collectionView.bounds.height - CGFloat(dataSource.snapshot().numberOfItems) * 80 - 170) / 2, 0)
-    }
-    
-    override func updateTheme() {
-        view.backgroundColor = .clear
-        collectionView.backgroundColor = .clear
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(closeScreen))
+        tapGesture.delegate = self
+        view.addGestureRecognizer(tapGesture)
     }
 
-    override func scrollToTop(animated: Bool) {
-        collectionView?.setContentOffset(CGPoint(x: 0, y: -collectionView.contentInset.top), animated: animated)
-    }
-
-    func makeLayout() -> UICollectionViewCompositionalLayout {
-        var config = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
-        config.headerMode = .supplementary
+    private static func makeLayout() -> UICollectionViewCompositionalLayout {
+        var config = UICollectionLayoutListConfiguration(appearance: .plain)
+        config.headerMode = .none
         config.backgroundColor = .clear
-        config.separatorConfiguration.color = WTheme.separator
+        config.showsSeparators = false
         let layout = UICollectionViewCompositionalLayout.list(using: config)
         return layout
     }
-    
-    func makeDataSource() -> UICollectionViewDiffableDataSource<Section, Item> {
+
+    private static func makeDataSource(collectionView: UICollectionView,
+                                       categoryId _: Int,
+                                       exploreVM: ExploreVM,
+                                       viewOutput: ViewOutput,
+                                       backgroundColorSUI: Color) -> UICollectionViewDiffableDataSource<Section, Item> {
         // Register cell
-        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Item> { [weak self] cell, indexPath, item in
-            guard let self = self else { return }
-            
+        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Item> { cell, _, item in
+            cell.backgroundColor = nil
+            cell.clipsToBounds = false
+            cell.contentView.clipsToBounds = false
             switch item {
             case .dapp(let siteId):
-                if let site = self.exploreVM.exploreSites[siteId] {
-                    cell.configurationUpdateHandler = { cell, state in
+                if let site = exploreVM.exploreSites[siteId] {
+                    cell.configurationUpdateHandler = { cell, _ in
                         cell.contentConfiguration = UIHostingConfiguration {
-                            ExploreCategoryRow(site: site, openAction: { [weak self] in self?.handleOpen(site: site) })
+                            ExploreCategoryRow(site: site, openAction: {
+                                viewOutput.dappItemTap.send(site)
+                            })
                         }
+                        .margins(.all, 0)
+                        // Disable the default highlight effect on cell selection, while still allowing didSelectItemAt to trigger
                         .background {
-                            ZStack {
-                                Color(WTheme.groupedItem)
-                                Color.clear
-                                    .highlightBackground(state.isHighlighted)
-                            }
+                            backgroundColorSUI
+                                .overlay(alignment: .bottom) {
+                                    Rectangle().fill(Color.air.separator)
+                                        .frame(height: 1 / UIScreen.main.scale) // 1 physical pixel
+                                        .padding(.leading, 102)
+                                }
                         }
-                        .minSize(height: 80)
                     }
-                    cell.backgroundConfiguration?.cornerRadius = 16
                 }
             }
         }
-        
-        let categoryId = self.categoryId
-        let headerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewCell>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] headerView, elementKind, indexPath in
-            headerView.contentConfiguration = UIHostingConfiguration {
-                Text(self?.exploreVM.exploreCategories[categoryId]?.displayName ?? "")
-                    .font(.system(size: 23, weight: .bold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(alignment: .trailing) {
-                        Button(action: { [weak self] in self?.onTap() }) {
-                            ZStack {
-                                Color.white.opacity(1)
-                                Image(uiImage: .airBundle("XMark"))
-                                    .renderingMode(.template)
-                                    .foregroundStyle(Color(WTheme.secondaryLabel))
-                            }
-                            .frame(width: 30, height: 30)
-                            .clipShape(.circle)
-                            .contentShape(.circle)
-                        }
-                    }
-            }.margins(.bottom, 20)
-        }
-        
+
         let dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: collectionView) {
             collectionView, indexPath, item in
-            return collectionView.dequeueConfiguredReusableCell(using: cellRegistration, for: indexPath, item: item)
+            collectionView.dequeueConfiguredReusableCell(using: cellRegistration, for: indexPath, item: item)
         }
-        
-        dataSource.supplementaryViewProvider = { collectionView, elementKind, indexPath in
-            return collectionView.dequeueConfiguredReusableSupplementary(using: headerRegistration, for: indexPath)
-        }
-        
+
         return dataSource
     }
-    
-    func makeSnapshot() -> NSDiffableDataSourceSnapshot<Section, Item> {
+
+    private func makeSnapshot() -> NSDiffableDataSourceSnapshot<Section, Item> {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
-        let exploreSites = exploreVM.exploreSites.values.filter { $0.categoryId == categoryId }
-        
+        var exploreSites = exploreVM.exploreSites.values.filter { $0.categoryId == categoryId }
+        if ConfigStore.shared.shouldRestrictSites {
+            exploreSites = exploreSites.filter { !$0.canBeRestricted }
+        }
+
         if !exploreSites.isEmpty {
             snapshot.appendSections([.main])
-            snapshot.appendItems(exploreSites.map { .dapp($0.url) })
+            snapshot.appendItems(exploreSites.map { .dapp(url: $0.url) })
         }
 
         return snapshot
     }
-    
-    func applySnapshot(animated: Bool) {
+}
+
+// MARK: - Actions
+
+extension ExploreCategoryVC {
+    private func applySnapshot(animated: Bool) {
         let snapshot = makeSnapshot()
         dataSource.apply(snapshot, animatingDifferences: animated)
     }
-    
-    @objc func onTap() {
+
+    @objc private func closeScreen() {
         presentingViewController?.dismiss(animated: true)
     }
-
 }
-    
+
+extension ExploreCategoryVC: ExploreVMDelegate {
+    func didUpdateViewModelData() {
+        applySnapshot(animated: true)
+    }
+}
+
 extension ExploreCategoryVC: UICollectionViewDelegate {
-    
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        let id = dataSource.itemIdentifier(for: indexPath)
-        switch id {
-        case .dapp(let id):
-            guard let exploreSite = exploreVM.exploreSites[id] else {
-                return
-            }
-            handleOpen(site: exploreSite)
-            
+    func collectionView(_: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        let item = dataSource.itemIdentifier(for: indexPath)
+        switch item {
+        case .dapp(let url):
+            guard let exploreSite = exploreVM.exploreSites[url] else { return }
+            openDapp(site: exploreSite)
+
         case .none:
             break
         }
-        collectionView.deselectItem(at: indexPath, animated: true)
     }
-    
-    func handleOpen(site: ApiSite) {
+
+    private func openDapp(site: ApiSite) {
         guard let url = URL(string: site.url) else { return }
         if site.shouldOpenExternally {
             UIApplication.shared.open(url)
@@ -242,46 +193,38 @@ extension ExploreCategoryVC: UICollectionViewDelegate {
                 self.presentingViewController?.dismiss(animated: true)
             }
         } else {
-            if let homeVC = presentingViewController, let window = self.view.window {
-                let snapshot = window.snapshotView(afterScreenUpdates: false)!
-                homeVC.view.addSubview(snapshot)
-                UIView.animate(withDuration: 0.4, delay: 0.4) {
-                    snapshot.alpha = 0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                    snapshot.removeFromSuperview()
-                }
-            }
-            self.presentingViewController?.dismiss(animated: false) {
-                AppActions.openInBrowser(url)
+            AppActions.openInBrowser(url, title: site.name, injectDappConnect: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self else { return }
+                self.navigationController?.popToRootViewController(animated: true)
             }
         }
     }
 }
 
-extension ExploreCategoryVC: ExploreVMDelegate {
-    func exploreSitsUpdated() {
-        applySnapshot(animated: true)
-    }
-}
-
 extension ExploreCategoryVC: UIGestureRecognizerDelegate {
-    
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        return collectionView.hitTest(touch.location(in: collectionView), with: nil) === collectionView
+    func gestureRecognizer(_: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        collectionView.hitTest(touch.location(in: collectionView), with: nil) === collectionView
     }
-    
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        return true
+
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRequireFailureOf _: UIGestureRecognizer) -> Bool {
+        true
     }
 }
 
-fileprivate extension NSCollectionLayoutSize {
-    convenience init(_ width: NSCollectionLayoutDimension, _ height: NSCollectionLayoutDimension) {
-        self.init(widthDimension: width, heightDimension: height)
+extension ExploreCategoryVC {
+    private struct ViewOutput {
+        let dappItemTap = PassthroughSubject<ApiSite, Never>()
+    }
+
+    enum Section: Equatable, Hashable {
+        case main
+    }
+
+    enum Item: Equatable, Hashable {
+        case dapp(url: String)
     }
 }
-
 
 #if DEBUG
 @available(iOS 18, *)

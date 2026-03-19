@@ -1,3 +1,4 @@
+import './dev/loadEnv';
 import 'webpack-dev-server';
 
 import WatchFilePlugin from '@mytonwallet/webpack-watch-file-plugin';
@@ -5,7 +6,6 @@ import StatoscopeWebpackPlugin from '@statoscope/webpack-plugin';
 // @ts-ignore
 import PreloadWebpackPlugin from '@vue/preload-webpack-plugin';
 import CopyWebpackPlugin from 'copy-webpack-plugin';
-import dotenv from 'dotenv';
 import fs from 'fs';
 import { GitRevisionPlugin } from 'git-revision-webpack-plugin';
 import HtmlPlugin from 'html-webpack-plugin';
@@ -16,15 +16,29 @@ import { EnvironmentPlugin, IgnorePlugin, ProvidePlugin } from 'webpack';
 
 import { convertI18nYamlToJson } from './dev/locales/convertI18nYamlToJson';
 import {
+  APP_COMMIT_HASH,
+  APP_ENV,
   APP_NAME,
+  BASE_URL,
   BRILLIANT_API_BASE_URL,
   EXTENSION_DESCRIPTION,
   EXTENSION_NAME,
   IFRAME_WHITELIST,
   IPFS_GATEWAY_BASE_URL,
+  IS_CAPACITOR,
+  IS_CORE_WALLET,
+  IS_EXPLORER,
+  IS_EXTENSION,
+  IS_FIREFOX_EXTENSION,
+  IS_OPERA_EXTENSION,
+  IS_PACKAGED_ELECTRON,
+  IS_TELEGRAM_APP,
   MTW_STATIC_BASE_URL,
-  PRODUCTION_URL,
   PROXY_API_BASE_URL,
+  SOLANA_MAINNET_API_URL,
+  SOLANA_MAINNET_RPC_URL,
+  SOLANA_TESTNET_API_URL,
+  SOLANA_TESTNET_RPC_URL,
   SSE_BRIDGE_URL,
   SUBPROJECT_URL_MASK,
   TONAPIIO_MAINNET_URL,
@@ -33,24 +47,11 @@ import {
   TONCENTER_TESTNET_URL,
   TRON_MAINNET_API_URL,
   TRON_TESTNET_API_URL,
+  WALLET_CONNECT_BRIDGE_PATTERNS,
 } from './src/config';
 
-dotenv.config();
-
-// GitHub workflow uses an empty string as the default value if it's not in repository variables, so we cannot define a default value here
-process.env.BASE_URL = process.env.BASE_URL || PRODUCTION_URL;
-
-const { APP_ENV = 'production', BASE_URL } = process.env;
-const IS_CORE_WALLET = process.env.IS_CORE_WALLET === '1';
-const IS_CAPACITOR = process.env.IS_CAPACITOR === '1';
-const IS_EXTENSION = process.env.IS_EXTENSION === '1';
-const IS_TELEGRAM_APP = process.env.IS_TELEGRAM_APP === '1';
-const IS_PACKAGED_ELECTRON = process.env.IS_PACKAGED_ELECTRON === '1';
-const IS_FIREFOX_EXTENSION = process.env.IS_FIREFOX_EXTENSION === '1';
-const IS_OPERA_EXTENSION = process.env.IS_OPERA_EXTENSION === '1';
-
 const destinationDir = path.resolve(__dirname, 'dist');
-const appCommitHash = new GitRevisionPlugin().commithash();
+const appCommitHash = APP_COMMIT_HASH || new GitRevisionPlugin().commithash();
 const isStatoscopeBuild = process.env.IS_STATOSCOPE === '1'; // "Statoscope build" is a special mode where all the entries are used. It is used for comprehensive code size comparison in PRs.
 const isWebApp = !(IS_EXTENSION || IS_PACKAGED_ELECTRON || IS_CAPACITOR);
 const canUseStatoscope = isStatoscopeBuild || isWebApp;
@@ -61,13 +62,16 @@ const cspScriptSrcExtra = IS_TELEGRAM_APP ? 'https://telegram.org' : '';
 const cspFrameSrcExtra = IS_CORE_WALLET ? '' : [
   'https://buy-sandbox.moonpay.com/',
   'https://buy.moonpay.com/',
+  'https://sell.moonpay.com/',
+  'https://sell-sandbox.moonpay.com/',
+  'https://*.onetrust.com/', // This is a GDPR cookie consent widget from Moonpay
   'https://dreamwalkers.io/',
   'https://avanchange.com/',
   ...IFRAME_WHITELIST,
   SUBPROJECT_URL_MASK,
 ].join(' ');
 
-const cspConnectSrcHosts = [
+const cspConnectSrcHosts = Array.from(new Set([
   BRILLIANT_API_BASE_URL,
   BRILLIANT_API_BASE_URL.replace(/^http(s?):/, 'ws$1:'),
   ensureTrailingSlash(PROXY_API_BASE_URL),
@@ -80,9 +84,16 @@ const cspConnectSrcHosts = [
   TONAPIIO_TESTNET_URL,
   TRON_MAINNET_API_URL,
   TRON_TESTNET_API_URL,
+  SOLANA_MAINNET_RPC_URL,
+  SOLANA_MAINNET_RPC_URL.replace(/^http(s?):/, 'ws$1:'),
+  SOLANA_TESTNET_RPC_URL,
+  SOLANA_TESTNET_RPC_URL.replace(/^http(s?):/, 'ws$1:'),
+  SOLANA_MAINNET_API_URL,
+  SOLANA_TESTNET_API_URL,
+  WALLET_CONNECT_BRIDGE_PATTERNS,
   ensureTrailingSlash(IPFS_GATEWAY_BASE_URL),
   ensureTrailingSlash(SSE_BRIDGE_URL),
-].join(' ');
+])).join(' ');
 
 const cspImageSrcHosts = [
   MTW_STATIC_BASE_URL,
@@ -105,7 +116,7 @@ const CSP = `
   img-src 'self' data: blob: https: ${cspImageSrcHosts};
   media-src 'self' data: https://static.mytonwallet.org/;
   object-src 'none';
-  base-uri 'none';
+  base-uri ${IS_EXPLORER ? '\'self\'' : '\'none\''};
   font-src 'self' https://fonts.gstatic.com/;
   form-action 'none';
   frame-src 'self' https: ${cspFrameSrcExtra};`
@@ -160,6 +171,9 @@ export default function createConfig(
       host: '0.0.0.0',
       allowedHosts: 'all',
       hot: false,
+      // When using the History API, the index.html page will likely have to be served in place of any 404 responses
+      // https://webpack.js.org/configuration/dev-server/#devserverhistoryapifallback
+      historyApiFallback: IS_EXPLORER,
       static: [
         {
           directory: path.resolve(__dirname, 'public'),
@@ -361,6 +375,12 @@ export default function createConfig(
         TONAPIIO_TESTNET_URL: '',
         BRILLIANT_API_BASE_URL: '',
         TRON_MAINNET_API_URL: '',
+        SOLANA_MAINNET_RPC_URL: '',
+        SOLANA_TESTNET_RPC_URL: '',
+        SOLANA_MAINNET_API_URL: '',
+        SOLANA_MAINNET_API_KEY: '',
+        SOLANA_TESTNET_API_URL: '',
+        SOLANA_TESTNET_API_KEY: '',
         TRON_TESTNET_API_URL: '',
         PROXY_HOSTS: '',
         STAKING_POOLS: '',
@@ -378,10 +398,14 @@ export default function createConfig(
         IS_AIR_APP: 'false',
         IS_CORE_WALLET: 'false',
         IS_TELEGRAM_APP: 'false',
+        IS_EXPLORER: 'false',
         SWAP_FEE_ADDRESS: '',
         DIESEL_ADDRESS: '',
         GIVEAWAY_CHECKIN_URL: '',
         PROXY_API_BASE_URL: '',
+        WALLET_CONNECT_PROJECT_ID: '',
+        MULTISEND_DAPP_URL: '',
+        PORTFOLIO_DAPP_URL: '',
       }),
       new ProvidePlugin({
         Buffer: ['buffer', 'Buffer'],

@@ -10,9 +10,9 @@ import renderText from '../../global/helpers/renderText';
 import {
   selectAccount,
   selectAccountStakingState,
+  selectCurrentAccountId,
   selectCurrentAccountTokens,
   selectIsHardwareAccount,
-  selectIsMultichainAccount,
 } from '../../global/selectors';
 import { getDoesUsePinPad } from '../../util/biometrics';
 import buildClassName from '../../util/buildClassName';
@@ -48,7 +48,6 @@ interface StateProps {
   error?: string;
   state?: StakingState;
   isHardwareAccount?: boolean;
-  isMultichainAccount: boolean;
   isSensitiveDataHidden?: true;
 }
 
@@ -68,7 +67,6 @@ function StakingClaimModal({
   error,
   state = StakingState.ClaimPassword,
   isHardwareAccount,
-  isMultichainAccount,
   isSensitiveDataHidden,
 }: StateProps) {
   const { submitStakingClaim, cancelStakingClaim, clearStakingError } = getActions();
@@ -122,7 +120,7 @@ function StakingClaimModal({
       <>
         <TransactionBanner
           tokenIn={token}
-          withChainIcon={isMultichainAccount}
+          withChainIcon
           text={content}
           className={!getDoesUsePinPad() ? styles.transactionBanner : undefined}
           secondText={address && shortenAddress(address)}
@@ -156,7 +154,7 @@ function StakingClaimModal({
       case StakingState.ClaimConfirmHardware:
         return (
           <LedgerConfirmOperation
-            text={lang('Please confirm transaction on your Ledger')}
+            text={lang('Please confirm action on your Ledger')}
             error={error}
             onClose={cancelStakingClaim}
             onTryAgain={handleHardwareSubmit}
@@ -175,7 +173,6 @@ function StakingClaimModal({
             onSubmit={handleSubmit}
             onCancel={cancelStakingClaim}
             onUpdate={clearStakingError}
-            skipAuthScreen
           >
             {renderInfo()}
           </PasswordForm>
@@ -211,8 +208,6 @@ function StakingClaimModal({
       isOpen={isOpen}
       title={modalTitle}
       hasCloseButton={withModalHeader}
-      forceFullNative
-      nativeBottomSheetKey="staking-claim"
       contentClassName={styles.passwordModalDialog}
       onClose={cancelStakingClaim}
     >
@@ -231,7 +226,7 @@ function StakingClaimModal({
 }
 
 export default memo(withGlobal((global): StateProps => {
-  const accountId = global.currentAccountId;
+  const accountId = selectCurrentAccountId(global);
   const { byChain } = selectAccount(global, accountId!) || {};
   const isHardwareAccount = selectIsHardwareAccount(global);
 
@@ -254,7 +249,6 @@ export default memo(withGlobal((global): StateProps => {
     error,
     address: byChain?.ton?.address,
     isHardwareAccount,
-    isMultichainAccount: selectIsMultichainAccount(global, accountId!),
     isSensitiveDataHidden: global.settings.isSensitiveDataHidden,
   };
 })(StakingClaimModal));

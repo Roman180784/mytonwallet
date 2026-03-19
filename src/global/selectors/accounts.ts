@@ -27,12 +27,17 @@ export function selectNetworkAccounts(global: GlobalState) {
   return selectNetworkAccountsMemoized(selectCurrentNetwork(global), global.accounts?.byId);
 }
 
-export function selectCurrentNetwork(global: GlobalState) {
+export function selectCurrentNetwork(global: GlobalState): ApiNetwork {
   return global.settings.isTestnet ? 'testnet' : 'mainnet';
 }
 
+export function selectCurrentAccountId(global: GlobalState) {
+  return global.currentTemporaryViewAccountId ?? global.currentAccountId;
+}
+
 export function selectCurrentAccount(global: GlobalState) {
-  return selectAccount(global, global.currentAccountId!);
+  const accountId = selectCurrentAccountId(global);
+  return accountId ? selectAccount(global, accountId) : undefined;
 }
 
 export function selectAccount(global: GlobalState, accountId: string) {
@@ -45,8 +50,8 @@ export function selectAccountOrAuthAccount(global: GlobalState, accountId: strin
     return account;
   }
 
-  for (const account of [global.auth.firstNetworkAccount, global.auth.secondNetworkAccount]) {
-    if (account?.accountId === accountId) {
+  for (const account of global.auth.accounts ?? []) {
+    if (account.accountId === accountId) {
       return account;
     }
   }
@@ -55,7 +60,8 @@ export function selectAccountOrAuthAccount(global: GlobalState, accountId: strin
 }
 
 export function selectCurrentAccountState(global: GlobalState) {
-  return selectAccountState(global, global.currentAccountId!);
+  const accountId = selectCurrentAccountId(global);
+  return accountId ? selectAccountState(global, accountId) : undefined;
 }
 
 export function selectAccountState(global: GlobalState, accountId: string): AccountState | undefined {
@@ -67,7 +73,8 @@ export function selectAccountSettings(global: GlobalState, accountId: string): A
 }
 
 export function selectCurrentAccountSettings(global: GlobalState) {
-  return selectAccountSettings(global, global.currentAccountId!);
+  const accountId = selectCurrentAccountId(global);
+  return accountId ? selectAccountSettings(global, accountId) : undefined;
 }
 
 function isHardwareAccount(account: Account) {
@@ -77,7 +84,12 @@ function isHardwareAccount(account: Account) {
 export function selectIsHardwareAccount(global: GlobalState): boolean; // To prevent passing accountId=undefined by accident
 export function selectIsHardwareAccount(global: GlobalState, accountId: string): boolean;
 export function selectIsHardwareAccount(global: GlobalState, accountId?: string) {
-  const account = selectAccount(global, accountId ?? global.currentAccountId!);
+  const resolvedAccountId = accountId ?? selectCurrentAccountId(global);
+  if (!resolvedAccountId) {
+    return false;
+  }
+
+  const account = selectAccount(global, resolvedAccountId);
   return Boolean(account) && isHardwareAccount(account);
 }
 
@@ -140,7 +152,8 @@ export function selectVestingPartsReadyToUnfreeze(global: GlobalState, accountId
 }
 
 export function selectCurrentAccountNftByAddress(global: GlobalState, nftAddress: string) {
-  return selectAccountNftByAddress(global, global.currentAccountId!, nftAddress);
+  const accountId = selectCurrentAccountId(global);
+  return accountId ? selectAccountNftByAddress(global, accountId, nftAddress) : undefined;
 }
 
 export function selectAccountNftByAddress(global: GlobalState, accountId: string, nftAddress: string) {
@@ -152,13 +165,18 @@ export function selectIsMultichainAccount(global: GlobalState, accountId: string
   return Boolean(byChain) && isKeyCountGreater(byChain, 1);
 }
 
-export function selectIsMultisigAccount(global: GlobalState, accountId: string, chain: ApiChain) {
+export function selectIsMultisigAccount(global: GlobalState, accountId: string) {
+  const account = selectAccount(global, accountId);
+  return Object.values(account?.byChain ?? {}).some((wallet) => wallet.isMultisig);
+}
+
+export function selectIsMultisigWallet(global: GlobalState, accountId: string, chain: ApiChain) {
   const account = selectAccount(global, accountId);
   return Boolean(account?.byChain[chain]?.isMultisig);
 }
 
 export function selectHasSession(global: GlobalState) {
-  return Boolean(global.currentAccountId);
+  return Boolean(selectCurrentAccountId(global));
 }
 
 export function selectIsBiometricAuthEnabled(global: GlobalState) {
@@ -185,11 +203,6 @@ export function selectIsCurrentAccountViewMode(global: GlobalState) {
   return isViewAccount(type);
 }
 
-export function selectDoesAccountSupportNft(global: GlobalState) {
-  const account = selectCurrentAccount(global);
-  return Boolean(account?.byChain.ton);
-}
-
 export function selectSelectedHardwareAccountsSlow(global: GlobalState): ApiLedgerAccountInfo[] {
   const selectedIndices = new Set(global.auth.hardwareSelectedIndices ?? []);
   const { chain, hardwareWallets } = global.hardware;
@@ -200,4 +213,42 @@ export function selectSelectedHardwareAccountsSlow(global: GlobalState): ApiLedg
       ...rest,
       byChain: { [chain]: wallet },
     }));
+}
+
+/**
+ * Since the `orderedAccountIds` array may be incomplete (the user did not sort the accounts;
+ * added new ones after sorting, etc.), the function must first return all accounts
+ * from `orderedAccountIds`, and then all other accounts from `accounts`.
+ */
+export const selectOrderedAccountsMemoized = memoize((
+  orderedAccountIds: string[] | undefined,
+  accounts: Record<string, Account> | undefined,
+): Array<[string, Account]> => {
+  if (!accounts) return [];
+
+  const entries = Object.entries(accounts).filter(([, account]) => !account.isTemporary);
+  if (!orderedAccountIds?.length) return entries;
+
+  const accountsMap = new Map(entries);
+
+  return [
+    ...orderedAccountIds
+      .map((id) => {
+        const account = accountsMap.get(id);
+        accountsMap.delete(id);
+
+        return !account || account.isTemporary
+          ? undefined
+          : [id, account] as [string, Account];
+      })
+      .filter(Boolean),
+    ...accountsMap.entries(),
+  ];
+});
+
+export function selectOrderedAccounts(global: GlobalState) {
+  const { orderedAccountIds } = global.settings;
+  const accounts = selectNetworkAccounts(global);
+
+  return selectOrderedAccountsMemoized(orderedAccountIds, accounts);
 }

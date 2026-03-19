@@ -1,36 +1,43 @@
 import type { MouseEvent } from 'react';
 import React, { memo } from '../../lib/teact/teact';
 
-import type { ApiChain } from '../../api/types';
+import type { AddressBookItemData } from '../../global/types';
 
 import buildClassName from '../../util/buildClassName';
 import { stopEvent } from '../../util/domEvents';
 import { shortenAddress } from '../../util/shortenAddress';
+import { shortenDomain } from '../../util/shortenDomain';
 import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
+import useLang from '../../hooks/useLang';
 
 import styles from '../transfer/Transfer.module.scss';
 
 interface OwnProps {
-  address: string;
-  name?: string;
-  chain?: ApiChain;
-  isHardware?: boolean;
-  isSavedAddress?: boolean;
-  deleteLabel?: string;
+  item: AddressBookItemData;
+  isSelected?: boolean;
   onClick: (address: string) => void;
   onDeleteClick?: (address: string) => void;
 }
 
+const ACCOUNT_ADDRESS_SHIFT_START = 0;
+const ACCOUNT_ADDRESS_SHIFT_END = 4;
+export const SUGGESTION_ITEM_CLASS_NAME = styles.savedAddressItem;
+
 function AddressBookItem({
-  address,
-  name,
-  chain,
-  isHardware,
-  isSavedAddress,
-  deleteLabel,
+  item,
+  isSelected,
   onClick,
   onDeleteClick,
 }: OwnProps) {
+  const lang = useLang();
+  const { address, name, chain, domain, isHardware, isSavedAddress } = item;
+  const title = domain
+    ? `${shortenDomain(domain)} · ${shortenAddress(
+      address, ACCOUNT_ADDRESS_SHIFT_START, ACCOUNT_ADDRESS_SHIFT_END,
+    )}`
+    : shortenAddress(address);
+
   const handleClick = () => {
     onClick(address);
   };
@@ -44,7 +51,8 @@ function AddressBookItem({
   return (
     <div
       tabIndex={-1}
-      role="button"
+      role="option"
+      aria-selected={isSelected}
       onMouseDown={IS_TOUCH_ENV ? undefined : handleClick}
       onClick={IS_TOUCH_ENV ? handleClick : undefined}
       className={styles.savedAddressItem}
@@ -63,14 +71,14 @@ function AddressBookItem({
             className={styles.savedAddressDeleteInner}
             onMouseDown={handleDeleteClick}
           >
-            {deleteLabel}
+            {lang('Delete')}
           </span>
         </span>
       )}
       {name && (
         <span className={styles.savedAddressAddress}>
           {chain && <i className={buildClassName(styles.chainIcon, `icon-chain-${chain}`)} aria-hidden />}
-          {shortenAddress(address)}
+          {title}
         </span>
       )}
       {isSavedAddress && onDeleteClick && (
@@ -80,7 +88,7 @@ function AddressBookItem({
           tabIndex={-1}
           onMouseDown={handleDeleteClick}
           onClick={stopEvent}
-          aria-label={deleteLabel}
+          aria-label={lang('Delete')}
         >
           <i className="icon-trash" aria-hidden />
         </span>

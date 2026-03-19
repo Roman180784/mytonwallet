@@ -8,7 +8,7 @@ import { StakingState } from '../../global/types';
 import { IS_CAPACITOR } from '../../config';
 import {
   selectAccountStakingState,
-  selectIsMultichainAccount,
+  selectCurrentAccountId,
 } from '../../global/selectors';
 import { getDoesUsePinPad } from '../../util/biometrics';
 import buildClassName from '../../util/buildClassName';
@@ -37,7 +37,6 @@ import styles from './Staking.module.scss';
 type StateProps = GlobalState['currentStaking'] & {
   stakingState?: ApiStakingState;
   tokenBySlug?: Record<string, ApiTokenWithPrice>;
-  isMultichainAccount: boolean;
 };
 
 const IS_OPEN_STATES = new Set([
@@ -55,7 +54,6 @@ function StakeModal({
   amount,
   error,
   tokenBySlug,
-  isMultichainAccount,
 }: StateProps) {
   const {
     startStaking,
@@ -104,7 +102,7 @@ function StakeModal({
     return (
       <TransactionBanner
         tokenIn={token}
-        withChainIcon={isMultichainAccount}
+        withChainIcon
         color="purple"
         text={formatCurrency(toDecimal(amount, token.decimals), token.symbol)}
         className={!getDoesUsePinPad() ? styles.transactionBanner : undefined}
@@ -113,6 +111,10 @@ function StakeModal({
   }
 
   function renderPassword(isActive: boolean) {
+    const placeholder = getDoesUsePinPad()
+      ? 'Confirm action with your passcode'
+      : 'Confirm action with your password';
+
     return (
       <>
         {!getDoesUsePinPad() && (
@@ -124,13 +126,12 @@ function StakeModal({
           error={error}
           withCloseButton={IS_CAPACITOR}
           operationType="staking"
-          placeholder="Confirm operation with your password"
+          placeholder={lang(placeholder)}
           submitLabel={lang('Confirm')}
           cancelLabel={lang('Back')}
           onSubmit={handleTransferSubmit}
           onCancel={handleBackClick}
           onUpdate={clearStakingError}
-          skipAuthScreen
         >
           {renderTransactionBanner()}
         </PasswordForm>
@@ -190,7 +191,7 @@ function StakeModal({
       case StakingState.StakeConfirmHardware:
         return (
           <LedgerConfirmOperation
-            text={lang('Please confirm operation on your Ledger')}
+            text={lang('Please confirm action on your Ledger')}
             error={error}
             onClose={cancelStaking}
             onTryAgain={handleLedgerConnect}
@@ -208,9 +209,6 @@ function StakeModal({
       hasCloseButton
       noBackdropClose
       dialogClassName={styles.modalDialog}
-      nativeBottomSheetKey="stake"
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
-      forceFullNative={renderingKey === StakingState.StakePassword}
       onClose={cancelStaking}
       onCloseAnimationEnd={updateNextKey}
     >
@@ -229,8 +227,7 @@ function StakeModal({
 }
 
 export default memo(withGlobal((global): StateProps => {
-  const accountId = global.currentAccountId!;
-  const isMultichainAccount = selectIsMultichainAccount(global, accountId);
+  const accountId = selectCurrentAccountId(global)!;
   const stakingState = selectAccountStakingState(global, accountId);
   const tokenBySlug = global.tokenInfo.bySlug;
 
@@ -238,6 +235,5 @@ export default memo(withGlobal((global): StateProps => {
     ...global.currentStaking,
     stakingState,
     tokenBySlug,
-    isMultichainAccount,
   };
 })(StakeModal));

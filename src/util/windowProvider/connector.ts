@@ -17,7 +17,7 @@ export function initWindowConnector() {
       // connector.init() is not called here because the extension connector is available only when the popup is open
     } else {
       connector = createConnector(self as DedicatedWorkerGlobalScope, undefined, WINDOW_PROVIDER_CHANNEL);
-      connector.init();
+      void connector.init();
     }
   }
 }
@@ -26,7 +26,7 @@ export function callWindow<T extends keyof WindowMethods>(methodName: T, ...args
   if (IS_AIR_APP) return airAppCallWindow(methodName, ...args) as EnsurePromise<WindowMethodResponse<T>>;
 
   if (!connector) {
-    throw new Error('API is not initialized');
+    throw new Error(`API is not initialized when calling ${methodName}`);
   }
 
   return connector.request({ name: methodName, args }) as EnsurePromise<WindowMethodResponse<T>>;

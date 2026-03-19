@@ -7,6 +7,7 @@
 
 import UIKit
 import WalletContext
+import WalletCore
 
 class SlowedPanGestureRecognizer: UIPanGestureRecognizer {
     override func velocity(in view: UIView?) -> CGPoint {
@@ -23,10 +24,12 @@ open class WNavigationController: UINavigationController {
     open override func viewDidLoad() {
         super.viewDidLoad()
         delegate = self
-        setupFullWidthBackGesture()
+        if !IOS_26_MODE_ENABLED {
+            setupFullWidthBackGesture()
+        }
     }
 
-    private lazy var fullWidthBackGestureRecognizer = SlowedPanGestureRecognizer()
+    fileprivate lazy var fullWidthBackGestureRecognizer = SlowedPanGestureRecognizer()
 
     private func setupFullWidthBackGesture() {
         // The trick here is to wire up our full-width `fullWidthBackGestureRecognizer` to execute the same handler as the system `interactivePopGestureRecognizer`.
@@ -50,12 +53,13 @@ open class WNavigationController: UINavigationController {
     }
     
     open override func popViewController(animated: Bool) -> UIViewController? {
-        if presentedViewController != nil, !(presentedViewController?.description.contains("MinimizableSheet") == true) {
-            log.error("Presenting a modal view controller. Will not pop to prevent freeze")
+        if let presentedViewController, presentedViewController.isBeingDismissed {
+            log.error("Dismissing a modal view controller. Will not pop to prevent freeze")
             return nil
         }
         return super.popViewController(animated: animated)
     }
+    
 }
 
 extension WNavigationController: UINavigationControllerDelegate {
@@ -75,5 +79,21 @@ extension WNavigationController: UIGestureRecognizerDelegate {
     
     public func fullWidthBackGestureRecognizerRequireToFail(_ otherGestureRecognizer: UIGestureRecognizer) {
         fullWidthBackGestureRecognizer.require(toFail: otherGestureRecognizer)
+    }
+}
+
+extension UINavigationController {
+    
+    /// A temporary solution to disable backswipe for a navigation controller stack
+    /// Should be revised with full navigation management refactoring
+    public func allowBackSwipeToDismiss(_ allow: Bool) {
+        if #available(iOS 26.0, *) {
+            self.interactiveContentPopGestureRecognizer?.isEnabled = allow
+        }
+        if let nc = self as?  WNavigationController {
+            nc.fullWidthBackGestureRecognizer.isEnabled = allow
+            return
+        }
+        self.interactivePopGestureRecognizer?.isEnabled = allow
     }
 }

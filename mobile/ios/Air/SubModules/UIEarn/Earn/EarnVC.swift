@@ -11,20 +11,20 @@ import UIComponents
 import WalletCore
 import WalletContext
 import OrderedCollections
-import UIPasscode
-import Ledger
 
 @MainActor
 public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDataProtocol {
     
     private let earnVM: EarnVM
+    private var accountContext: AccountContext { earnVM.accountContext }
+    private var stakingData: MStakingData? { accountContext.stakingData }
     
     var config: StakingConfig { earnVM.config }
     var tokenSlug: String { config.baseTokenSlug }
     var stakedTokenSlug: String { config.stakedTokenSlug }
     var token: ApiToken { config.baseToken }
     var stakedToken: ApiToken { config.stakedToken }
-    var stakingState: ApiStakingState? { config.stakingState }
+    var stakingState: ApiStakingState? { config.stakingState(stakingData: stakingData) }
 
     var areProfitsCollapsed = true
     
@@ -37,8 +37,6 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
         fatalError("init(coder:) has not been implemented")
     }
     
-    public override var hideNavigationBar: Bool { true }
-    
     public override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -47,22 +45,19 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
         earnVM.loadInitialHistory()
     }
 
-    private var separator: UIView!
     private var tableView: UITableView?
     private var dataSource: UITableViewDiffableDataSource<Section, Row>?
-    private var tableViewBackgroundView: UIView!
     private var emptyView: EmptyEarnView!
     private var indicatorView: WActivityIndicator!
     private var belowSafeAreaView: UIView!
-    private var belowSafeAreaHeightConstraint: NSLayoutConstraint!
-    private let claimRewardsViewModel = ClaimRewardsModel()
+    private lazy var claimRewardsViewModel = ClaimRewardsModel(accountContext: accountContext)
     private var claimRewardsView: HostingView!
     
     enum Section: Hashable {
         case header
         case history
     }
-    enum Row: Hashable {
+    enum Row: Hashable, Sendable {
         case header
         case historyHeader
         case historyItem(MStakingHistoryItem)
@@ -75,8 +70,6 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
 
         let tableView = UITableView(frame: .zero, style: .grouped)
         self.tableView = tableView
-        tableViewBackgroundView = UIView()
-        tableView.backgroundView = tableViewBackgroundView
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(EarnHeaderCell.self, forCellReuseIdentifier: "EarnHeader")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "EarnHistoryHeader")
@@ -87,9 +80,10 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
         tableView.delaysContentTouches = false
         view.addSubview(tableView)
         NSLayoutConstraint.activate([
-            tableView.leftAnchor.constraint(equalTo: view.leftAnchor),
-            tableView.rightAnchor.constraint(equalTo: view.rightAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         
         dataSource = UITableViewDiffableDataSource<Section, Row>(tableView: tableView) { [weak self] tableView, indexPath, itemIdentifier in
@@ -97,26 +91,40 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
             switch itemIdentifier {
             case .header:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "EarnHeader", for: indexPath) as! EarnHeaderCell
-                cell.configure(config: config, delegate: self)
+                cell.configure(config: config, stakingData: stakingData, supportsEarn: accountContext.account.supportsEarn, delegate: self)
                 return cell
 
             case .historyHeader:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "EarnHistoryHeader", for: indexPath)
+                let earnedAmount: BigInt?
+                let earnedDecimals: Int
+                let earnedSymbol: String
+                if tokenSlug == TONCOIN_SLUG {
+                    earnedAmount = stakingData?.totalProfit
+                    earnedDecimals = 9
+                    earnedSymbol = "TON"
+                } else if case .jetton(let jetton) = self.stakingState {
+                    earnedAmount = jetton.unclaimedRewards
+                    earnedDecimals = self.token.decimals
+                    earnedSymbol = self.token.symbol
+                } else {
+                    earnedAmount = nil
+                    earnedDecimals = 9
+                    earnedSymbol = ""
+                }
                 cell.contentConfiguration = UIHostingConfiguration {
                     HStack(alignment: .firstTextBaseline) {
                         Text(lang("History"))
                             .font(.system(size: 20, weight: .bold))
                         Spacer()
-                        if tokenSlug == TONCOIN_SLUG {
-                            if let totalProfit = StakingStore.currentAccount?.totalProfit {
-                                Text("\(lang("Earned")): \(formatBigIntText(totalProfit, currency: "TON", tokenDecimals: 9, decimalsCount: 9))")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(Color(WTheme.secondaryLabel))
-                                    .sensitiveData(alignment: .trailing, cols: 14, rows: 2, cellSize: 8, theme: .adaptive, cornerRadius: 4)
-                            }
+                        if let earnedAmount, earnedAmount > 0 {
+                            let amount = AnyDecimalAmount(earnedAmount, decimals: earnedDecimals, symbol: earnedSymbol, forceCurrencyToRight: true)
+                            Text("\(lang("Earned")): \(amount.formatted(.defaultAdaptive))")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Color(WTheme.secondaryLabel))
+                                .sensitiveData(alignment: .trailing, cols: 14, rows: 2, cellSize: 8, theme: .adaptive, cornerRadius: 4)
                         }
                     }
-                    .environment(\.isSensitiveDataHidden, AppStorageHelper.isSensitiveDataHidden)
                     .padding(.bottom, 2)
                 }
                 .background(Color.clear)
@@ -126,17 +134,31 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
             case .historyItem(let historyItem):
                 let cell = tableView.dequeueReusableCell(withIdentifier: "EarnHistory", for: indexPath) as! EarnHistoryCell
                 cell.configure(earnHistoryItem: historyItem, token: token)
+                let isLastInSection = indexPath.row == tableView.numberOfRows(inSection: indexPath.section) - 1
+                cell.setSeparatorHidden(isLastInSection)
                 return cell
                 
             case .stackedProfits(let profits, let startTimestamp, let count):
                 let cell = tableView.dequeueReusableCell(withIdentifier: "EarnHistory", for: indexPath) as! EarnHistoryCell
                 cell.configure(stackedProfits: profits, startTimestamp: startTimestamp, count: count, token: token)
+                let isLastInSection = indexPath.row == tableView.numberOfRows(inSection: indexPath.section) - 1
+                cell.setSeparatorHidden(isLastInSection)
                 return cell
             }
         }
         dataSource?.defaultRowAnimation = .fade
         dataSource?.apply(makeSnapshot(), animatingDifferences: false)
         
+        belowSafeAreaView = UIView()
+        belowSafeAreaView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.addSubview(belowSafeAreaView)
+        NSLayoutConstraint.activate([
+            belowSafeAreaView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            belowSafeAreaView.widthAnchor.constraint(equalTo: view.widthAnchor),
+            belowSafeAreaView.bottomAnchor.constraint(equalTo: tableView.contentLayoutGuide.topAnchor),
+            belowSafeAreaView.heightAnchor.constraint(equalToConstant: 500),
+        ])
+
         emptyView = EmptyEarnView(config: config)
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyView)
@@ -145,7 +167,8 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
         NSLayoutConstraint.activate([
             emptyViewTopConstraint,
             emptyView.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -64),
-            emptyView.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+            emptyView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            emptyView.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -64),
         ])
         emptyView.alpha = 0
         
@@ -160,37 +183,17 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
             indicatorView.startAnimating(animated: false)
         }
         
-        belowSafeAreaView = UIView()
-        belowSafeAreaView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(belowSafeAreaView)
-        belowSafeAreaHeightConstraint = belowSafeAreaView.heightAnchor.constraint(equalToConstant: 56)
-        NSLayoutConstraint.activate([
-            belowSafeAreaView.topAnchor.constraint(equalTo: view.topAnchor),
-            belowSafeAreaView.leftAnchor.constraint(equalTo: view.leftAnchor),
-            belowSafeAreaView.rightAnchor.constraint(equalTo: view.rightAnchor),
-            belowSafeAreaHeightConstraint
-        ])
-        
-        addNavigationBar(title: nil, closeIcon: false)
-        NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-        ])
-        tableView.contentInset.top = navigationBarHeight
-        tableView.verticalScrollIndicatorInsets.top = navigationBarHeight
-        tableView.contentOffset.y = -navigationBarHeight
-        
-        bringNavigationBarToFront()
-        
         claimRewardsViewModel.viewController = self
         claimRewardsViewModel.onClaim = { [weak self] in
+            guard let self else { return }
             Task {
                 do {
-                    try await self?.claimRewardsViewModel.confirmAction(account: AccountStore.account.orThrow())
+                    try await self.claimRewardsViewModel.confirmAction(account: self.accountContext.account)
                     withAnimation(.default.delay(0.3)) {
-                        self?.claimRewardsViewModel.isConfirming = false
+                        self.claimRewardsViewModel.isConfirming = false
                     }
                 } catch {
-                    topViewController()?.showAlert(error: error)
+                    AppActions.showError(error: error)
                 }
             }
         }
@@ -213,7 +216,7 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
     
     public override func updateTheme() {
         belowSafeAreaView.backgroundColor = WTheme.sheetBackground
-        tableViewBackgroundView.backgroundColor = WTheme.groupedItem
+        tableView?.backgroundColor = WTheme.groupedItem
     }
     
     func updateClaimRewardsButton() {
@@ -231,14 +234,14 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
     func stakeUnstakePressed(isStake: Bool) {
         if let stakingState = earnVM.stakingState {
             if isStake {
-                let vc = AddStakeVC(config: config, stakingState: stakingState)
+                let vc = AddStakeVC(config: config, stakingState: stakingState, accountContext: accountContext)
                 navigationController?.pushViewController(vc, animated: true)
 
             } else {
-                if let readyToUnstakeAmount = config.readyToUnstakeAmount {
+                if config.readyToUnstakeAmount(stakingData: stakingData) != nil {
                     claimRewardsViewModel.onClaim()
                 } else {
-                    let vc = UnstakeVC(config: config, stakingState: stakingState)
+                    let vc = UnstakeVC(config: config, stakingState: stakingState, accountContext: accountContext)
                     navigationController?.pushViewController(vc, animated: true)
                 }
             }
@@ -248,7 +251,8 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
     private func updateLoadingState() {
         if emptyView.alpha == 0 && earnVM.historyItems != nil, earnVM.allLoadedOnce, let apy = stakingState?.apy {
             indicatorView.stopAnimating(animated: true)
-            emptyView.estimatedAPYLabel.text = "\(lang("Estimated APY")) \(apy)%"
+            let apyString = formatPercent(apy/100)
+            emptyView.estimatedAPYLabel.text = "\(lang("Est. %annual_yield%", arg1: apyString))"
             if earnVM.historyItems?.count == 0 {
                 UIView.animate(withDuration: 0.5) { [weak self] in
                     guard let self else {return}
@@ -368,7 +372,7 @@ extension EarnVC: UITableViewDelegate {
                 let areProfitsCollapsed = self.areProfitsCollapsed
                 if hisoryItem.type == .profit {
                     return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-                        let action = UIAction(title: areProfitsCollapsed ? "Expand" : "Collapse") { [weak self] v in
+                        let action = UIAction(title: areProfitsCollapsed ? lang("Expand") : lang("Collapse")) { [weak self] v in
                             self?.areProfitsCollapsed.toggle()
                             self?.applySnapshot(animated: true)
                         }
@@ -398,16 +402,6 @@ extension EarnVC: UITableViewDelegate {
                 earnVM.loadMoreUnstakeActivityItems()
             }
         }
-    }
-
-    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        let y = scrollView.contentOffset.y + tableView!.contentInset.top
-        if y > 0 {
-            navigationBar?.showSeparator = true
-        } else if y <= 0 {
-            navigationBar?.showSeparator = false
-        }
-        belowSafeAreaHeightConstraint.constant = navigationBarHeight - y
     }
 }
 

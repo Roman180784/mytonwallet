@@ -1,17 +1,15 @@
 package org.mytonwallet.app_air.uisettings.viewControllers.assetsAndActivities.cells
 
 import android.annotation.SuppressLint
-import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
-import org.mytonwallet.app_air.uicomponents.drawable.SeparatorBackgroundDrawable
+import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.viewControllers.selector.TokenSelectorVC
-import org.mytonwallet.app_air.uicomponents.widgets.WBaseView
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WImageView
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
@@ -22,14 +20,13 @@ import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.uisettings.R
 import org.mytonwallet.app_air.uisettings.viewControllers.baseCurrency.BaseCurrencyVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
-import org.mytonwallet.app_air.walletcore.models.MBlockchain
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
 
@@ -55,24 +52,15 @@ class AssetsAndActivitiesHeaderCell(
         lbl
     }
 
-    private val baseCurrencySeparatorView: WBaseView by lazy {
-        val v = WBaseView(context)
-        v
-    }
-
     private val baseCurrencyView: WView by lazy {
         val v = WView(context)
         v.addView(baseCurrencyLabel)
         v.addView(currentBaseCurrencyLabel)
-        v.addView(baseCurrencySeparatorView, ViewGroup.LayoutParams(MATCH_PARENT, 1))
         v.setConstraints {
             toStart(baseCurrencyLabel, 20f)
             toCenterY(baseCurrencyLabel)
             toEnd(currentBaseCurrencyLabel, 20f)
             toCenterY(currentBaseCurrencyLabel)
-            toStart(baseCurrencySeparatorView, 20f)
-            toEnd(baseCurrencySeparatorView, 16f)
-            toBottom(baseCurrencySeparatorView)
         }
         v.setOnClickListener {
             navigationController.push(BaseCurrencyVC(context))
@@ -147,28 +135,12 @@ class AssetsAndActivitiesHeaderCell(
         v
     }
 
-    private val separatorBackgroundDrawable: SeparatorBackgroundDrawable by lazy {
-        SeparatorBackgroundDrawable().apply {
-            backgroundWColor = WColor.Background
-        }
-    }
-
-    private val tokensOnHomeScreenLabel: WLabel by lazy {
-        val lbl = WLabel(context)
-        lbl.setStyle(16f, WFont.Medium)
-        lbl.text =
-            LocaleController.getString("Tokens on Home Screen")
-        lbl
-    }
-
-    private val tokensOnHomeScreenView: WView by lazy {
-        val v = WView(context)
-        v.addView(tokensOnHomeScreenLabel)
-        v.setConstraints {
-            toStart(tokensOnHomeScreenLabel, 20f)
-            toCenterY(tokensOnHomeScreenLabel)
-        }
-        v
+    private val tokensOnHomeScreenLabel = HeaderCell(context).apply {
+        configure(
+            LocaleController.getString("Tokens on Home Screen"),
+            titleColor = WColor.Tint,
+            topRounding = HeaderCell.TopRounding.NORMAL
+        )
     }
 
     private val addIcon: WImageView by lazy {
@@ -181,7 +153,7 @@ class AssetsAndActivitiesHeaderCell(
 
     private val addTokenLabel: WLabel by lazy {
         val lbl = WLabel(context)
-        lbl.setStyle(16f, WFont.Medium)
+        lbl.setStyle(14f, WFont.DemiBold)
         lbl.text =
             LocaleController.getString("Add Token")
         lbl
@@ -193,19 +165,24 @@ class AssetsAndActivitiesHeaderCell(
         v.addView(addTokenLabel)
         v.setConstraints {
             toCenterY(addTokenLabel)
-            toStart(addTokenLabel, 76f)
+            toStart(addTokenLabel, 68f)
             toCenterY(addIcon)
-            toStart(addIcon, 28f)
+            toStart(addIcon, 20f)
         }
         v.setOnClickListener {
+            val activeAccount = AccountStore.activeAccount
             navigationController.push(
                 TokenSelectorVC(
                     context,
                     LocaleController.getString("Add Token"),
                     TokenStore.swapAssets2?.filter {
-                        MBlockchain.supportedChainValues.contains(it.chain)
+                        val chain = it.chain
+                        chain != null &&
+                            MBlockchain.supportedChainValues.contains(chain) &&
+                            (activeAccount == null || activeAccount.isChainSupported(chain))
                     } ?: emptyList(),
-                    false
+                    showMyAssets = false,
+                    showChain = activeAccount?.isMultichain == true,
                 ).apply {
                     setOnAssetSelectListener { asset ->
                         val assetsAndActivityData = AccountStore.assetsAndActivityData
@@ -227,7 +204,8 @@ class AssetsAndActivitiesHeaderCell(
                         }
                         AccountStore.updateAssetsAndActivityData(
                             assetsAndActivityData,
-                            notify = true
+                            notify = true,
+                            saveToStorage = true
                         )
                     }
                 })
@@ -235,17 +213,14 @@ class AssetsAndActivitiesHeaderCell(
         v
     }
 
-    private val separatorView = WBaseView(context)
-
     override fun setupViews() {
         super.setupViews()
 
-        addView(baseCurrencyView, LayoutParams(MATCH_PARENT, 56.dp))
-        addView(hideTinyTransfersRow, LayoutParams(MATCH_PARENT, 56.dp))
-        addView(hideTokensWithNoCostRow, LayoutParams(MATCH_PARENT, 56.dp))
-        addView(tokensOnHomeScreenView, LayoutParams(MATCH_PARENT, 48.dp))
-        addView(addTokenView, LayoutParams(MATCH_PARENT, 56.dp))
-        addView(separatorView, LayoutParams(0, 1))
+        addView(baseCurrencyView, LayoutParams(MATCH_PARENT, 50.dp))
+        addView(hideTinyTransfersRow, LayoutParams(MATCH_PARENT, 50.dp))
+        addView(hideTokensWithNoCostRow, LayoutParams(MATCH_PARENT, 50.dp))
+        addView(tokensOnHomeScreenLabel, LayoutParams(MATCH_PARENT, 48.dp))
+        addView(addTokenView, LayoutParams(MATCH_PARENT, 50.dp))
 
         setConstraints {
             toTop(baseCurrencyView)
@@ -255,17 +230,14 @@ class AssetsAndActivitiesHeaderCell(
             topToBottom(hideTokensWithNoCostRow, hideTinyTransfersRow, ViewConstants.GAP.toFloat())
             toCenterX(hideTokensWithNoCostRow)
             topToBottom(
-                tokensOnHomeScreenView,
+                tokensOnHomeScreenLabel,
                 hideTokensWithNoCostRow,
                 ViewConstants.GAP.toFloat()
             )
-            toCenterX(tokensOnHomeScreenView)
-            topToBottom(addTokenView, tokensOnHomeScreenView)
+            toCenterX(tokensOnHomeScreenLabel)
+            topToBottom(addTokenView, tokensOnHomeScreenLabel)
             toCenterX(addTokenView)
             toBottom(addTokenView)
-            toBottom(separatorView)
-            toEnd(separatorView, 16f)
-            toStart(separatorView, 72f)
         }
 
         updateTheme()
@@ -274,13 +246,12 @@ class AssetsAndActivitiesHeaderCell(
     override fun updateTheme() {
         baseCurrencyView.setBackgroundColor(
             WColor.Background.color,
-            ViewConstants.TOP_RADIUS.dp,
+            ViewConstants.TOOLBAR_RADIUS.dp,
             0f,
         )
         baseCurrencyView.addRippleEffect(WColor.SecondaryBackground.color)
         baseCurrencyLabel.setTextColor(WColor.PrimaryText.color)
         currentBaseCurrencyLabel.setTextColor(WColor.SecondaryText.color)
-        baseCurrencySeparatorView.setBackgroundColor(WColor.Separator.color)
 
         hideTinyTransfersRow.addRippleEffect(WColor.SecondaryBackground.color)
         hideTinyTransfersLabel.setTextColor(WColor.PrimaryText.color)
@@ -288,39 +259,36 @@ class AssetsAndActivitiesHeaderCell(
         hideTokensWithNoCostRow.addRippleEffect(WColor.SecondaryBackground.color)
         hideTokensWithNoCostLabel.setTextColor(WColor.PrimaryText.color)
 
-        if (ThemeManager.uiMode.hasRoundedCorners) {
-            hideTinyTransfersRow.setBackgroundColor(
-                WColor.Background.color,
-                0f,
-                ViewConstants.BIG_RADIUS.dp
-            )
-            hideTokensWithNoCostRow.setBackgroundColor(
-                WColor.Background.color,
-                ViewConstants.BIG_RADIUS.dp
-            )
-        } else {
-            hideTinyTransfersRow.background = separatorBackgroundDrawable
-            hideTokensWithNoCostRow.background = separatorBackgroundDrawable
-            separatorBackgroundDrawable.invalidateSelf()
-        }
-
-        tokensOnHomeScreenView.setBackgroundColor(
+        hideTinyTransfersRow.setBackgroundColor(
             WColor.Background.color,
-            ViewConstants.BIG_RADIUS.dp,
             0f,
+            ViewConstants.BLOCK_RADIUS.dp
         )
-        tokensOnHomeScreenLabel.setTextColor(WColor.Tint.color)
+        hideTokensWithNoCostRow.setBackgroundColor(
+            WColor.Background.color,
+            25f.dp
+        )
 
-        addTokenView.setBackgroundColor(WColor.Background.color)
+        updateAddTokenViewRadius()
         addTokenView.addRippleEffect(WColor.SecondaryBackground.color)
         addTokenLabel.setTextColor(WColor.Tint.color)
-        separatorView.setBackgroundColor(WColor.Separator.color)
     }
 
+    private fun updateAddTokenViewRadius() {
+        val bottomRadius = if (hasTokens) 0f else ViewConstants.BLOCK_RADIUS.dp
+        addTokenView.setBackgroundColor(WColor.Background.color, 0f, bottomRadius)
+    }
+
+    private var hasTokens: Boolean = true
     private lateinit var onHideNoCostTokensChanged: (hidden: Boolean) -> Unit
-    fun configure(onHideNoCostTokensChanged: (hidden: Boolean) -> Unit) {
+    fun configure(
+        hasTokens: Boolean,
+        onHideNoCostTokensChanged: (hidden: Boolean) -> Unit
+    ) {
+        this.hasTokens = hasTokens
         this.onHideNoCostTokensChanged = onHideNoCostTokensChanged
         currentBaseCurrencyLabel.text = WalletCore.baseCurrency.currencySymbol
+        updateAddTokenViewRadius()
     }
 
 }

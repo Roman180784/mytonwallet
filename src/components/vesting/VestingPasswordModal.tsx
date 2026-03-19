@@ -9,10 +9,11 @@ import { CLAIM_AMOUNT, TONCOIN } from '../../config';
 import renderText from '../../global/helpers/renderText';
 import {
   selectAccount,
+  selectCurrentAccountId,
   selectCurrentAccountState,
   selectCurrentAccountTokens,
+  selectIsCurrentAccountViewMode,
   selectIsHardwareAccount,
-  selectIsMultichainAccount,
   selectMycoin,
 } from '../../global/selectors';
 import { getDoesUsePinPad } from '../../util/biometrics';
@@ -47,8 +48,9 @@ interface StateProps {
   state?: VestingUnfreezeState;
   mycoin?: ApiTokenWithPrice;
   isHardwareAccount?: boolean;
-  isMultichainAccount: boolean;
+  isViewMode?: boolean;
 }
+
 function VestingPasswordModal({
   isOpen,
   vesting,
@@ -59,7 +61,7 @@ function VestingPasswordModal({
   mycoin,
   state = VestingUnfreezeState.Password,
   isHardwareAccount,
-  isMultichainAccount,
+  isViewMode,
 }: StateProps) {
   const { submitClaimingVesting, cancelClaimingVesting, clearVestingError } = getActions();
 
@@ -79,12 +81,12 @@ function VestingPasswordModal({
   }, [vesting]);
 
   const handleSubmit = useLastCallback((password: string) => {
-    if (hasAmountError) return;
+    if (isViewMode || hasAmountError) return;
     submitClaimingVesting({ password });
   });
 
   const handleHardwareSubmit = useLastCallback(() => {
-    if (hasAmountError) return;
+    if (isViewMode || hasAmountError) return;
     submitClaimingVesting();
   });
 
@@ -102,7 +104,7 @@ function VestingPasswordModal({
       <>
         <TransactionBanner
           tokenIn={mycoin}
-          withChainIcon={isMultichainAccount}
+          withChainIcon
           text={formatCurrency(currentlyReadyToUnfreezeAmount, mycoin!.symbol, mycoin!.decimals)}
           className={!getDoesUsePinPad() ? styles.transactionBanner : undefined}
           secondText={address && shortenAddress(address)}
@@ -128,7 +130,7 @@ function VestingPasswordModal({
       case VestingUnfreezeState.ConfirmHardware:
         return (
           <LedgerConfirmOperation
-            text={lang('Please confirm transaction on your Ledger')}
+            text={lang('Please confirm action on your Ledger')}
             error={error}
             onClose={cancelClaimingVesting}
             onTryAgain={handleHardwareSubmit}
@@ -144,6 +146,7 @@ function VestingPasswordModal({
             operationType="unfreeze"
             error={hasAmountError ? lang('Insufficient Balance for Fee') : error}
             submitLabel={lang('Confirm')}
+            noAutoConfirm
             onSubmit={handleSubmit}
             onCancel={cancelClaimingVesting}
             onUpdate={clearVestingError}
@@ -159,8 +162,6 @@ function VestingPasswordModal({
       isOpen={isOpen}
       title={withModalHeader ? lang('Confirm Unfreezing') : undefined}
       hasCloseButton={withModalHeader}
-      forceFullNative
-      nativeBottomSheetKey="vesting-confirm"
       contentClassName={styles.passwordModalDialog}
       onClose={cancelClaimingVesting}
     >
@@ -179,7 +180,8 @@ function VestingPasswordModal({
 }
 
 export default memo(withGlobal((global): StateProps => {
-  const { byChain } = selectAccount(global, global.currentAccountId!) || {};
+  const currentAccountId = selectCurrentAccountId(global)!;
+  const { byChain } = selectAccount(global, currentAccountId) || {};
   const accountState = selectCurrentAccountState(global);
   const isHardwareAccount = selectIsHardwareAccount(global);
 
@@ -202,6 +204,6 @@ export default memo(withGlobal((global): StateProps => {
     state: unfreezeState,
     mycoin: selectMycoin(global),
     isHardwareAccount,
-    isMultichainAccount: selectIsMultichainAccount(global, global.currentAccountId!),
+    isViewMode: selectIsCurrentAccountViewMode(global),
   };
 })(VestingPasswordModal));

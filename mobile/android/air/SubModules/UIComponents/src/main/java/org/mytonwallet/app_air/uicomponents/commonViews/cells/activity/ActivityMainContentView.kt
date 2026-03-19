@@ -1,7 +1,6 @@
 package org.mytonwallet.app_air.uicomponents.commonViews.cells.activity
 
 import android.content.Context
-import android.graphics.drawable.GradientDrawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
@@ -10,12 +9,14 @@ import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import androidx.core.content.ContextCompat
+import androidx.core.text.buildSpannedString
 import androidx.core.view.isGone
 import org.mytonwallet.app_air.uicomponents.commonViews.IconView
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.extensions.setPaddingDp
-import org.mytonwallet.app_air.uicomponents.extensions.updateDotsTypeface
+import org.mytonwallet.app_air.uicomponents.extensions.exactly
+import org.mytonwallet.app_air.uicomponents.extensions.styleDots
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
+import org.mytonwallet.app_air.uicomponents.helpers.spans.ScamLabelSpan
 import org.mytonwallet.app_air.uicomponents.helpers.spans.WTypefaceSpan
 import org.mytonwallet.app_air.uicomponents.helpers.typeface
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
@@ -25,6 +26,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.sensitiveDataContainer.WSens
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletbasecontext.utils.ApplicationContextHolder
 import org.mytonwallet.app_air.walletbasecontext.utils.doubleAbsRepresentation
 import org.mytonwallet.app_air.walletbasecontext.utils.formatTime
 import org.mytonwallet.app_air.walletbasecontext.utils.smartDecimalsCount
@@ -35,10 +37,9 @@ import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.moshi.ApiTransactionStatus
 import org.mytonwallet.app_air.walletcore.moshi.ApiTransactionType
 import org.mytonwallet.app_air.walletcore.moshi.MApiTransaction
-import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.StakingStore
 import kotlin.math.abs
-import kotlin.math.roundToInt
+import kotlin.math.absoluteValue
 
 class ActivityMainContentView(context: Context) : WView(context), WProtectedView {
 
@@ -46,23 +47,19 @@ class ActivityMainContentView(context: Context) : WView(context), WProtectedView
         id = generateViewId()
     }
 
-    private val iconView = IconView(context).apply {
+    private val iconView = IconView(context, ApplicationContextHolder.adaptiveIconSize.dp).apply {
         id = generateViewId()
     }
 
     private val topLeftLabel = WLabel(context).apply {
-        setStyle(16f, WFont.Medium)
+        setStyle(ApplicationContextHolder.adaptiveFontSize, WFont.DemiBold)
         setSingleLine()
         ellipsize = TextUtils.TruncateAt.END
     }
 
-    private val scamLabel = WLabel(context).apply {
-        text = LocaleController.getString("Scam")
-        setStyle(11f, WFont.Bold)
-        setTextColor(WColor.Red.color)
-        setPaddingDp(3, 0, 3, 0)
+    private val scamLabelSpan by lazy {
+        ScamLabelSpan(LocaleController.getString("Scam").uppercase())
     }
-    var scamWidth = 0
 
     private val topRightView: ActivityAmountView by lazy {
         ActivityAmountView(context)
@@ -89,55 +86,55 @@ class ActivityMainContentView(context: Context) : WView(context), WProtectedView
     override fun setupViews() {
         super.setupViews()
 
-        addView(iconView, LayoutParams(48.dp, 48.dp))
+        addView(
+            iconView,
+            LayoutParams(
+                (ApplicationContextHolder.adaptiveIconSize + 2).dp,
+                (ApplicationContextHolder.adaptiveIconSize + 2).dp
+            )
+        )
         addView(topLeftLabel, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         addView(bottomLeftLabel)
         addView(topRightView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         addView(bottomRightLabel)
-        addView(scamLabel)
-
         setConstraints {
             // Icon View
-            toCenterY(iconView)
+            toTop(iconView, ApplicationContextHolder.adaptiveIconTopMargin)
             toStart(iconView, 12f)
 
             // Top Left View
             setHorizontalBias(topLeftLabel.id, 0f)
-            toStart(topLeftLabel, 72f)
-            toTop(topLeftLabel, 11f)
+            toStart(topLeftLabel, ApplicationContextHolder.adaptiveContentStart)
+            toTop(topLeftLabel, 9f)
 
             // Top Right View
             setHorizontalBias(topRightView.id, 1f)
             constrainedWidth(topRightView.id, true)
             startToEnd(topRightView, topLeftLabel, 4f)
-            toTop(topRightView, 11f)
+            toTop(topRightView, 9f)
             toEnd(topRightView, 16f)
-
-            // Scam Label
-            startToEndPx(scamLabel, topLeftLabel, -scamWidth)
-            centerYToCenterY(scamLabel, topLeftLabel)
 
             // Bottom Views
             toEnd(bottomRightLabel, 16f)
-            toBottom(bottomRightLabel, 12f)
+            toBottom(bottomRightLabel, 10f)
             setHorizontalBias(bottomLeftLabel.id, 0f)
             constrainedWidth(bottomLeftLabel.id, true)
-            toStart(bottomLeftLabel, 72f)
-            toBottom(bottomLeftLabel, 12f)
+            toStart(bottomLeftLabel, ApplicationContextHolder.adaptiveContentStart)
+            toBottom(bottomLeftLabel, 10f)
             endToStart(bottomLeftLabel, bottomRightLabel, 4f)
         }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(64.dp, MeasureSpec.EXACTLY))
+        super.onMeasure(widthMeasureSpec, 60.dp.exactly)
     }
 
     private var transaction: MApiTransaction? = null
-    fun configure(transaction: MApiTransaction) {
+    fun configure(transaction: MApiTransaction, accountId: String, isMultichain: Boolean) {
         this.transaction = transaction
         when (transaction) {
             is MApiTransaction.Transaction -> {
-                configureTransaction()
+                configureTransaction(accountId, isMultichain)
             }
 
             is MApiTransaction.Swap -> {
@@ -148,41 +145,40 @@ class ActivityMainContentView(context: Context) : WView(context), WProtectedView
         if (transaction.isEmulation) {
             topLeftLabel.setPadding(0, 10.dp, 0, 0)
         }
-        updateTheme()
     }
 
     fun updateTheme() {
         topLeftLabel.setTextColor(WColor.PrimaryText.color)
+        topRightView.updateTheme()
         bottomRightLabel.contentView.setTextColor(WColor.PrimaryLightText.color)
+        (transaction as? MApiTransaction.Transaction)?.let(iconView::config)
     }
 
     override fun updateProtectedView() {
         bottomRightLabel.updateProtectedView()
     }
 
-    private fun configureTransaction() {
+    private fun configureTransaction(accountId: String, isMultichain: Boolean) {
         val transaction = transaction as MApiTransaction.Transaction
         iconView.config(transaction)
-        topLeftLabel.text = transaction.title
-        configureScamLabel()
+        topLeftLabel.text = buildTopLeftTitle(transaction.title)
         topRightView.configure(transaction)
-        configureTransactionSubtitle()
+        configureTransactionSubtitle(accountId, isMultichain)
         configureTransactionEquivalentAmount()
     }
 
     private fun configureSwap() {
         val swap = transaction as MApiTransaction.Swap
         iconView.config(swap)
-        topLeftLabel.text = swap.title
+        topLeftLabel.text = buildTopLeftTitle(swap.title)
         topRightView.configure(swap)
         configureSwapSubtitle()
         configureSwapRate()
-        configureScamLabel()
     }
 
     private fun configureTransactionEquivalentAmount() {
         val transaction = transaction as MApiTransaction.Transaction
-        if (transaction.isNft || transaction.type == ApiTransactionType.UNSTAKE_REQUEST) {
+        if (transaction.isNft || transaction.noAmountTransaction) {
             bottomRightLabel.contentView.text = ""
             bottomRightLabel.setMaskCols(0)
             return
@@ -207,55 +203,38 @@ class ActivityMainContentView(context: Context) : WView(context), WProtectedView
         updateBottomRightLabelMaskCols()
     }
 
-    private fun configureScamLabel() {
-        if (transaction?.isPoisoningOrScam() != true) {
-            scamLabel.visibility = GONE
-            topLeftLabel.setPadding(0, 0, 0, 0)
-            return
+    private fun buildTopLeftTitle(title: String): CharSequence {
+        if (transaction?.isScam != true) {
+            return title
         }
-        scamLabel.visibility = VISIBLE
-        scamLabel.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(WColor.Background.color)
-            setStroke(4, WColor.Red.color)
-            cornerRadius = 3f.dp
-        }
-        scamWidth =
-            (scamLabel.paint.measureText(scamLabel.text.toString()) + scamLabel.paddingLeft + scamLabel.paddingRight).roundToInt()
-        topLeftLabel.setPadding(
-            0,
-            0,
-            scamWidth + 4.dp,
-            0
-        )
-        (scamLabel.layoutParams as? MarginLayoutParams)?.let {
-            scamLabel.layoutParams = it.apply {
-                leftMargin = -scamWidth
-            }
+        return buildSpannedString {
+            append(title)
+            append(" ")
+            append(" ", scamLabelSpan, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
-    private fun configureTransactionSubtitle() {
+    private fun configureTransactionSubtitle(accountId: String, isMultichain: Boolean) {
         val transaction = transaction as MApiTransaction.Transaction
         val token = transaction.token
         val timeStr = transaction.dt.formatTime()
         val builder = SpannableStringBuilder()
         if (transaction.status == ApiTransactionStatus.FAILED) {
             builder.append(
-                LocaleController.getString("Failed · ")
-            )
+                LocaleController.getString("Failed")
+            ).append(" · ")
         }
         if (transaction.shouldShowTransactionAddress) {
             builder.append(
                 LocaleController.getString(
                     if (transaction.isIncoming)
-                        "From"
+                        "from"
                     else
-                        "To"
+                        "to"
                 ).lowercase()
             )
             builder.append(" ")
-            if (WalletCore.isMultichain) {
+            if (isMultichain) {
                 token?.mBlockchain?.symbolIcon?.let {
                     val drawable = ContextCompat.getDrawable(context, it)!!
                     drawable.mutate()
@@ -279,21 +258,33 @@ class ActivityMainContentView(context: Context) : WView(context), WProtectedView
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
             if (addressToShow?.second == false)
-                builder.updateDotsTypeface(startIndex = addressStart)
+                builder.styleDots(startIndex = addressStart)
         } else if (transaction.type == ApiTransactionType.STAKE) {
             val stakingState =
-                StakingStore.getStakingState(AccountStore.activeAccountId!!)?.states?.firstOrNull {
+                StakingStore.getStakingState(accountId)?.states?.firstOrNull {
                     it?.tokenSlug == transaction.slug
                 }
             stakingState?.let { stakingState ->
-                builder.append(LocaleController.getString("at"))
-                builder.append(" ")
-                val addressStart = builder.length
-                builder.append(stakingState.yieldType.toString() + " " + stakingState.annualYield + "%")
-                builder.append(" · ")
+                val annualYield = LocaleController.getString("at %annual_yield%")
+                val addressStart = builder.length + annualYield.indexOf("%")
+                val yieldString =
+                    stakingState.yieldType.toString() + " " + stakingState.annualYield + "%"
+                builder.append(
+                    annualYield.replace(
+                        "%annual_yield%",
+                        yieldString
+                    )
+                )
                 builder.setSpan(
                     WTypefaceSpan(WFont.Medium.typeface),
                     addressStart,
+                    builder.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                builder.append(" · ")
+                builder.setSpan(
+                    WTypefaceSpan(WFont.Medium.typeface),
+                    builder.length - 3,
                     builder.length,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
@@ -311,7 +302,7 @@ class ActivityMainContentView(context: Context) : WView(context), WProtectedView
 
     private fun configureSwapSubtitle() {
         val swap = transaction as MApiTransaction.Swap
-        val subtitle = swap.subtitle
+        val subtitle = swap.subtitle(ignoreInProgress = true) ?: ""
         val timeStr = swap.dt.formatTime()
         val builder = SpannableStringBuilder()
         if (subtitle.isNotEmpty()) {
@@ -344,7 +335,7 @@ class ActivityMainContentView(context: Context) : WView(context), WProtectedView
             return
         }
         val builder = SpannableStringBuilder()
-        val rateBigInt = (swap.fromAmount / swap.toAmount).toBigInteger(fromToken.decimals)!!
+        val rateBigInt = (swap.fromAmount.absoluteValue / swap.toAmount).toBigInteger(fromToken.decimals)!!
         val rate = rateBigInt.toString(
             fromToken.decimals,
             fromToken.symbol,

@@ -1,26 +1,31 @@
+import { AppState } from './types';
+
+import { IS_AIR_APP, IS_CAPACITOR } from '../config';
+import { switchToAir } from '../util/capacitor';
 import { cloneDeep } from '../util/iteratees';
-import { IS_DELEGATED_BOTTOM_SHEET, IS_LEDGER_EXTENSION_TAB } from '../util/windowEnvironment';
+import { IS_LEDGER_EXTENSION_TAB } from '../util/windowEnvironment';
 import { initCache, loadCache } from './cache';
 import { addActionHandler } from './index';
 import { INITIAL_STATE } from './initialState';
 import { selectHasSession } from './selectors';
 
-if (!IS_DELEGATED_BOTTOM_SHEET) {
-  initCache();
-}
+initCache();
 
-addActionHandler('init', (_, actions) => {
+addActionHandler('init', (currentGlobal, actions) => {
   const initial = cloneDeep(INITIAL_STATE);
 
   const global = loadCache(initial);
 
-  if (IS_DELEGATED_BOTTOM_SHEET) {
+  if (
+    IS_CAPACITOR && !IS_AIR_APP
+    && global.settings.shouldAutoSwitchToAirOnNextStart
+    && global.settings.hasOpenedAir !== true
+  ) {
+    void switchToAir();
     return {
       ...initial,
-      settings: {
-        ...initial.settings,
-        theme: global.settings.theme,
-      },
+      ...global,
+      appState: AppState.Empty,
     };
   }
 

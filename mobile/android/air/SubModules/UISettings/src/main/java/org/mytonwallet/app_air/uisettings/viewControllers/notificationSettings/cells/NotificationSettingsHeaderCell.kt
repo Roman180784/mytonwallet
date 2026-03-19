@@ -30,7 +30,7 @@ class NotificationSettingsHeaderCell(
         context,
         title = LocaleController.getString("Push Notifications"),
         isChecked = false,
-        isFirst = ViewConstants.TOP_RADIUS > 0,
+        isFirst = ViewConstants.TOOLBAR_RADIUS > 0,
         isLast = true,
         onChange = { isChecked ->
             if (pushNotificationsChecked != isChecked) {
@@ -48,14 +48,14 @@ class NotificationSettingsHeaderCell(
         setSingleLine()
         ellipsize = TextUtils.TruncateAt.END
         setTextColor(WColor.Tint)
-        setStyle(16f, WFont.Medium)
-        setPaddingDp(20, 17, 20, 17)
+        setStyle(14f, WFont.DemiBold)
+        setPaddingDp(20, 17, 20, 9)
     }
 
     override fun setupViews() {
         super.setupViews()
 
-        addView(pushNotificationsRow, LayoutParams(MATCH_PARENT, 56.dp))
+        addView(pushNotificationsRow, LayoutParams(MATCH_PARENT, 50.dp))
         addView(hintLabel, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         setConstraints {
             toTop(pushNotificationsRow, 0f)
@@ -67,12 +67,12 @@ class NotificationSettingsHeaderCell(
 
     override fun updateTheme() {
         pushNotificationsRow.updateTheme()
-        hintLabel.setBackgroundColor(WColor.Background.color, ViewConstants.BIG_RADIUS.dp, 0f)
+        hintLabel.setBackgroundColor(WColor.Background.color, ViewConstants.BLOCK_RADIUS.dp, 0f)
     }
 
     fun configure(isPushNotificationsChecked: Boolean, showHint: Boolean) {
         pushNotificationsChecked = isPushNotificationsChecked
-        pushNotificationsRow.setChecked(isPushNotificationsChecked)
+        pushNotificationsRow.isChecked = isPushNotificationsChecked
         hintLabel.isGone = !showHint
         updateTheme()
     }

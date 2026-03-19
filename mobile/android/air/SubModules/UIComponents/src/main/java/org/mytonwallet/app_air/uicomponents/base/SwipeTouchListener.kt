@@ -145,6 +145,8 @@ class SwipeTouchListener
         if (!isSwiping) {
             if (abs(deltaX.toDouble()) > mSwipeSlop) {
                 isSwiping = true
+                behindView.get()?.viewController?.get()?.viewWillAppear()
+                mDownX = event.x
                 darkView.get()?.let {
                     viewController.get()?.navigationController?.addView(
                         it, 0,
@@ -160,7 +162,7 @@ class SwipeTouchListener
                     )
                     it.visibility = VISIBLE
                     it.alpha = 1f
-                    (it.parent as? View)?.setBackgroundColor(if (ThemeManager.uiMode.hasRoundedCorners) WColor.SecondaryBackground.color else WColor.Background.color)
+                    (it.parent as? View)?.setBackgroundColor(WColor.SecondaryBackground.color)
                 }
             }
         }
@@ -178,7 +180,6 @@ class SwipeTouchListener
                 behindView.get()?.scaleX = 0.95f + (progress / 20)
                 behindView.get()?.scaleY = behindView.get()!!.scaleX
             }
-            behindView.get()?.viewController?.get()?.viewWillAppear()
             darkView.get()?.alpha = 0.5f - (progress / 5)
         }
     }
@@ -289,6 +290,7 @@ class SwipeTouchListener
             } else {
                 mView!!.translationX = 0f
                 behindView.get()?.let {
+                    it.viewController.get()?.viewWillDisappear()
                     navigationController?.removeView(it)
                     it.visibility = GONE
                     it.scaleX = 1f

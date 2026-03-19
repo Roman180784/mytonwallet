@@ -3,6 +3,7 @@ package org.mytonwallet.app_air.uicreatewallet.viewControllers.importWallet
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.view.View.OnFocusChangeListener
 import android.view.View.TEXT_ALIGNMENT_CENTER
@@ -32,28 +33,33 @@ import org.mytonwallet.app_air.uicomponents.widgets.suggestion.WSuggestionView
 import org.mytonwallet.app_air.uicreatewallet.viewControllers.intro.IntroVC
 import org.mytonwallet.app_air.uicreatewallet.viewControllers.walletAdded.WalletAddedVC
 import org.mytonwallet.app_air.uipasscode.viewControllers.setPasscode.SetPasscodeVC
-import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.logger.LogMessage
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletbasecontext.utils.ApplicationContextHolder
 import org.mytonwallet.app_air.walletbasecontext.utils.toProcessedSpannableStringBuilder
+import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
 import org.mytonwallet.app_air.walletcore.api.activateAccount
 import org.mytonwallet.app_air.walletcore.constants.PossibleWords
+import org.mytonwallet.app_air.walletcore.helpers.PrivateKeyHelper
 import org.mytonwallet.app_air.walletcore.models.MBridgeError
-import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.logger.LogMessage
-import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import java.lang.ref.WeakReference
 import kotlin.math.max
 
 @SuppressLint("ViewConstructor")
 class ImportWalletVC(
     context: Context,
+    private val network: MBlockchainNetwork,
     // Used when adding new accounts. (not first mnemonic wallet)
     private val passedPasscode: String?
 ) :
     WViewController(context), WThemedView, ImportWalletVM.Delegate, WEditText.Delegate {
+    override val TAG = "ImportWallet"
 
     override val shouldDisplayTopBar = false
     override val ignoreSideGuttering = true
@@ -82,17 +88,28 @@ class ImportWalletVC(
         }
     }
     private val titleLabel: WLabel by lazy {
-        val lbl = WLabel(context)
-        lbl.text = LocaleController.getString("Enter Secret Words")
-        lbl.setStyle(28f, WFont.Medium)
-        lbl
+        WLabel(context).apply {
+            text = LocaleController.getString("Enter Secret Words")
+            setStyle(28f, WFont.SemiBold)
+            gravity = Gravity.CENTER
+        }
     }
 
     private val subtitleLabel: WLabel by lazy {
         WLabel(context).apply {
             setStyle(16f)
             setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
-            text = LocaleController.getString("\$auth_import_mnemonic_description")
+            text = LocaleController.getStringWithKeyValues(
+                "\$auth_import_mnemonic_description",
+                listOf(
+                    Pair(
+                        "%counts%", LocaleController.getFormattedEnumeration(
+                            listOf("12", "24"),
+                            "or"
+                        )
+                    )
+                )
+            )
                 .toProcessedSpannableStringBuilder()
             textAlignment = TEXT_ALIGNMENT_CENTER
         }
@@ -177,6 +194,8 @@ class ImportWalletVC(
         }
         v.addView(continueButton, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         v.addView(suggestionView, ViewGroup.LayoutParams(0, 48.dp))
+        v.clipChildren = false
+        v.clipToPadding = false
         v.setConstraints {
             toTopPx(
                 animationView,
@@ -185,14 +204,14 @@ class ImportWalletVC(
             )
             toCenterX(animationView)
             topToBottom(titleLabel, animationView, 24f)
-            toCenterX(titleLabel)
+            toCenterX(titleLabel, 20f)
             topToBottom(subtitleLabel, titleLabel, 20f)
             toCenterX(subtitleLabel, 48f)
             topToBottom(pasteButton, subtitleLabel, 1f)
             toCenterX(pasteButton)
 
             val containerWidth = (navigationController?.width?.takeIf { it > 0 }
-                ?: context.resources.displayMetrics.widthPixels)
+                ?: ApplicationContextHolder.screenWidth)
             val wordInputWidth = (containerWidth - 64.dp - 16.dp) / 2
 
             var prevLeftWordInput: WWordInput? = null
@@ -260,7 +279,7 @@ class ImportWalletVC(
                 topReversedCornerView?.pauseBlurring(false)
             }
             if (y > scrollOffsetToShowNav) {
-                setNavTitle(LocaleController.getString("Enter Secret Words"))
+                setNavTitle(LocaleController.getString("Enter Secret Words") + network.localizedIdentifier)
                 setTopBlur(true, animated = true)
             } else {
                 setNavTitle("")
@@ -287,6 +306,7 @@ class ImportWalletVC(
             makeFieldVisible(activeField!!)
     }
 
+    override val isTinted = true
     override fun updateTheme() {
         scrollingContentView.setBackgroundColor(WColor.SecondaryBackground.color)
         titleLabel.setTextColor(WColor.PrimaryText.color)
@@ -295,20 +315,26 @@ class ImportWalletVC(
     }
 
     private fun importPressed() {
-        // check if words are correct
-        wordInputViews.forEachIndexed { _, wordInput ->
-            wordInput.textField.text.toString().trim().lowercase().let {
-                if (it.isNotEmpty() && !PossibleWords.All.contains(it)) {
-                    showMnemonicAlert()
-                    return
-                }
-            }
-        }
         val words =
             wordInputViews
                 .map { it.textField.text.toString().trim().lowercase() }
                 .filter { it.isNotEmpty() }
                 .toTypedArray()
+
+        if (PrivateKeyHelper.isMnemonicPrivateKey(words)) {
+            view.lockView()
+            continueButton.isLoading = true
+            importWalletVM.importWallet(words = words)
+            return
+        }
+
+        // check if mnemonic words are correct
+        for (word in words) {
+            if (!PossibleWords.All.contains(word)) {
+                showMnemonicAlert()
+                return
+            }
+        }
         if (words.size != 12 && words.size != 24) {
             showMnemonicAlert()
             return
@@ -316,9 +342,7 @@ class ImportWalletVC(
 
         view.lockView()
         continueButton.isLoading = true
-        importWalletVM.importWallet(
-            words = words
-        )
+        importWalletVM.importWallet(words = words)
     }
 
     private var activeField: WWordInput? = null
@@ -343,12 +367,12 @@ class ImportWalletVC(
             continueButton.isLoading = false
             view.unlockView()
             push(SetPasscodeVC(context, true, null) { passcode, biometricsActivated ->
-                importWalletVM.finalizeAccount(window!!, words, passcode, biometricsActivated, 0)
+                importWalletVM.finalizeAccount(window!!, network, words, passcode, biometricsActivated, 0)
             }, onCompletion = {
                 navigationController?.removePrevViewControllers()
             })
         } else {
-            importWalletVM.finalizeAccount(window!!, words, passedPasscode, null, 0)
+            importWalletVM.finalizeAccount(window!!, network, words, passedPasscode, null, 0)
         }
     }
 
@@ -363,7 +387,7 @@ class ImportWalletVC(
                     Logger.LogTag.ACCOUNT,
                     LogMessage.Builder()
                         .append(
-                            "Activation failed on import finalization: $err",
+                            "activateAccount: Failed on import finalization err=$err",
                             LogMessage.MessagePartPrivacy.PUBLIC
                         ).build()
                 )
@@ -410,9 +434,12 @@ class ImportWalletVC(
         wordInputViews.forEach {
             it.checkValue()
         }
-        val wordsCount =
-            wordInputViews.filter { it.textField.text.toString().trim().isNotEmpty() }.size
-        if (wordsCount == 12 || wordsCount == 24)
+        val words =
+            wordInputViews
+                .map { it.textField.text.toString().trim().lowercase() }
+                .filter { it.isNotEmpty() }
+                .toTypedArray()
+        if (words.size == 12 || words.size == 24 || PrivateKeyHelper.isMnemonicPrivateKey(words))
             importPressed()
     }
 

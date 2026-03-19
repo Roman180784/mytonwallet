@@ -56,6 +56,7 @@ abstract class PendingTask {
 
 public class AirLauncher {
   private static AirLauncher airLauncher;
+  private static String GLOBAL_STORAGE_HAS_OPENED_AIR = "settings.hasOpenedAir";
   private final Context applicationContext;
   PendingTask pendingAirTask;
   private boolean isOnTheAir = false;
@@ -111,6 +112,9 @@ public class AirLauncher {
   }
 
   public void switchingToClassic() {
+    capacitorGlobalStorageProvider.persistChanges(IGlobalStorageProvider.PERSIST_INSTANT);
+    capacitorGlobalStorageProvider.onDestroy();
+    capacitorGlobalStorageProvider = null;
     isOnTheAir = false;
   }
 
@@ -126,6 +130,9 @@ public class AirLauncher {
 
     isOnTheAir = true;
 
+    if (!Boolean.TRUE.equals(capacitorGlobalStorageProvider.getBool(GLOBAL_STORAGE_HAS_OPENED_AIR))) {
+      capacitorGlobalStorageProvider.set(GLOBAL_STORAGE_HAS_OPENED_AIR, true, IGlobalStorageProvider.PERSIST_NORMAL);
+    }
     if (fromLegacy) {
       capacitorGlobalStorageProvider.setEmptyObject("tokenPriceHistory.bySlug", IGlobalStorageProvider.PERSIST_NO);
       LaunchConfig.setShouldStartOnAir(currentActivity, true);
@@ -157,16 +164,34 @@ public class AirLauncher {
     currentActivity.finish();
   }
 
-  public void handle(Intent intent) {
+  private void bringAirToFront(Activity currentActivity) {
+    Intent intent = new Intent(currentActivity, MainWindow.class);
+    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+    currentActivity.startActivity(intent);
+  }
+
+  public boolean handle(Intent intent) {
+    return handle(null, intent);
+  }
+
+  public boolean handle(Activity currentActivity, Intent intent) {
     Deeplink deeplink = DeeplinkParser.Companion.parse(intent);
-    if (deeplink != null) {
-      DeeplinkNavigator deeplinkNavigator = SplashVC.Companion.getSharedInstance();
-      if (deeplinkNavigator != null) {
-        deeplinkNavigator.handle(deeplink);
-      } else {
-        SplashVC.Companion.setPendingDeeplink(deeplink);
-      }
+    if (deeplink == null)
+      return false;
+    DeeplinkNavigator deeplinkNavigator = SplashVC.Companion.getSharedInstance();
+    if (deeplinkNavigator != null) {
+      deeplinkNavigator.handle(deeplink);
+    } else {
+      SplashVC.Companion.setPendingDeeplink(deeplink);
     }
+    if (isOnTheAir && currentActivity != null) {
+      // clear any activities stacked above Air in the same task
+      // so after handling a deeplink user returns to Air immediately
+      bringAirToFront(currentActivity);
+    }
+    return true;
   }
 
 }

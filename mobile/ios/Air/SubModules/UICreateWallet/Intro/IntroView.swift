@@ -7,7 +7,6 @@
 
 import SwiftUI
 import WalletContext
-import WalletCore
 import UIComponents
 
 struct IntroView: View {
@@ -59,7 +58,7 @@ struct IntroView: View {
     }
     
     var title: some View {
-        Text(lang("MyTonWallet"))
+        Text(APP_NAME)
             .font(.nunito(size: 32))
     }
     
@@ -70,12 +69,15 @@ struct IntroView: View {
     
     var moreAbout: some View {
         Button(action: onMoreAbout) {
-            let text = lang("More about %app_name%", arg1: lang("MyTonWallet"))
+            let text = lang("More about %app_name%", arg1: APP_NAME)
             Text("\(text) ›")
                 .foregroundStyle(Color.air.secondaryLabel)
                 .fontWeight(.regular)
         }
-        .buttonStyle(.airClearBackground)
+        .padding(16)
+        .contentShape(.capsule)
+        .buttonStyle(.borderless)
+        .padding(-16)
     }
     
     @ViewBuilder

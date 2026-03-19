@@ -1,22 +1,31 @@
 package org.mytonwallet.app_air.uicomponents.widgets.menu
 
-import android.annotation.SuppressLint
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.view.Gravity
+import android.graphics.Path
 import android.view.View
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.PopupWindow
+import android.widget.FrameLayout
+import org.mytonwallet.app_air.uicomponents.extensions.atMost
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.helpers.PopupHelpers
+import org.mytonwallet.app_air.uicomponents.extensions.getLocationOnScreen
+import org.mytonwallet.app_air.uicomponents.extensions.unspecified
+import org.mytonwallet.app_air.uicomponents.widgets.INavigationPopup
+import org.mytonwallet.app_air.uicomponents.widgets.frameAsPath
 import org.mytonwallet.app_air.uicomponents.widgets.lockView
 import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup.Item.Config.Icon
 import org.mytonwallet.app_air.uicomponents.widgets.unlockView
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletbasecontext.utils.ApplicationContextHolder
+import org.mytonwallet.app_air.walletbasecontext.utils.x
+import org.mytonwallet.app_air.walletbasecontext.utils.y
 
 class WMenuPopup {
+    enum class Positioning {
+        ABOVE,
+        ALIGNED,
+        BELOW
+    }
 
     data class Item(
         val config: Config,
@@ -47,6 +56,7 @@ class WMenuPopup {
                 val isSubItem: Boolean = false,
                 val subItems: List<WMenuPopup.Item>? = null,
                 val trailingView: View? = null,
+                val textMargin: Int? = null
             ) : Config()
 
             data class SelectableItem(
@@ -55,10 +65,15 @@ class WMenuPopup {
                 val isSelected: Boolean
             ) : Config()
 
+            data class CustomView(
+                val customView: FrameLayout
+            ) : Config()
+
             data class Icon(
                 val icon: Int,
                 val tintColor: WColor? = null,
-                val iconSize: Int? = null
+                val iconSize: Int? = null,
+                val iconMargin: Int? = null,
             )
         }
 
@@ -74,6 +89,10 @@ class WMenuPopup {
 
                 is Config.SelectableItem -> {
                     if (config.isSelected) org.mytonwallet.app_air.uicomponents.R.drawable.ic_radio_fill else null
+                }
+
+                else -> {
+                    null
                 }
             }
         }
@@ -110,7 +129,31 @@ class WMenuPopup {
             }
         }
 
-        fun getTitle(): CharSequence {
+        fun getIconMargin(): Int? {
+            return when (config) {
+                is Config.Item -> {
+                    config.icon?.iconMargin
+                }
+
+                else -> {
+                    null
+                }
+            }
+        }
+
+        fun getTextMargin(): Int? {
+            return when (config) {
+                is Config.Item -> {
+                    config.textMargin
+                }
+
+                else -> {
+                    null
+                }
+            }
+        }
+
+        fun getTitle(): CharSequence? {
             return when (config) {
                 is Config.Back -> {
                     LocaleController.getString("Back")
@@ -122,6 +165,10 @@ class WMenuPopup {
 
                 is Config.SelectableItem -> {
                     config.title
+                }
+
+                else -> {
+                    null
                 }
             }
         }
@@ -166,6 +213,10 @@ class WMenuPopup {
                 is Config.SelectableItem -> {
                     null
                 }
+
+                else -> {
+                    null
+                }
             }
         }
 
@@ -182,71 +233,122 @@ class WMenuPopup {
                 is Config.SelectableItem -> {
                     false
                 }
+
+                else -> {
+                    false
+                }
             }
         }
     }
 
     companion object {
-        @SuppressLint("ClickableViewAccessibility")
+
         fun present(
             view: View,
             items: List<Item>,
             popupWidth: Int = WRAP_CONTENT,
-            offset: Int = 0,
-            verticalOffset: Int = 0,
-            aboveView: Boolean,
-            centerHorizontally: Boolean = false
-        ): PopupWindow {
+            xOffset: Int = 0,
+            yOffset: Int = 0,
+            positioning: Positioning,
+            centerHorizontally: Boolean = false,
+            windowBackgroundStyle: BackgroundStyle = BackgroundStyle.Transparent,
+            onWillDismiss: (() -> Unit)? = null,
+            displayProgressListener: ((progress: Float) -> Unit)? = null,
+        ): INavigationPopup {
             view.lockView()
 
-            lateinit var popupWindow: PopupWindow
+            lateinit var popupWindow: WNavigationPopup
 
-            val popupView = WMenuPopupView(view.context, items, onDismiss = {
-                popupWindow.dismiss()
-            })
+            val initialPopupView = WMenuPopupView(
+                view.context, items,
+                onWillDismiss = onWillDismiss,
+                onDismiss = {
+                    popupWindow.dismiss()
+                })
 
-            popupWindow = WPopupWindow(popupView, popupWidth).apply {
-                isOutsideTouchable = true
-                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-
-                setOnDismissListener {
-                    view.post {
-                        view.unlockView()
+            popupWindow =
+                WNavigationPopup(initialPopupView, popupWidth, windowBackgroundStyle).apply {
+                    setOnDismissListener {
+                        view.post {
+                            view.unlockView()
+                        }
                     }
+                    displayProgressListener?.let { setDisplayProgressListener(it) }
                 }
-            }
-            popupView.popupWindow = popupWindow
 
-            val location = IntArray(2)
-            view.getLocationOnScreen(location)
-
-            val offset = if (centerHorizontally) {
+            val location = view.getLocationOnScreen()
+            val screenWidth = ApplicationContextHolder.screenWidth
+            val offset = xOffset + if (centerHorizontally) {
                 val popupMeasuredWidth = if (popupWidth == WRAP_CONTENT) {
-                    popupView.measure(
-                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                    )
-                    popupView.measuredWidth
+                    initialPopupView.measure(screenWidth.atMost, 0.unspecified)
+                    initialPopupView.measuredWidth
                 } else {
                     popupWidth
                 }
                 (view.width - popupMeasuredWidth) / 2
             } else {
-                offset
+                0
+            }
+
+            val y = when (positioning) {
+                Positioning.ABOVE -> {
+                    initialPopupView.measure(screenWidth.atMost, 0.unspecified)
+                    location.y + yOffset - (initialPopupView.measuredHeight + 8.dp)
+                }
+
+                Positioning.ALIGNED -> {
+                    location.y + yOffset
+                }
+
+                Positioning.BELOW -> {
+                    location.y + yOffset + (view.height + 8.dp)
+                }
             }
 
             popupWindow.showAtLocation(
-                view,
-                Gravity.NO_GRAVITY,
-                location[0] + offset - 4.dp,
-                location[1] + verticalOffset - 8.dp + if (aboveView) 0 else (view.height + 4.dp)
+                x = location.x + offset,
+                y = y,
+                fromTop = positioning != Positioning.ABOVE
             )
-
-            popupView.present(initialHeight = 0)
-
-            PopupHelpers.popupShown(popupWindow)
-
             return popupWindow
+        }
+    }
+
+    sealed interface BackgroundStyle {
+        object Transparent : BackgroundStyle
+
+        class Cutout(val cutoutPath: Path) : BackgroundStyle {
+
+            companion object {
+
+                fun fromView(
+                    view: View,
+                    roundRadius: Float = 0f,
+                    offset: Int = 0
+                ): Cutout {
+                    return Cutout(
+                        view.frameAsPath(
+                            roundRadius = roundRadius,
+                            offset = offset.toFloat()
+                        )
+                    )
+                }
+
+                fun fromView(
+                    view: View,
+                    roundRadius: Float = 0f,
+                    horizontalOffset: Int = 0,
+                    verticalOffset: Int = 0
+                ): Cutout {
+                    return Cutout(
+                        view.frameAsPath(
+                            roundRadius = roundRadius,
+                            horizontalOffset = horizontalOffset.toFloat(),
+                            verticalOffset = verticalOffset.toFloat()
+                        )
+                    )
+                }
+            }
         }
     }
 }

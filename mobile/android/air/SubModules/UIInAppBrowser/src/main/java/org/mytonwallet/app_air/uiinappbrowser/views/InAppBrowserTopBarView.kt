@@ -24,6 +24,8 @@ import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.resize
+import org.mytonwallet.app_air.uicomponents.helpers.HapticType
+import org.mytonwallet.app_air.uicomponents.helpers.Haptics
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.image.Content
 import org.mytonwallet.app_air.uicomponents.image.WCustomImageView
@@ -32,14 +34,16 @@ import org.mytonwallet.app_air.uicomponents.widgets.WImageButton
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
-import org.mytonwallet.app_air.uicomponents.widgets.addRippleEffect
+import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.widgets.fadeIn
 import org.mytonwallet.app_air.uicomponents.widgets.fadeOut
 import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
+import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup.BackgroundStyle
 import org.mytonwallet.app_air.uiinappbrowser.InAppBrowserVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletbasecontext.theme.colorForTheme
 import org.mytonwallet.app_air.walletcontext.utils.VerticalImageSpan
 import org.mytonwallet.app_air.walletcontext.utils.colorWithAlpha
 import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
@@ -52,9 +56,14 @@ class InAppBrowserTopBarView(
     private val tabBarController: WNavigationController.ITabBarController?,
     private val options: List<InAppBrowserConfig.Option>?,
     private var selectedOption: String?,
+    private val optionsOnTitle: Boolean,
     private val minimizeStarted: () -> Unit,
     private val maximizeFinished: () -> Unit,
 ) : WView(viewController.context), WThemedView {
+
+    private val moreButtonRipple = WRippleDrawable.create(20f.dp)
+    private val minimizeButtonRipple = WRippleDrawable.create(20f.dp)
+    private val backButtonRipple = WRippleDrawable.create(100f.dp)
 
     private val backDrawable = BackDrawable(context, false).apply {
         setRotation(1f, false)
@@ -67,32 +76,77 @@ class InAppBrowserTopBarView(
 
     private val titleLabel: WLabel by lazy {
         WLabel(context).apply {
-            setTextColor(WColor.PrimaryText)
-            setStyle(22F, WFont.Medium)
+            setStyle(22F, WFont.SemiBold)
             gravity = Gravity.CENTER_VERTICAL or
                 if (LocaleController.isRTL) Gravity.RIGHT else Gravity.LEFT
             setSingleLine()
             ellipsize = TextUtils.TruncateAt.MARQUEE
             isHorizontalFadingEdgeEnabled = true
             pivotX = 0f
+            if (optionsOnTitle && !options.isNullOrEmpty()) {
+                text = textWithArrow(options.find { it.identifier == selectedOption }?.title, true)
+                setOnClickListener {
+                    showOptionsMenu(this)
+                }
+            }
         }
     }
 
-    fun textWithArrow(txt: String?): SpannableStringBuilder {
+    fun textWithArrow(txt: String?, isTitle: Boolean): SpannableStringBuilder? {
+        val txt = txt ?: return null
         val ss = SpannableStringBuilder(txt)
         ContextCompat.getDrawable(
             context,
-            R.drawable.ic_arrow_bottom_8
+            R.drawable.ic_arrows_14
         )?.let { drawable ->
             drawable.mutate()
-            drawable.setTint(WColor.SecondaryText.color)
-            val width = 8.dp
-            val height = 4.dp
-            drawable.setBounds(5.dp, 1.dp, width + 5.dp, (height + 0.5f.dp).roundToInt())
+            drawable.setTint(
+                (if (isTitle) WColor.PrimaryText else WColor.SecondaryText).colorForTheme(
+                    overrideThemeIsDark
+                )
+            )
+            val arrowScale = if (isTitle) 1f else 0.8f
+            val width = 7.dp * arrowScale
+            val height = 14.dp * arrowScale
+            val yOffset = (if (isTitle) 1f else 0.5f).dp.roundToInt()
+            drawable.setBounds(5.dp, yOffset, width.roundToInt() + 5.dp, height.roundToInt() + yOffset)
             val imageSpan = VerticalImageSpan(drawable)
             ss.append(" ", imageSpan, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         return ss
+    }
+
+    private fun showOptionsMenu(anchorView: WLabel) {
+        WMenuPopup.present(
+            anchorView,
+            options?.map { option ->
+                WMenuPopup.Item(
+                    WMenuPopup.Item.Config.SelectableItem(
+                        option.title,
+                        null,
+                        selectedOption == option.identifier
+                    ),
+                    onTap = {
+                        selectedOption = option.identifier
+                        if (optionsOnTitle) {
+                            titleLabel.text = textWithArrow(option.title, true)
+                            subtitleLabel.text = option.subtitle
+                        } else {
+                            subtitleLabel.text = textWithArrow(option.title, false)
+                        }
+                        option.onClick(WeakReference(viewController))
+                    }
+                )
+            } ?: emptyList(),
+            positioning = WMenuPopup.Positioning.BELOW,
+            windowBackgroundStyle = BackgroundStyle.Cutout.fromView(
+                view = anchorView,
+                roundRadius = 8f.dp,
+                horizontalOffset = 8.dp,
+                verticalOffset = 0
+            ),
+            xOffset = (-8).dp
+        )
     }
 
     private val subtitleLabel: WLabel by lazy {
@@ -105,32 +159,22 @@ class InAppBrowserTopBarView(
             ellipsize = TextUtils.TruncateAt.MARQUEE
             isHorizontalFadingEdgeEnabled = true
             pivotX = 0f
-            text = textWithArrow(options?.find { it.identifier == selectedOption }?.title)
-            setOnClickListener {
-                WMenuPopup.present(
-                    subtitleLabel,
-                    options?.map { option ->
-                        WMenuPopup.Item(
-                            WMenuPopup.Item.Config.SelectableItem(
-                                option.title,
-                                null,
-                                selectedOption == option.identifier
-                            ),
-                            onTap = {
-                                selectedOption = option.identifier
-                                subtitleLabel.text = textWithArrow(option.title)
-                                option.onClick(WeakReference(viewController))
-                            }
-                        )
-                    } ?: emptyList(),
-                    aboveView = false
-                )
+            if (optionsOnTitle) {
+                text = options?.find { it.identifier == selectedOption }?.subtitle
+            } else {
+                text =
+                    textWithArrow(options?.find { it.identifier == selectedOption }?.title, false)
+                setOnClickListener {
+                    showOptionsMenu(this)
+                }
             }
         }
     }
 
     private val backButton: WImageButton by lazy {
-        val btn = WImageButton(context)
+        val btn = object : WImageButton(context) {
+            override fun updateTheme() {}
+        }
         btn.setImageDrawable(backDrawable)
         btn.setOnClickListener {
             backPressed()
@@ -160,7 +204,7 @@ class InAppBrowserTopBarView(
             (if (options.isNullOrEmpty()) WNavigationBar.DEFAULT_HEIGHT_TINY else WNavigationBar.DEFAULT_HEIGHT).dp +
                 (viewController.navigationController?.getSystemBars()?.top ?: 0)
         maxHeight = minHeight
-        addView(titleLabel, LayoutParams(0, WRAP_CONTENT))
+        addView(titleLabel, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         if (!options.isNullOrEmpty())
             addView(subtitleLabel, LayoutParams(0, WRAP_CONTENT))
         addView(backButton, ViewGroup.LayoutParams(40.dp, 40.dp))
@@ -177,6 +221,8 @@ class InAppBrowserTopBarView(
         addView(iconView, LayoutParams(24.dp, 24.dp))
 
         setConstraints {
+            setHorizontalBias(titleLabel.id, 0f)
+            constrainedWidth(titleLabel.id, true)
             startToEnd(titleLabel, backButton, 8f)
             endToStart(titleLabel, if (tabBarController != null) minimizeButton else moreButton, 8f)
             if (options.isNullOrEmpty()) {
@@ -213,50 +259,71 @@ class InAppBrowserTopBarView(
         updateTheme()
     }
 
+    var overrideThemeIsDark: Boolean? = null
+        set(value) {
+            field = value
+            updateTheme()
+        }
+
     override fun updateTheme() {
-        if (minimized) {
+        val shouldRenderMinimized = isMinimizing || isMinimized
+        val shouldRenderAsDarkMode = if (shouldRenderMinimized) null else overrideThemeIsDark
+        if (isMinimizing || isMinimized) {
             setBackgroundColor(WColor.SearchFieldBackground.color)
             backDrawable.setColor(WColor.PrimaryText.color)
             backDrawable.setRotatedColor(WColor.PrimaryText.color)
         } else {
-            backDrawable.setColor(WColor.SecondaryText.color)
-            backDrawable.setRotatedColor(WColor.SecondaryText.color)
+            backDrawable.setColor(WColor.SecondaryText.colorForTheme(shouldRenderAsDarkMode))
+            backDrawable.setRotatedColor(WColor.SecondaryText.colorForTheme(shouldRenderAsDarkMode))
         }
+        titleLabel.animateTextColor(WColor.PrimaryText.colorForTheme(shouldRenderAsDarkMode))
         val moreDrawable =
             ContextCompat.getDrawable(
                 context,
                 R.drawable.ic_more
             )?.apply {
-                setTint(WColor.SecondaryText.color)
+                setTint(WColor.SecondaryText.colorForTheme(shouldRenderAsDarkMode))
             }
         moreButton.setImageDrawable(moreDrawable)
-        moreButton.addRippleEffect(WColor.BackgroundRipple.color, 20f.dp)
+        moreButton.background = moreButtonRipple
+        moreButtonRipple.backgroundColor = Color.TRANSPARENT
+        moreButtonRipple.rippleColor = WColor.BackgroundRipple.colorForTheme(shouldRenderAsDarkMode)
         val minimizeDrawable =
             ContextCompat.getDrawable(
                 context,
                 R.drawable.ic_arrow_up_24
             )?.apply {
-                setTint(WColor.SecondaryText.color)
+                setTint(WColor.SecondaryText.colorForTheme(shouldRenderAsDarkMode))
             }?.resize(context, 24.dp, 24.dp)
         minimizeButton.rotation = 180f
         minimizeButton.setImageDrawable(minimizeDrawable)
-        minimizeButton.addRippleEffect(WColor.BackgroundRipple.color, 20f.dp)
+        minimizeButton.background = minimizeButtonRipple
+        minimizeButtonRipple.backgroundColor = Color.TRANSPARENT
+        minimizeButtonRipple.rippleColor = WColor.BackgroundRipple.colorForTheme(shouldRenderAsDarkMode)
         if (!options.isNullOrEmpty()) {
-            subtitleLabel.text =
-                textWithArrow(options.find { it.identifier == selectedOption }?.title)
+            if (optionsOnTitle) {
+                titleLabel.text =
+                    textWithArrow(options.find { it.identifier == selectedOption }?.title, true)
+            } else {
+                subtitleLabel.text =
+                    textWithArrow(options.find { it.identifier == selectedOption }?.title, false)
+            }
         }
+        backButton.background = backButtonRipple
+        backButtonRipple.backgroundColor = Color.TRANSPARENT
+        backButtonRipple.rippleColor = WColor.SecondaryBackground.colorForTheme(shouldRenderAsDarkMode)
     }
 
     fun blendColors(color1: Int, color2: Int, ratio: Float): Int {
         return ColorUtils.blendARGB(color1, color2, ratio)
     }
 
-    private var minimized = false
-    private var isMinimizing = false
+    var isMinimized = false
+    var isMinimizing = false
     private fun minimize() {
         if (isMinimizing)
             return
-        if (minimized) {
+        if (isMinimized) {
             tabBarController?.maximize()
             return
         }
@@ -265,6 +332,7 @@ class InAppBrowserTopBarView(
         viewController.view.post {
             titleLabel.pivotY = titleLabel.height / 2f
             backDrawable.setRotation(1f, true)
+            titleLabel.animateTextColor(WColor.PrimaryText.color)
             tabBarController?.minimize(viewController.navigationController!!, onProgress = {
                 val heightDiff = (viewController.navigationController?.getSystemBars()?.top ?: 0)
                 val parent = parent as ViewGroup
@@ -293,7 +361,7 @@ class InAppBrowserTopBarView(
                 titleLabel.translationX = 36f.dp * it
                 iconView.alpha = it
                 if (it == 1f) {
-                    minimized = true
+                    isMinimized = true
                     isMinimizing = false
                 }
             }, onMaximizeProgress = {
@@ -313,6 +381,7 @@ class InAppBrowserTopBarView(
                 }
                 titleLabel.scaleX = 1 - 0.23f * (1 - it)
                 titleLabel.scaleY = titleLabel.scaleX
+                titleLabel.animateTextColor(WColor.PrimaryText.colorForTheme(overrideThemeIsDark))
                 minimizeButton.rotation = it * 180
                 titleLabel.setTextColor(
                     blendColors(
@@ -334,7 +403,7 @@ class InAppBrowserTopBarView(
                 titleLabel.translationX = 36f.dp * (1 - it)
                 iconView.alpha = 1 - it
                 if (it == 1f) {
-                    minimized = false
+                    isMinimized = false
                     isMinimizing = false
                     maximizeFinished()
                 }
@@ -345,7 +414,7 @@ class InAppBrowserTopBarView(
     fun backPressed() {
         if (isMinimizing)
             return
-        if (minimized) {
+        if (isMinimized) {
             tabBarController?.dismissMinimized()
             return
         }
@@ -372,6 +441,7 @@ class InAppBrowserTopBarView(
     }
 
     private fun morePressed() {
+        val activeUrl = viewController.webView.url ?: viewController.config.url
         WMenuPopup.present(
             moreButton,
             listOf(
@@ -386,7 +456,7 @@ class InAppBrowserTopBarView(
                     LocaleController.getString("Open in Browser")
                 ) {
                     val intent = Intent(Intent.ACTION_VIEW)
-                    intent.setData(viewController.config.url.toUri())
+                    intent.setData(activeUrl.toUri())
                     viewController.window?.startActivity(intent)
                 },
                 WMenuPopup.Item(
@@ -398,9 +468,10 @@ class InAppBrowserTopBarView(
                     val clip =
                         ClipData.newPlainText(
                             LocaleController.getString("CopyURL"),
-                            viewController.config.url
+                            activeUrl
                         )
                     clipboard.setPrimaryClip(clip)
+                    Haptics.play(context, HapticType.LIGHT_TAP)
                 },
                 WMenuPopup.Item(
                     null,
@@ -408,7 +479,7 @@ class InAppBrowserTopBarView(
                 ) {
                     val shareIntent = Intent(Intent.ACTION_SEND)
                     shareIntent.setType("text/plain")
-                    shareIntent.putExtra(Intent.EXTRA_TEXT, viewController.config.url)
+                    shareIntent.putExtra(Intent.EXTRA_TEXT, activeUrl)
                     viewController.window?.startActivity(
                         Intent.createChooser(
                             shareIntent,
@@ -417,7 +488,7 @@ class InAppBrowserTopBarView(
                     )
                 }),
             popupWidth = WRAP_CONTENT,
-            aboveView = true
+            positioning = WMenuPopup.Positioning.ALIGNED
         )
     }
 

@@ -15,12 +15,14 @@ import Tab from './Tab';
 
 import styles from './TabList.module.scss';
 
-export type TabWithProperties = {
-  id: number;
+export type TabWithProperties<T extends number = number> = {
+  id: T;
   icon?: string;
   title: string;
   className?: string;
   menuItems?: DropdownItem[];
+  menuClassName?: string;
+  menuPositionX?: 'left' | 'right';
   onMenuItemClick?: (value: string) => void;
 };
 
@@ -81,6 +83,8 @@ function TabList({
           isActive={i === activeTab}
           className={tab?.className}
           menuItems={tab?.menuItems}
+          menuClassName={tab?.menuClassName}
+          menuPositionX={tab?.menuPositionX}
           onMenuItemClick={tab?.onMenuItemClick}
           onActiveClick={onActiveTabClick}
           onClick={onSwitchTab}
@@ -100,6 +104,8 @@ function TabList({
             isActive={i === activeTab}
             className={buildClassName(tab?.className, i === activeTab && 'current-tab')}
             menuItems={tab?.menuItems}
+            menuClassName={tab?.menuClassName}
+            menuPositionX={tab?.menuPositionX}
             onActiveClick={onActiveTabClick}
             onMenuItemClick={tab?.onMenuItemClick}
             onClick={onSwitchTab}

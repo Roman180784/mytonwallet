@@ -20,9 +20,9 @@ import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.utils.VerticalImageSpan
 import org.mytonwallet.app_air.walletbasecontext.utils.formatStartEndAddress
-import org.mytonwallet.app_air.walletcore.WalletCore
-import org.mytonwallet.app_air.walletcore.models.MBlockchain
+import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.models.MSavedAddress
+import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.AddressStore
 
 @SuppressLint("ViewConstructor")
@@ -101,7 +101,7 @@ class WAutoCompleteCell(context: Context, val onRemove: () -> Unit) :
         this.isLast = isLast
         titleLabel.text = address.name
         val valueSpan = SpannableStringBuilder()
-        if (WalletCore.isMultichain) {
+        if (AccountStore.activeAccount?.isMultichain == true) {
             MBlockchain.valueOf(address.chain).symbolIcon?.let {
                 val drawable = ContextCompat.getDrawable(context, it)!!
                 drawable.mutate()
@@ -129,8 +129,8 @@ class WAutoCompleteCell(context: Context, val onRemove: () -> Unit) :
     override fun updateTheme() {
         addRippleEffect(
             WColor.SecondaryBackground.color,
-            if (isFirst) ViewConstants.BIG_RADIUS.dp else 0f,
-            if (isLast) ViewConstants.BIG_RADIUS.dp else 0f,
+            if (isFirst) ViewConstants.BLOCK_RADIUS.dp else 0f,
+            if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f,
         )
     }
 

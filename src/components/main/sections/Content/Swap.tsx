@@ -2,17 +2,16 @@ import type { Ref, RefObject } from 'react';
 import type { TeactNode } from '../../../../lib/teact/teact';
 import React, { memo, useMemo } from '../../../../lib/teact/teact';
 
-import type { ApiSwapActivity, ApiSwapAsset } from '../../../../api/types';
+import type { ApiSwapActivity, ApiSwapAsset, ApiTokenWithPrice } from '../../../../api/types';
 import type { Account, AppTheme } from '../../../../global/types';
 import type { Color as PendingIndicatorColor } from './ActivityStatusIcon';
 
-import { TONCOIN, WHOLE_PART_DELIMITER } from '../../../../config';
-import { getIsInternalSwap, resolveSwapAsset } from '../../../../global/helpers';
-import { getIsActivityPendingForUser } from '../../../../util/activities';
+import { UNKNOWN_TOKEN, WHOLE_PART_DELIMITER } from '../../../../config';
+import { resolveSwapAsset } from '../../../../global/helpers';
+import { getIsActivityPendingForUser, getShouldSkipSwapWaitingStatus } from '../../../../util/activities';
 import buildClassName from '../../../../util/buildClassName';
 import { formatTime } from '../../../../util/dateFormat';
 import { formatCurrencyExtended } from '../../../../util/formatNumber';
-import getPseudoRandomNumber from '../../../../util/getPseudoRandomNumber';
 import getSwapRate from '../../../../util/swap/getSwapRate';
 
 import useLang from '../../../../hooks/useLang';
@@ -26,10 +25,12 @@ import styles from './Activity.module.scss';
 
 type OwnProps = {
   ref?: Ref<HTMLElement>;
-  tokensBySlug: Record<string, ApiSwapAsset> | undefined;
+  tokensBySlug: Record<string, ApiTokenWithPrice> | undefined;
+  swapTokensBySlug: Record<string, ApiSwapAsset> | undefined;
   isLast?: boolean;
   activity: ApiSwapActivity;
   isActive?: boolean;
+  className?: string;
   appTheme: AppTheme;
   accountChains: Account['byChain'] | undefined;
   isSensitiveDataHidden?: boolean;
@@ -45,9 +46,11 @@ const ONCHAIN_ERROR_STATUSES = new Set(['expired', 'failed']);
 function Swap({
   ref,
   tokensBySlug,
+  swapTokensBySlug,
   activity,
   isLast,
   isActive,
+  className,
   appTheme,
   accountChains,
   isSensitiveDataHidden,
@@ -65,16 +68,28 @@ function Swap({
     cex,
   } = activity;
 
+  // TODO: Mark non-swap tokens as unknown in tx list or tx  preview
   const fromToken = useMemo(() => {
-    if (!from || !tokensBySlug) return undefined;
+    if (!from || !swapTokensBySlug || !tokensBySlug) return undefined;
 
-    return resolveSwapAsset(tokensBySlug, from);
-  }, [from, tokensBySlug]);
+    const prioritySwapToken = resolveSwapAsset(swapTokensBySlug, from);
+    if (!prioritySwapToken) {
+      return resolveSwapAsset(tokensBySlug, from);
+    }
+
+    return prioritySwapToken;
+  }, [from, swapTokensBySlug, tokensBySlug]);
+
   const toToken = useMemo(() => {
-    if (!to || !tokensBySlug) return undefined;
+    if (!to || !swapTokensBySlug || !tokensBySlug) return undefined;
 
-    return resolveSwapAsset(tokensBySlug, to);
-  }, [to, tokensBySlug]);
+    const prioritySwapToken = resolveSwapAsset(swapTokensBySlug, to);
+    if (!prioritySwapToken) {
+      return resolveSwapAsset(tokensBySlug, to);
+    }
+
+    return prioritySwapToken;
+  }, [to, swapTokensBySlug, tokensBySlug]);
 
   const fromAmount = Number(activity.fromAmount);
   const toAmount = Number(activity.toAmount);
@@ -83,16 +98,6 @@ function Swap({
   const isError = ONCHAIN_ERROR_STATUSES.has(status)
     || CHANGELLY_EXPIRED_STATUSES.has(cex?.status ?? '');
   const isHold = cex?.status === 'hold';
-  const amountCols = useMemo(() => getPseudoRandomNumber(5, 13, timestamp.toString()), [timestamp]);
-
-  const isFromToncoin = from === TONCOIN.slug;
-  const isInternalSwap = getIsInternalSwap({
-    from: fromToken,
-    to: toToken,
-    toAddress: cex?.payoutAddress,
-    accountChains,
-  });
-
   function renderIcon() {
     let statusClass: string | undefined = styles.colorSwap;
     let pendingIndicatorColor: PendingIndicatorColor = 'Green';
@@ -127,7 +132,9 @@ function Swap({
     return (
       <SensitiveData
         isActive={isSensitiveDataHidden}
-        cols={amountCols}
+        min={5}
+        max={13}
+        seed={timestamp.toString()}
         rows={2}
         cellSize={8}
         align="right"
@@ -136,7 +143,7 @@ function Swap({
         <span className={buildClassName(styles.swapSell, statusClass)}>
           {formatCurrencyExtended(
             Math.abs(fromAmount),
-            fromToken?.symbol || TONCOIN.symbol,
+            fromToken?.symbol || UNKNOWN_TOKEN.symbol,
             true,
           )}
         </span>
@@ -147,7 +154,7 @@ function Swap({
         <span className={buildClassName(styles.swapBuy, statusClass)}>
           {formatCurrencyExtended(
             Math.abs(toAmount),
-            toToken?.symbol || TONCOIN.symbol,
+            toToken?.symbol || UNKNOWN_TOKEN.symbol,
             true,
           )}
         </span>
@@ -174,9 +181,7 @@ function Swap({
       state = lang('On Hold');
     } else if (cexStatus === 'failed' || isError) {
       state = lang('Failed');
-    } else if (cexStatus === 'waiting' && !isFromToncoin && !isInternalSwap) {
-      // Skip the 'waiting' status for transactions from Toncoin to account or from Tron to Ton
-      // inside the multichain wallet for delayed status updates from Сhangelly
+    } else if (cexStatus === 'waiting' && !getShouldSkipSwapWaitingStatus(activity, accountChains ?? {})) {
       state = lang('Waiting for Payment');
     } else if (isPending) {
       state = lang('In Progress');
@@ -202,7 +207,12 @@ function Swap({
   }
 
   function renderCurrency() {
-    const rate = getSwapRate(activity.fromAmount, activity.toAmount, fromToken, toToken);
+    const rate = getSwapRate(
+      String(Math.abs(Number(activity.fromAmount))),
+      String(Math.abs(Number(activity.toAmount))),
+      fromToken,
+      toToken,
+    );
 
     if (!rate) return undefined;
 
@@ -227,6 +237,7 @@ function Swap({
         isLast && styles.itemLast,
         isActive && styles.active,
         onClick && styles.interactive,
+        className,
       )}
       onClick={onClick && (() => onClick(id))}
       isSimple

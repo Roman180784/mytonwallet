@@ -1,13 +1,14 @@
 package org.mytonwallet.app_air.uisettings.viewControllers.settings.cells
 
-import android.content.Context
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.view.Gravity
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import androidx.core.content.pm.PackageInfoCompat
+import org.mytonwallet.app_air.uicomponents.base.WWindow
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.helpers.DebugMenuHelpers
 import org.mytonwallet.app_air.uicomponents.helpers.MultiTapDetector
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
@@ -16,7 +17,15 @@ import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 
-class SettingsVersionCell(context: Context) : WCell(context), WThemedView {
+@SuppressLint("ViewConstructor")
+class SettingsVersionCell(
+    private val window: WWindow,
+    private val onDebugMenuRequested: () -> Unit
+) : WCell(window), WThemedView {
+
+    companion object {
+        const val HEIGHT = 40
+    }
 
     private val multiTapDetector = MultiTapDetector(
         requiredTaps = 5,
@@ -27,6 +36,8 @@ class SettingsVersionCell(context: Context) : WCell(context), WThemedView {
 
     private val lbl = WLabel(context).apply {
         setStyle(14f)
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(8.dp, 0, 8.dp, 0)
         text = try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             val versionName = packageInfo.versionName ?: ""
@@ -50,8 +61,8 @@ class SettingsVersionCell(context: Context) : WCell(context), WThemedView {
     init {
         super.setupViews()
 
-        layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, 40.dp)
-        addView(lbl, LayoutParams(WRAP_CONTENT, 40.dp))
+        layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, HEIGHT.dp)
+        addView(lbl, LayoutParams(WRAP_CONTENT, HEIGHT.dp))
         setConstraints {
             allEdges(lbl)
         }
@@ -64,6 +75,6 @@ class SettingsVersionCell(context: Context) : WCell(context), WThemedView {
     }
 
     private fun presentDebugMenu() {
-        DebugMenuHelpers.present(context, lbl)
+        onDebugMenuRequested()
     }
 }

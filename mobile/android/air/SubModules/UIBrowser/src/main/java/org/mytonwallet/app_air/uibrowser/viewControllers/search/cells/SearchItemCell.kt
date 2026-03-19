@@ -22,7 +22,7 @@ import org.mytonwallet.app_air.walletbasecontext.theme.color
 
 @SuppressLint("ViewConstructor")
 class SearchItemCell(context: Context, private val onTap: (keyword: String) -> Unit) :
-    WCell(context, LayoutParams(MATCH_PARENT, 56.dp)), WThemedView {
+    WCell(context, LayoutParams(MATCH_PARENT, 50.dp)), WThemedView {
 
     private val searchDrawable: Drawable? =
         AppCompatResources.getDrawable(
@@ -48,16 +48,10 @@ class SearchItemCell(context: Context, private val onTap: (keyword: String) -> U
         }
     }
 
-    private val separatorView: WBaseView by lazy {
-        val sw = WBaseView(context)
-        sw
-    }
-
     override fun setupViews() {
         super.setupViews()
         addView(searchImageView, LayoutParams(24.dp, 24.dp))
         addView(titleLabel, LayoutParams(0, WRAP_CONTENT))
-        addView(separatorView, LayoutParams(MATCH_PARENT, 1))
         setConstraints {
             toStart(searchImageView, 16f)
             toCenterY(searchImageView)
@@ -65,7 +59,6 @@ class SearchItemCell(context: Context, private val onTap: (keyword: String) -> U
             toStart(titleLabel, 56f)
             toEnd(titleLabel, 16f)
             toCenterY(titleLabel)
-            toBottom(separatorView)
         }
 
         setOnClickListener {
@@ -81,7 +74,6 @@ class SearchItemCell(context: Context, private val onTap: (keyword: String) -> U
         this.keyword = keyword
         this.isLastItem = isLastItem
         titleLabel.text = keyword
-        separatorView.isGone = isLastItem
         updateTheme()
     }
 
@@ -90,14 +82,13 @@ class SearchItemCell(context: Context, private val onTap: (keyword: String) -> U
         setBackgroundColor(
             WColor.Background.color,
             0f,
-            if (isLastItem) ViewConstants.STANDARD_ROUNDS.dp else 0f
+            if (isLastItem) ViewConstants.BLOCK_RADIUS.dp else 0f
         )
         addRippleEffect(
             WColor.BackgroundRipple.color,
             0f,
-            if (isLastItem) ViewConstants.STANDARD_ROUNDS.dp else 0f
+            if (isLastItem) ViewConstants.BLOCK_RADIUS.dp else 0f
         )
-        separatorView.setBackgroundColor(WColor.Separator.color)
     }
 
 }

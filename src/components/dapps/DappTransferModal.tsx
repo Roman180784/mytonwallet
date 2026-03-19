@@ -102,10 +102,14 @@ function DappTransferModal({
   });
 
   function renderPassword(isActive: boolean) {
+    const title = (transactions?.length ?? 0) > 1
+      ? '$classic_confirm_actions'
+      : 'Confirm Action';
+
     return (
       <>
         {!getDoesUsePinPad() && (
-          <ModalHeader title={lang('Confirm Action')} onClose={closeDappTransfer} />
+          <ModalHeader title={lang(title)} onClose={closeDappTransfer} />
         )}
         <PasswordForm
           isActive={isActive}
@@ -114,6 +118,7 @@ function DappTransferModal({
           withCloseButton={IS_CAPACITOR}
           submitLabel={lang('Confirm')}
           cancelLabel={lang('Back')}
+          noAutoConfirm
           onSubmit={handleTransferPasswordSubmit}
           onCancel={handleBackClick}
           onUpdate={clearDappTransferError}
@@ -153,7 +158,7 @@ function DappTransferModal({
       case TransferState.ConfirmHardware:
         return (
           <LedgerConfirmOperation
-            text={lang('Please confirm transaction on your Ledger')}
+            text={lang('Please confirm transfer on your Ledger')}
             error={error}
             onTryAgain={handleLedgerConnect}
             onClose={closeDappTransfer}
@@ -176,8 +181,6 @@ function DappTransferModal({
       isOpen={isOpen && !isMediaViewerOpen}
       noBackdropClose
       dialogClassName={buildClassName(styles.modalDialog, needsExtraHeight && styles.modalDialogExtraHeight)}
-      nativeBottomSheetKey="dapp-transfer"
-      forceFullNative={needsExtraHeight}
       onClose={closeDappTransfer}
       onCloseAnimationEnd={handleResetTransfer}
     >

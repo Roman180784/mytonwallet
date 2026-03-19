@@ -23,6 +23,10 @@ enum class WColor {
     GroupedBackground,
     BadgeBackground,
     AttributesBackground,
+    PopupSeparator,
+    PopupWindow,
+    PopupAmbientShadow,
+    PopupSpotShadow,
     Thumb,
     DIVIDER,
     Error,
@@ -37,7 +41,8 @@ enum class WColor {
     SearchFieldBackground,
     Transparent,
     White,
-    Black;
+    Black,
+    Icon;
 
     companion object {
         @Deprecated("use WColor.BackgroundRipple")
@@ -51,6 +56,10 @@ enum class WColor {
 }
 
 val WColor.color: Int get() = ThemeManager.getColor(this)
+fun WColor.colorForTheme(isDark: Boolean?): Int {
+    return ThemeManager.getColor(this, isDark ?: ThemeManager.isDark)
+}
+
 val WColor.colorStateList: ColorStateList
     get() {
         return ColorStateList.valueOf(this.color)
@@ -79,58 +88,12 @@ object ThemeManager : ITheme {
             return activeTheme == THEME_DARK
         }
 
-    enum class UIMode(val value: String) {
-        COMMON("common"),
-        BIG_RADIUS("bigRadius"),
-        COMPOUND("compound");
-
-        val hasRoundedCorners: Boolean
-            get() {
-                return this != COMMON
-            }
-
-        companion object {
-            fun fromValue(value: String): UIMode? {
-                return entries.find { it.value == value }
-            }
-        }
-    }
-
-    var uiMode = UIMode.COMMON
-        set(value) {
-            field = value
-            when (value) {
-                UIMode.BIG_RADIUS -> {
-                    ViewConstants.STANDARD_ROUNDS = 24f
-                    ViewConstants.BAR_ROUNDS = 24f
-                    ViewConstants.BIG_RADIUS = 24f
-                    ViewConstants.TOP_RADIUS = 24f
-                    ViewConstants.GAP = 16
-                }
-
-                UIMode.COMPOUND -> {
-                    ViewConstants.STANDARD_ROUNDS = 24f
-                    ViewConstants.BAR_ROUNDS = 0f
-                    ViewConstants.BIG_RADIUS = 24f
-                    ViewConstants.TOP_RADIUS = 0f
-                    ViewConstants.GAP = 16
-                }
-
-                UIMode.COMMON -> {
-                    ViewConstants.STANDARD_ROUNDS = 25f
-                    ViewConstants.BAR_ROUNDS = 25f
-                    ViewConstants.BIG_RADIUS = 0f
-                    ViewConstants.TOP_RADIUS = 0f
-                    ViewConstants.GAP = 12
-                }
-            }
-        }
-
     var isInitialized = false
     fun init(
         theme: String,
-        uiMode: UIMode,
+        roundedToolbarsActive: Boolean = true,
         sideGuttersActive: Boolean,
+        roundedCornersActive: Boolean = true,
     ) {
         isInitialized = true
         activeTheme = theme
@@ -145,7 +108,8 @@ object ThemeManager : ITheme {
         colors[WColor.BackgroundRipple.ordinal] = getColor(WColor.PrimaryText) and 0x10FFFFFF
         colors[WColor.TintRipple.ordinal] = getColor(WColor.Tint) and 0x18FFFFFF
 
-        this.uiMode = uiMode
+        ViewConstants.BLOCK_RADIUS = if (roundedCornersActive) 24f else 0f
+        ViewConstants.TOOLBAR_RADIUS = if (roundedToolbarsActive) 24f else 0f
         ViewConstants.HORIZONTAL_PADDINGS = if (sideGuttersActive) 10 else 0
     }
 
@@ -157,5 +121,13 @@ object ThemeManager : ITheme {
         colors[WColor.TintRipple.ordinal] = getColor(WColor.Tint) and 0x18FFFFFF
     }
 
+    fun setDefaultAccentColor() {
+        colors[WColor.Tint.ordinal] = if (isDark) DEFAULT_TINT_DARK else DEFAULT_TINT_LIGHT
+        colors[WColor.TextOnTint.ordinal] = Color.WHITE
+        colors[WColor.TintRipple.ordinal] = getColor(WColor.Tint) and 0x18FFFFFF
+    }
+
     override fun getColor(color: WColor): Int = this.colors[color.ordinal]
+    override fun getColor(color: WColor, isDark: Boolean): Int =
+        if (isDark) THEME_DARK_PRESET[color.ordinal] else THEME_LIGHT_PRESET[color.ordinal]
 }

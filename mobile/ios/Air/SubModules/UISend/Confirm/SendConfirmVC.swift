@@ -16,9 +16,6 @@ class SendConfirmVC: WViewController, WalletCoreData.EventsObserver {
     public init(model: SendModel) {
         self.model = model
         super.init(nibName: nil, bundle: nil)
-        model.showToast = { [weak self] animationName, message in
-            self?.showToast(animationName: animationName, message: message)
-        }
         WalletCoreData.add(eventObserver: self)
     }
     
@@ -26,7 +23,8 @@ class SendConfirmVC: WViewController, WalletCoreData.EventsObserver {
         switch event {
         case .newLocalActivity(let update):
             if let activity = update.activities.first {
-                AppActions.pushTransactionSuccess(activity: activity)
+                Haptics.play(.success)
+                AppActions.showActivityDetails(accountId: model.account.id, activity: activity, context: model.mode.isNftRelated ? .sendNftConfirmation : .sendConfirmation)
             }
         default:
             break
@@ -46,85 +44,62 @@ class SendConfirmVC: WViewController, WalletCoreData.EventsObserver {
     private var continueButton = WButton(style: .primary)
     private var continueBottomConstraint: NSLayoutConstraint!
     
-    private func setupViews() {
+    private func setupViews() {        
+        var continueTitle: String
+        var goBackTitle = lang("Edit")
+        var canGoBack = true
+        var title: String
         
-        let title = switch model.nftSendMode {
-        case .burn:
-            lang("Burn")
-        default:
-            lang("Is it all ok?")
-        }
-        var backButtonAction: (() -> ())? = nil 
-        if model.nftSendMode != .burn {
-            backButtonAction = { [weak self] in
-                self?.navigationController?.popViewController(animated: true)
-            }
-        }
-        addNavigationBar(
-            centerYOffset: 1,
-            title: title,
-            closeIcon: true,
-            addBackButton: backButtonAction)
-        navigationBarProgressiveBlurDelta = 12
-        
-        let hostingController = UIHostingController(
-            rootView: SendConfirmView(
-                model: model,
-                navigationBarInset: navigationBarHeight,
-                onScrollPositionChange: { [weak self] y in self?.updateNavigationBarProgressiveBlur(y) }
-            )
-        )
-        hostingController.view.backgroundColor = .clear
-        addChild(hostingController)
-        view.addSubview(hostingController.view)
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        hostingController.didMove(toParent: self)
-
-        continueButton.translatesAutoresizingMaskIntoConstraints = false
-        let continueTitle = switch model.nftSendMode {
-        case .send:
-            lang("Send")
-        case .burn:
-            lang("Burn")
-        case nil:
-            lang("Confirm")
-        }
-        continueButton.setTitle(continueTitle, for: .normal)
-        if model.nftSendMode == .burn {
+        switch model.mode {
+        case .sendNft:
+            title = lang("Is it all ok?")
+            continueTitle = lang("Send")
+        case .burnNft:
+            continueTitle = lang("Burn")
             continueButton.backgroundColor = WTheme.error
+            goBackTitle = lang("Cancel")
+            title = lang("Burn")
+        case .regular:
+            title = lang("Is it all ok?")
+            continueTitle = lang("Confirm")
+        case .sellToMoonpay:
+            title = lang("Sell")
+            continueTitle = lang("Sell %symbol%", arg1: model.token.symbol)
+            canGoBack = false
         }
+
+        navigationItem.title = title
+        addCloseNavigationItemIfNeeded()
+        
+        _ = addHostingController(SendConfirmView(model: model), constraints: .fill)
+                
+        continueButton.translatesAutoresizingMaskIntoConstraints = false
+        continueButton.setTitle(continueTitle, for: .normal)
         continueButton.addTarget(self, action: #selector(continuePressed), for: .touchUpInside)
         view.addSubview(continueButton)
-        continueBottomConstraint = continueButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                                                                          constant: -16)
+        continueBottomConstraint = continueButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16)
         
-        goBackButton.translatesAutoresizingMaskIntoConstraints = false
-        let goBackTitle = switch model.nftSendMode {
-        case .burn:
-            lang("Cancel")
-        default:
-            lang("Edit")
+        if canGoBack {
+            goBackButton.translatesAutoresizingMaskIntoConstraints = false
+            goBackButton.setTitle(goBackTitle, for: .normal)
+            goBackButton.addTarget(self, action: #selector(goBackPressed), for: .touchUpInside)
+            view.addSubview(goBackButton)
+            
+            NSLayoutConstraint.activate([
+                continueBottomConstraint,
+                goBackButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+                continueButton.leadingAnchor.constraint(equalTo: goBackButton.trailingAnchor, constant: 16),
+                continueButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+                goBackButton.bottomAnchor.constraint(equalTo: continueButton.bottomAnchor),
+                goBackButton.widthAnchor.constraint(equalTo: continueButton.widthAnchor),
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                continueBottomConstraint,
+                continueButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+                continueButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            ])
         }
-        goBackButton.setTitle(goBackTitle, for: .normal)
-        goBackButton.addTarget(self, action: #selector(goBackPressed), for: .touchUpInside)
-        view.addSubview(goBackButton)
-        
-        NSLayoutConstraint.activate([
-            continueBottomConstraint,
-            goBackButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            continueButton.leadingAnchor.constraint(equalTo: goBackButton.trailingAnchor, constant: 16),
-            continueButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            goBackButton.bottomAnchor.constraint(equalTo: continueButton.bottomAnchor),
-            goBackButton.widthAnchor.constraint(equalTo: continueButton.widthAnchor),
-        ])
-        
-        bringNavigationBarToFront()
         
         updateTheme()
     }
@@ -134,8 +109,7 @@ class SendConfirmVC: WViewController, WalletCoreData.EventsObserver {
     }
     
     @objc func continuePressed() {
-        view.endEditing(true)
-        guard let account = AccountStore.account else { return }
+        let account = model.account
         if account.isHardware {
             Task {
                 do {
@@ -147,60 +121,22 @@ class SendConfirmVC: WViewController, WalletCoreData.EventsObserver {
         } else {
             sendMnemonic()
         }
+        Haptics.prepare(.success)
     }
     
     func sendMnemonic() {
-        guard let token = model.token, let account = AccountStore.account else {
-            return
-        }
-        let accountId = account.id
         var transferSuccessful = false
         var transferError: (any Error)? = nil
-        var transferOptions: ApiSubmitTransferOptions? = nil
         
-        let onAuthTask: (_ passcode: String, _ onTaskDone: @escaping () -> Void) -> Void = {
-            [weak self] passcode,
-            onTaskDone in
-            guard let self else {
-                return
-            }
-            // Send coins!
-            Task { [model] in
-                if model.nftSendMode == nil {
-                    do {
-                        transferOptions = try await model.makeSubmitTransferOptions(passcode: passcode, addressOrDomain: model.resolvedAddress!, amount: model.amount, comment: model.comment)!
-                        let result = try await Api.submitTransfer(chain: token.chainValue, options: transferOptions!)
-                        if let error = result.error {
-                            transferError = BridgeCallError.customMessage(error, nil)
-                            transferSuccessful = false
-                        } else {
-                            transferSuccessful = true
-                        }
-                        
-                    } catch {
-                        transferSuccessful = false
-                        transferError = error
-                    }
-
-                } else {
-                    do {
-                        let fee = model.toAddressDraft?.realFee ?? BigInt(0)
-                        let result = try await Api.submitNftTransfers(
-                            accountId: accountId,
-                            password: passcode,
-                            nfts: model.nfts ?? [],
-                            toAddress: model.addressOrDomain,
-                            comment: model.comment.nilIfEmpty,
-                            totalRealFee: fee
-                        )
-                        if let error = result.error {
-                            throw BridgeCallError(message: error, payload: nil)
-                        }
-                        transferSuccessful = true
-                    } catch {
-                        transferSuccessful = false
-                        transferError = error
-                    }
+        let onAuthTask: (_ passcode: String, _ onTaskDone: @escaping () -> Void) -> Void = { [weak self] password, onTaskDone in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.model.submit(password: password)
+                    transferSuccessful = true
+                } catch {
+                    transferSuccessful = false
+                    transferError = error
                 }
                 onTaskDone()
             }
@@ -219,7 +155,7 @@ class SendConfirmVC: WViewController, WalletCoreData.EventsObserver {
             }
         }
         
-        let headerVC = UIHostingController(rootView: SendingHeaderView().environmentObject(model))
+        let headerVC = UIHostingController(rootView: SendingHeaderView(model: model))
         headerVC.view.backgroundColor = .clear
         
         UnlockVC.pushAuth(
@@ -232,80 +168,29 @@ class SendConfirmVC: WViewController, WalletCoreData.EventsObserver {
     }
     
     func sendLedger() async throws {
-        if model.isSendNft {
-            try await sendLedgerNft()
-        } else {
-            try await sendLedgerNormal()
-        }
-    }
-    
-    func sendLedgerNormal() async throws {
-        guard
-            let account = AccountStore.account,
-            let fromAddress = account.tonAddress?.nilIfEmpty
-        else { return }
+        let account = model.account
+        guard let fromAddress = account.getAddress(chain: model.token.chain) else { return }
         
-        let transferOptions = try await model.makeSubmitTransferOptions(
-            passcode: nil,
-            addressOrDomain: model.resolvedAddress!,
-            amount: model.amount,
-            comment: model.comment
-        ).orThrow()
+        let signData = try await model.makeLedgerPayload()
+        
         let signModel = await LedgerSignModel(
-            accountId: account.id,
+            accountId: model.account.id,
             fromAddress: fromAddress,
-            signData: .signTransfer(
-                transferOptions: transferOptions
-            )
+            signData: signData
         )
         let vc = LedgerSignVC(
             model: signModel,
             title: lang("Confirm Sending"),
-            headerView: SendingHeaderView().environmentObject(self.model)
+            headerView: SendingHeaderView(model: self.model)
         )
-        vc.onDone = { [model] vc in
-            let sentVC = SentVC(model: model, transferOptions: transferOptions)
-            vc.navigationController?.pushViewController(sentVC, animated: true)
-        }
-        navigationController?.pushViewController(vc, animated: true)
-    }
-    
-    func sendLedgerNft() async throws {
-        guard
-            let account = AccountStore.account,
-            let fromAddress = account.tonAddress?.nilIfEmpty,
-            let nft = model.nfts?.first
-        else { return }
-        
-        if model.nfts?.count != 1 {
-            showAlert(title: "Error", text: "Sending more than one NFT isn't supported by Ledger", button: "OK")
-        }
-        
-        let signModel = await LedgerSignModel(
-            accountId: account.id,
-            fromAddress: fromAddress,
-            signData: .signNftTransfer(
-                accountId: account.id,
-                nft: nft,
-                toAddress: model.addressOrDomain,
-                comment: model.comment.nilIfEmpty,
-                realFee: model.toAddressDraft?.realFee
-            )
-        )
-        let vc = LedgerSignVC(
-            model: signModel,
-            title: lang("Confirm Sending"),
-            headerView: SendingHeaderView().environmentObject(self.model)
-        )
-        vc.onDone = { [model] vc in
-            let sentVC = SentVC(model: model, transferOptions: nil)
-            vc.navigationController?.pushViewController(sentVC, animated: true)
+        vc.onDone = { _ in
+            // handled by observer
         }
         navigationController?.pushViewController(vc, animated: true)
     }
     
     @objc func goBackPressed() {
-        if model.nftSendMode == .burn {
+        if model.mode == .burnNft {
             navigationController?.presentingViewController?.dismiss(animated: true)
         } else {
             navigationController?.popViewController(animated: true)

@@ -1,6 +1,7 @@
 import { Cell, internal, SendMode } from '@ton/core';
 
 import type { DieselStatus } from '../../../global/types';
+import type { DappProtocolType } from '../../dappProtocols';
 import type {
   ApiAccountWithChain,
   ApiAnyDisplayError,
@@ -15,6 +16,7 @@ import type {
   ApiSubmitGaslessTransferOptions,
   ApiSubmitGaslessTransferResult,
   ApiToken,
+  ApiWalletInfo,
 } from '../../types';
 import type {
   AnyTonTransferPayload,
@@ -32,6 +34,7 @@ import { DEFAULT_FEE, DIESEL_ADDRESS, STON_PTON_ADDRESS } from '../../../config'
 import { parseAccountId } from '../../../util/account';
 import { bigintMultiplyToNumber } from '../../../util/bigint';
 import { fromDecimal, toDecimal } from '../../../util/decimals';
+import { getToncoinAmountForTransfer } from '../../../util/fee/getTonOperationFees';
 import { getDieselTokenAmount, isDieselAvailable } from '../../../util/fee/transferFee';
 import { omit, pick, split } from '../../../util/iteratees';
 import { logDebug, logDebugError } from '../../../util/logs';
@@ -68,7 +71,6 @@ import {
   buildTokenTransfer,
   calculateTokenBalanceWithMintless,
   getTokenBalanceWithMintless,
-  getToncoinAmountForTransfer,
 } from './tokens';
 import { getContractInfo, getTonWallet, getWalletBalance, getWalletInfo, getWalletSeqno } from './wallet';
 
@@ -81,8 +83,73 @@ type CustomTransactionOptions<T> = Omit<T, 'payload'> & {
 const WAIT_TRANSFER_TIMEOUT = MINUTE;
 const WAIT_PAUSE = SEC;
 
+const WALLET_INFO_CACHE_TTL = 5 * SEC;
+
 const MAX_BALANCE_WITH_CHECK_DIESEL = 100000000n; // 0.1 TON
 const PENDING_DIESEL_TIMEOUT_SEC = 15 * 60; // 15 min
+
+type WalletInfoCacheEntry = {
+  info: ApiWalletInfo;
+  fetchedAt: number;
+};
+
+const walletInfoCache = new Map<string, WalletInfoCacheEntry>();
+const inFlightTransfers = new Set<string>();
+
+function getWalletInfoCacheKey(network: ApiNetwork, address: string) {
+  return `${network}:${address}`;
+}
+
+/** Blocks caching of wallet info during an active send to avoid using stale seqno */
+function markTransferInFlight(network: ApiNetwork, address: string) {
+  inFlightTransfers.add(getWalletInfoCacheKey(network, address));
+}
+
+function clearTransferInFlight(network: ApiNetwork, address: string) {
+  inFlightTransfers.delete(getWalletInfoCacheKey(network, address));
+}
+
+function isTransferInFlight(network: ApiNetwork, address: string) {
+  return inFlightTransfers.has(getWalletInfoCacheKey(network, address));
+}
+
+function readCachedWalletInfo(network: ApiNetwork, address: string) {
+  const cacheKey = getWalletInfoCacheKey(network, address);
+  const entry = walletInfoCache.get(cacheKey);
+  if (!entry) return undefined;
+
+  if (Date.now() - entry.fetchedAt > WALLET_INFO_CACHE_TTL) {
+    walletInfoCache.delete(cacheKey);
+    return undefined;
+  }
+
+  return entry.info;
+}
+
+function rememberWalletInfo(network: ApiNetwork, address: string, info: ApiWalletInfo) {
+  if (isTransferInFlight(network, address)) {
+    return;
+  }
+
+  walletInfoCache.set(getWalletInfoCacheKey(network, address), {
+    info,
+    fetchedAt: Date.now(),
+  });
+}
+
+function consumeCachedWalletInfo(network: ApiNetwork, address: string, allowInFlight = false) {
+  if (!allowInFlight && isTransferInFlight(network, address)) {
+    return undefined;
+  }
+
+  const cacheKey = getWalletInfoCacheKey(network, address);
+  const info = readCachedWalletInfo(network, address);
+  if (info) {
+    walletInfoCache.delete(cacheKey);
+  }
+
+  return info;
+}
 
 export async function checkTransactionDraft(
   options: CustomTransactionOptions<ApiCheckTransactionDraftOptions>,
@@ -146,7 +213,9 @@ export async function checkTransactionDraft(
     const wallet = getTonWallet(account.byChain.ton);
     const { address, isInitialized: isWalletInitialized } = account.byChain.ton;
     const signer = getSigner(accountId, account, undefined, true);
-    const { seqno, balance: toncoinBalance } = await getWalletInfo(network, wallet);
+    const walletInfo = await getWalletInfo(network, wallet);
+    rememberWalletInfo(network, address, walletInfo);
+    const { seqno, balance: toncoinBalance } = walletInfo;
 
     let toncoinAmount: bigint;
     let balance: bigint;
@@ -278,27 +347,19 @@ function estimateDiesel(
 }
 
 export async function checkToAddress(network: ApiNetwork, toAddress: string) {
-  const result: {
-    addressName?: string;
-    isScam?: boolean;
-    resolvedAddress?: string;
-    isToAddressNew?: boolean;
-    isBounceable?: boolean;
-    isMemoRequired?: boolean;
-  } = {};
-
   const resolved = await resolveAddress(network, toAddress);
-  if (resolved === 'dnsNotResolved') return { ...result, error: ApiTransactionDraftError.DomainNotResolved };
-  if (resolved === 'invalidAddress') return { ...result, error: ApiTransactionDraftError.InvalidToAddress };
-  result.addressName = resolved.name;
-  result.resolvedAddress = resolved.address;
-  result.isMemoRequired = resolved.isMemoRequired;
-  result.isScam = resolved.isScam;
+  if ('error' in resolved) return resolved;
   toAddress = resolved.address;
 
   const { isUserFriendly, isTestOnly, isBounceable } = parseAddress(toAddress);
 
-  result.isBounceable = isBounceable;
+  const result = {
+    addressName: resolved.name,
+    resolvedAddress: resolved.address,
+    isMemoRequired: resolved.isMemoRequired,
+    isScam: resolved.isScam,
+    isBounceable,
+  };
 
   const regex = /[+=/]/;
   const isUrlSafe = !regex.test(toAddress);
@@ -324,6 +385,7 @@ export async function submitGasfullTransfer(
     tokenAddress,
     payload: rawPayload,
     forwardAmount,
+    fee,
     noFeeCheck,
   } = options;
   let { toAddress } = options;
@@ -332,7 +394,7 @@ export async function submitGasfullTransfer(
 
   try {
     const account = await fetchStoredChainAccount(accountId, 'ton');
-    const { address: fromAddress, isInitialized } = account.byChain.ton;
+    const { address: fromAddress } = account.byChain.ton;
     const wallet = getTonWallet(account.byChain.ton);
     const signer = getSigner(accountId, account, password);
 
@@ -365,52 +427,89 @@ export async function submitGasfullTransfer(
     }
 
     return await withoutTransferConcurrency(network, fromAddress, async (finalizeInBackground) => {
-      const { seqno, balance: toncoinBalance } = await getWalletInfo(network, wallet);
-      const isFullTonTransfer = !tokenAddress && toncoinBalance === amount;
+      markTransferInFlight(network, fromAddress);
+      let clearInBackground = false;
 
-      const signingResult = await signTransaction({
-        account,
-        messages: [{
-          toAddress,
-          amount: toncoinAmount,
-          payload,
-          stateInit,
-          hints: {
-            tokenAddress,
+      try {
+        const cachedWalletInfo = consumeCachedWalletInfo(network, fromAddress, true);
+        const walletInfo = cachedWalletInfo ?? await getWalletInfo(network, wallet);
+
+        const { seqno, balance: toncoinBalance, isInitialized } = walletInfo;
+        const isFullTonTransfer = !tokenAddress && toncoinBalance === amount;
+
+        const signingResult = await signTransaction({
+          account,
+          messages: [{
+            toAddress,
+            amount: toncoinAmount,
+            payload,
+            stateInit,
+            hints: {
+              tokenAddress,
+            },
+          }],
+          seqno,
+          signer,
+          doPayFeeFromAmount: isFullTonTransfer,
+        });
+        if ('error' in signingResult) return signingResult;
+        const { transaction } = signingResult;
+
+        if (!noFeeCheck) {
+          if (fee !== undefined) {
+            const isEnoughBalance = tokenAddress
+              ? toncoinBalance >= fee
+              : isFullTonTransfer
+                ? toncoinBalance > fee
+                : toncoinBalance >= toncoinAmount + fee;
+
+            if (!isEnoughBalance) {
+              return { error: ApiTransactionError.InsufficientBalance };
+            }
+          } else {
+            const { networkFee } = await emulateTransactionWithFallback(network, wallet, transaction, isInitialized);
+
+            const isEnoughBalance = isFullTonTransfer
+              ? toncoinBalance > networkFee
+              : toncoinBalance >= toncoinAmount + networkFee;
+
+            if (!isEnoughBalance) {
+              return { error: ApiTransactionError.InsufficientBalance };
+            }
+          }
+        }
+
+        const client = getTonClient(network);
+        const { msgHash, boc, msgHashNormalized } = await sendExternal(
+          client,
+          wallet,
+          transaction,
+          undefined,
+          isInitialized,
+        );
+
+        finalizeInBackground(async () => {
+          try {
+            await retrySendBoc(network, fromAddress, boc, seqno);
+          } finally {
+            clearTransferInFlight(network, fromAddress);
+          }
+        });
+        clearInBackground = true;
+
+        return {
+          txId: msgHashNormalized,
+          msgHashForCexSwap: msgHash,
+          localActivityParams: {
+            externalMsgHashNorm: msgHashNormalized,
+            encryptedComment,
           },
-        }],
-        seqno,
-        signer,
-        doPayFeeFromAmount: isFullTonTransfer,
-      });
-      if ('error' in signingResult) return signingResult;
-      const { transaction } = signingResult;
-
-      if (!noFeeCheck) {
-        const { networkFee } = await emulateTransactionWithFallback(network, wallet, transaction, isInitialized);
-
-        const isEnoughBalance = isFullTonTransfer
-          ? toncoinBalance > networkFee
-          : toncoinBalance >= toncoinAmount + networkFee;
-
-        if (!isEnoughBalance) {
-          return { error: ApiTransactionError.InsufficientBalance };
+        };
+      } finally {
+        if (!clearInBackground) {
+          clearTransferInFlight(network, fromAddress);
         }
       }
-
-      const client = getTonClient(network);
-      const { msgHash, boc, msgHashNormalized } = await sendExternal(client, wallet, transaction);
-
-      finalizeInBackground(() => retrySendBoc(network, fromAddress, boc, seqno));
-
-      return {
-        txId: msgHashNormalized,
-        msgHashForCexSwap: msgHash,
-        localActivityParams: {
-          externalMsgHashNorm: msgHashNormalized,
-          encryptedComment,
-        },
-      };
     });
   } catch (err: any) {
     logDebugError('submitTransfer', err);
@@ -602,7 +701,9 @@ export async function checkMultiTransactionDraft(
     );
 
     const wallet = getTonWallet(account.byChain.ton);
-    const { seqno, balance } = await getWalletInfo(network, wallet);
+    const walletInfo = await getWalletInfo(network, wallet);
+    rememberWalletInfo(network, account.byChain.ton.address, walletInfo);
+    const { seqno, balance } = walletInfo;
 
     const signer = getSigner(accountId, account, undefined, true);
     const signingResult = await signTransaction({ account, messages, seqno, signer });
@@ -613,7 +714,7 @@ export async function checkMultiTransactionDraft(
         network,
         wallet,
         signingResult.transaction,
-        account.byChain.ton.isInitialized,
+        walletInfo.isInitialized,
       ),
     );
     const result = { emulation, parsedPayloads };
@@ -737,14 +838,17 @@ interface SubmitMultiTransferOptions {
   noFeeCheck?: boolean;
 }
 
-// todo: Support submitting multiple transactions (not only multiple messages). The signing already supports that. It will allow to: 1) send multiple NFTs with a single API call, 2) renew multiple domains in a single function call, 3) simplify the implementation of swapping with Ledger
+// todo: Support submitting multiple transactions (not only multiple messages). The signing already supports that. It will allow to:
+//  1) send multiple NFTs with a single API call,
+//  2) renew multiple domains in a single function call,
+//  3) simplify the implementation of swapping with Ledger
 export async function submitMultiTransfer({
   accountId, password, messages, expireAt, isGasless, noFeeCheck,
 }: SubmitMultiTransferOptions): Promise<ApiSubmitMultiTransferResult> {
   const { network } = parseAccountId(accountId);
 
   const account = await fetchStoredChainAccount(accountId, 'ton');
-  const { address: fromAddress, isInitialized, version } = account.byChain.ton;
+  const { address: fromAddress, version } = account.byChain.ton;
 
   try {
     const wallet = getTonWallet(account.byChain.ton);
@@ -755,60 +859,88 @@ export async function submitMultiTransfer({
     });
 
     return await withoutTransferConcurrency(network, fromAddress, async (finalizeInBackground) => {
-      const { seqno, balance } = await getWalletInfo(network, wallet);
+      markTransferInFlight(network, fromAddress);
+      let clearInBackground = false;
 
-      const gaslessType = isGasless ? version === 'W5' ? 'w5' : 'diesel' : undefined;
-      const withW5Gasless = gaslessType === 'w5';
+      try {
+        const cachedWalletInfo = consumeCachedWalletInfo(network, fromAddress, true);
+        const walletInfo = cachedWalletInfo ?? await getWalletInfo(network, wallet);
 
-      const signer = getSigner(accountId, account, password);
-      const signingResult = await signTransaction({
-        account,
-        messages,
-        expireAt: withW5Gasless
-          ? Math.round(Date.now() / 1000) + PENDING_DIESEL_TIMEOUT_SEC
-          : expireAt,
-        seqno,
-        signer,
-        shouldBeInternal: withW5Gasless,
-      });
-      if ('error' in signingResult) return signingResult;
-      const { transaction } = signingResult;
+        const { seqno, balance, isInitialized: walletIsInitialized } = walletInfo;
 
-      if (!noFeeCheck && !isGasless) {
-        const { networkFee } = await emulateTransactionWithFallback(network, wallet, transaction, isInitialized);
-        if (balance < totalAmount + networkFee) {
-          return { error: ApiTransactionError.InsufficientBalance };
+        const gaslessType = isGasless ? version === 'W5' ? 'w5' : 'diesel' : undefined;
+        const withW5Gasless = gaslessType === 'w5';
+
+        const signer = getSigner(accountId, account, password);
+        const signingResult = await signTransaction({
+          account,
+          messages,
+          expireAt: withW5Gasless
+            ? Math.round(Date.now() / 1000) + PENDING_DIESEL_TIMEOUT_SEC
+            : expireAt,
+          seqno,
+          signer,
+          shouldBeInternal: withW5Gasless,
+        });
+        if ('error' in signingResult) return signingResult;
+        const { transaction } = signingResult;
+
+        if (!noFeeCheck && !isGasless) {
+          const { networkFee } = await emulateTransactionWithFallback(
+            network,
+            wallet,
+            transaction,
+            walletIsInitialized,
+          );
+          if (balance < totalAmount + networkFee) {
+            return { error: ApiTransactionError.InsufficientBalance };
+          }
+        }
+
+        const client = getTonClient(network);
+        const { msgHash, boc, paymentLink, msgHashNormalized } = await sendExternal(
+          client,
+          wallet,
+          transaction,
+          gaslessType,
+          walletIsInitialized,
+        );
+
+        if (!isGasless) {
+          finalizeInBackground(async () => {
+            try {
+              await retrySendBoc(network, fromAddress, boc, seqno);
+            } finally {
+              clearTransferInFlight(network, fromAddress);
+            }
+          });
+          clearInBackground = true;
+        } else {
+          // TODO: Wait for gasless transfer
+        }
+
+        const clearedMessages = messages.map((message) => {
+          if (typeof message.payload !== 'string' && typeof message.payload !== 'undefined') {
+            return omit(message, ['payload']);
+          }
+          return message;
+        });
+
+        return {
+          seqno,
+          amount: totalAmount.toString(),
+          messages: clearedMessages,
+          boc,
+          msgHash,
+          msgHashNormalized,
+          paymentLink,
+          withW5Gasless,
+        };
+      } finally {
+        if (!clearInBackground) {
+          clearTransferInFlight(network, fromAddress);
         }
       }
-
-      const client = getTonClient(network);
-      const { msgHash, boc, paymentLink, msgHashNormalized } = await sendExternal(
-        client, wallet, transaction, gaslessType,
-      );
-
-      if (!isGasless) {
-        finalizeInBackground(() => retrySendBoc(network, fromAddress, boc, seqno));
-      } else {
-        // TODO: Wait for gasless transfer
-      }
-
-      const clearedMessages = messages.map((message) => {
-        if (typeof message.payload !== 'string' && typeof message.payload !== 'undefined') {
-          return omit(message, ['payload']);
-        }
-        return message;
-      });
-
-      return {
-        seqno,
-        amount: totalAmount.toString(),
-        messages: clearedMessages,
-        boc,
-        msgHash,
-        msgHashNormalized,
-        paymentLink,
-        withW5Gasless,
-      };
     });
   } catch (err) {
     logDebugError('submitMultiTransfer', err);
@@ -824,7 +956,7 @@ export async function signTransfers(
   /** Used for specific transactions on vesting.ton.org */
   ledgerVestingAddress?: string,
   isTonConnect?: boolean,
-): Promise<ApiSignedTransfer[] | { error: ApiAnyDisplayError }> {
+): Promise<ApiSignedTransfer<DappProtocolType.TonConnect>[] | { error: ApiAnyDisplayError }> {
   const account = await fetchStoredChainAccount(accountId, 'ton');
 
   // If there is an outgoing transfer in progress, this expression waits for it to finish. This helps to avoid seqno
@@ -849,8 +981,11 @@ export async function signTransfers(
   if ('error' in signedTransactions) return signedTransactions;
 
   return signedTransactions.map(({ seqno, transaction }) => ({
-    seqno,
-    base64: transaction.toBoc().toString('base64'),
+    chain: 'ton',
+    payload: {
+      seqno,
+      base64: transaction.toBoc().toString('base64'),
+    },
   }));
 }
 
@@ -990,12 +1125,16 @@ async function emulateTransactionWithFallback(
   return { isFallback: true, networkFee };
 }
 
-export async function sendSignedTransactions(accountId: string, transactions: ApiSignedTransfer[]) {
+export async function sendSignedTransactions(
+  accountId: string,
+  transactions: ApiSignedTransfer<DappProtocolType.TonConnect>[],
+) {
   const { network } = parseAccountId(accountId);
   const storedWallet = await fetchStoredWallet(accountId, 'ton');
   const { address: fromAddress } = storedWallet;
   const client = getTonClient(network);
   const wallet = getTonWallet(storedWallet);
+  const walletIsInitialized = storedWallet.isInitialized;
 
   const attempts = ATTEMPTS + transactions.length;
   let index = 0;
@@ -1004,30 +1143,52 @@ export async function sendSignedTransactions(accountId: string, transactions: Ap
   const sentTransactions: { boc: string; msgHashNormalized: string }[] = [];
 
   return withoutTransferConcurrency(network, fromAddress, async (finalizeInBackground) => {
-    while (index < transactions.length && attempt < attempts) {
-      const { base64, seqno } = transactions[index];
-      try {
-        const { boc, msgHashNormalized } = await sendExternal(client, wallet, Cell.fromBase64(base64));
-        sentTransactions.push({ boc, msgHashNormalized });
+    markTransferInFlight(network, fromAddress);
+    let clearInBackground = false;
 
-        const ensureSent = () => retrySendBoc(network, fromAddress, boc, seqno);
-        if (index === transactions.length - 1) {
-          finalizeInBackground(ensureSent);
-        } else {
-          await ensureSent();
-        }
+    try {
+      while (index < transactions.length && attempt < attempts) {
+        const { payload: { base64, seqno } } = transactions[index];
+        try {
+          const { boc, msgHashNormalized } = await sendExternal(
+            client,
+            wallet,
+            Cell.fromBase64(base64),
+            undefined,
+            walletIsInitialized,
+          );
+          sentTransactions.push({ boc, msgHashNormalized });
 
-        index++;
-      } catch (err) {
-        if (err instanceof ApiServerError && isSeqnoMismatchError(err.message)) {
-          return { error: ApiTransactionError.ConcurrentTransaction };
+          const ensureSent = () => retrySendBoc(network, fromAddress, boc, seqno);
+          if (index === transactions.length - 1) {
+            finalizeInBackground(async () => {
+              try {
+                await ensureSent();
+              } finally {
+                clearTransferInFlight(network, fromAddress);
+              }
+            });
+            clearInBackground = true;
+          } else {
+            await ensureSent();
+          }
+
+          index++;
+        } catch (err) {
+          if (err instanceof ApiServerError && isSeqnoMismatchError(err.message)) {
+            return { error: ApiTransactionError.ConcurrentTransaction };
+          }
+          logDebugError('sendSignedMessages', err);
         }
-        logDebugError('sendSignedMessages', err);
+        attempt++;
       }
-      attempt++;
-    }
 
-    return sentTransactions;
+      return sentTransactions;
+    } finally {
+      if (!clearInBackground) {
+        clearTransferInFlight(network, fromAddress);
+      }
+    }
   });
 }
 
@@ -1140,8 +1301,8 @@ function applyFeeFactorToEmulationResult(estimation: ApiEmulationWithFallbackRes
     networkFee: bigintMultiplyToNumber(estimation.networkFee, FEE_FACTOR),
   };
 
-  if ('byTransactionIndex' in estimation) {
-    estimation.byTransactionIndex = estimation.byTransactionIndex.map((transaction) => ({
+  if ('traceOutputs' in estimation) {
+    estimation.traceOutputs = estimation.traceOutputs.map((transaction) => ({
       ...transaction,
       networkFee: bigintMultiplyToNumber(transaction.networkFee, FEE_FACTOR),
     }));

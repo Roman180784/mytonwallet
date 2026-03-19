@@ -1,11 +1,3 @@
-//
-//  SwapVC.swift
-//  UISwap
-//
-//  Created by Sina on 5/10/24.
-//
-
-import Foundation
 import SwiftUI
 import UIKit
 import UIPasscode
@@ -13,53 +5,32 @@ import UIComponents
 import WalletCore
 import WalletContext
 
-@MainActor
-public class SwapVC: WViewController, WSensitiveDataProtocol {
+public final class SwapVC: WViewController, WSensitiveDataProtocol {
 
-    private var swapVM: SwapVM!
+    private var swapModel: SwapModel!
+    @AccountContext(source: .current) private var account: MAccount
     
-    private let defaultSellingToken: String
-    private let defaultBuyingToken: String
-    private let defaultSellingAmount: Double?
-    
-    private var tokensSelectorVM: SwapSelectorsVM! = nil
-    private var detailsVM: SwapDetailsVM!
     private var hostingController: UIHostingController<SwapView>!
 
     private var continueButton: WButton { bottomButton! }
     private var continueButtonConstraint: NSLayoutConstraint?
     
-    private var startWithKeyboardActive: Bool { true }
+    private var startWithKeyboardActive: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
 
-    private var enqueueTask: (() -> ())?
-    private var updateTask: Task<Void, Never>?
+    private var awaitingActivity = false
 
     public init(defaultSellingToken: String? = nil, defaultBuyingToken: String? = nil, defaultSellingAmount: Double? = nil) {
-        self.defaultSellingToken = defaultSellingToken ?? TONCOIN_SLUG
-        self.defaultBuyingToken = defaultBuyingToken ?? TON_USDT_SLUG
-        self.defaultSellingAmount = defaultSellingAmount
         super.init(nibName: nil, bundle: nil)
-
-        let sellingToken = TokenStore.getToken(slugOrAddress: self.defaultSellingToken) ?? TokenStore.tokens[TONCOIN_SLUG]!
-        let buyingToken = TokenStore.getToken(slugOrAddress: self.defaultBuyingToken)  ?? TokenStore.tokens[TON_USDT_SLUG]!
-        let vm = SwapSelectorsVM(
-            sellingAmount: defaultSellingAmount.flatMap { doubleToBigInt($0, decimals: sellingToken.decimals) },
-            sellingToken: sellingToken,
-            buyingAmount: nil,
-            buyingToken: buyingToken,
-            maxAmount: BalanceStore.currentAccountBalances[self.defaultSellingToken] ?? 0
+        self.swapModel = SwapModel(
+            delegate: self,
+            defaultSellingToken: defaultSellingToken ?? TONCOIN_SLUG,
+            defaultBuyingToken: defaultBuyingToken ?? TON_USDT_SLUG,
+            defaultSellingAmount: defaultSellingAmount,
+            accountContext: _account
         )
-        vm.delegate = self
-        self.tokensSelectorVM = vm
-
-        self.swapVM = SwapVM(delegate: self, tokensSelector: tokensSelectorVM)
-        self.detailsVM = SwapDetailsVM(swapVM: swapVM, tokensSelectorVM: tokensSelectorVM)
-        detailsVM.onSlippageChanged = { [weak self] slippage in
-            self?.swapVM.updateSlippage(slippage)
-        }
-        detailsVM.onPreferredDexChanged = { [weak self] pref in
-            self?.swapVM.updateDexPreference(pref)
-        }
+        WalletCoreData.add(eventObserver: self)
     }
     
     required init?(coder: NSCoder) {
@@ -70,7 +41,6 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
         super.viewDidLoad()
         setupViews()
         
-        // observe keyboard events
         WKeyboardObserver.observeKeyboard(delegate: self)
         
         Task {
@@ -79,53 +49,24 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
     }
 
     private func setupViews() {
-        view.semanticContentAttribute = .forceLeftToRight
+        navigationItem.title = lang("Swap")
+        addCloseNavigationItemIfNeeded()
 
-        title = lang("Swap")
-        addNavigationBar(
-            centerYOffset: 1,
-            title: title,
-            closeIcon: true
-        )
-
-        // MARK: Main container
-        let mainContainerView = UIView()
-        mainContainerView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(mainContainerView)
-        NSLayoutConstraint.activate([
-            mainContainerView.topAnchor.constraint(equalTo: navigationBarAnchor),
-            mainContainerView.leftAnchor.constraint(equalTo: view.leftAnchor),
-            mainContainerView.rightAnchor.constraint(equalTo: view.rightAnchor),
-            mainContainerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
-        ])
+        self.hostingController = addHostingController(makeView(), constraints: .fill)
+        
         let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(containerPressed))
         tapGestureRecognizer.cancelsTouchesInView = true
-        mainContainerView.addGestureRecognizer(tapGestureRecognizer)
-        
-        self.hostingController = UIHostingController(rootView: makeView())
-        addChild(hostingController)
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        hostingController.view.backgroundColor = .clear
-        mainContainerView.addSubview(hostingController.view)
-        NSLayoutConstraint.activate([
-            hostingController.view.topAnchor.constraint(equalTo: mainContainerView.topAnchor),
-            hostingController.view.leadingAnchor.constraint(equalTo: mainContainerView.leadingAnchor),
-            hostingController.view.trailingAnchor.constraint(equalTo: mainContainerView.trailingAnchor),
-            hostingController.view.bottomAnchor.constraint(equalTo: mainContainerView.bottomAnchor)
-        ])
-        hostingController.didMove(toParent: self)
-        
+        hostingController.view.addGestureRecognizer(tapGestureRecognizer)
+
         _ = addBottomButton(bottomConstraint: false)
         continueButton.isEnabled = false
-        continueButton.setTitle(lang("Enter Amounts"), for: .normal)
+        continueButton.configureTitle(sellingToken: swapModel.input.sellingToken, buyingToken: swapModel.input.buyingToken)
         continueButton.addTarget(self, action: #selector(continuePressed), for: .touchUpInside)
         
         let c = startWithKeyboardActive ? -max(WKeyboardObserver.keyboardHeight, 291) + 50 : -34
         let constraint = continueButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16 + c)
         constraint.isActive = true
         self.continueButtonConstraint = constraint
-        
-        bringNavigationBarToFront()
         
         updateTheme()
     }
@@ -135,10 +76,8 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
     }
     
     func makeView() -> SwapView {
-        return SwapView(
-            swapVM: swapVM,
-            selectorsVM: tokensSelectorVM,
-            detailsVM: detailsVM,
+        SwapView(
+            swapModel: swapModel,
             isSensitiveDataHidden: AppStorageHelper.isSensitiveDataHidden
         )
     }
@@ -154,24 +93,26 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
     @objc func continuePressed() {
         view.endEditing(true)
         
-        if let account = AccountStore.account, swapVM.swapType != .inChain, account.supports(chain: self.tokensSelectorVM.sellingToken.chain), account.supports(chain: self.tokensSelectorVM.buyingToken.chain) {
-            continueCrossChainImmediate()
+        if swapModel.swapType != .onChain,
+           account.supports(chain: swapModel.input.sellingToken.chain),
+           account.supports(chain: swapModel.input.buyingToken.chain) {
+            continueCrosschainImmediate()
         } else {
-            switch swapVM.swapType {
-            case .inChain:
+            switch swapModel.swapType {
+            case .onChain:
                 warnIfNeededAndContinueInChain()
-            case .crossChainFromTon:
+            case .crosschainFromWallet:
                 continueChainFromTon()
-            case .crossChainToTon:
+            case .crosschainToWallet:
                 continueChainToTon()
-            @unknown default:
-                break
+            case .crosschainInsideWallet:
+                continueCrosschainImmediate()
             }
         }
     }
     
     private func warnIfNeededAndContinueInChain() {
-        if let impact = detailsVM.displayImpactWarning {
+        if let impact = swapModel.detailsVM.displayImpactWarning {
             showAlert(
                 title: lang("The exchange rate is below market value!", arg1: "\(impact.formatted(.number.precision(.fractionLength(0..<1)).locale(.forNumberFormatters)))%"),
                 text: lang("We do not recommend to perform an exchange, try to specify a lower amount."),
@@ -188,7 +129,7 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
     }
     
     private func continueInChain() {
-        guard let swapEstimate = swapVM.swapEstimate, let lateInit = swapVM.lateInit else { return }
+        guard let swapEstimate = swapModel.onchain.swapEstimate, let lateInit = swapModel.onchain.lateInit else { return }
         
         if lateInit.isDiesel == true {
             if swapEstimate.dieselStatus == .notAuthorized {
@@ -196,73 +137,25 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
                 return
             }
         }
-        
-        var failureError: BridgeCallError? = nil    // filled if any error occures
-
-        let fromToken = tokensSelectorVM.sellingToken
-        let toToken = tokensSelectorVM.buyingToken
-        guard
-            let fromAmount = tokensSelectorVM.sellingAmount,
-            let toAmount = tokensSelectorVM.buyingAmount
-        else {
-            return
-        }
-            
-        let headerVC = UIHostingController(rootView: SwapConfirmHeaderView(
-            fromAmount: fromAmount,
-            fromToken: fromToken,
-            toAmount: toAmount,
-            toToken: toToken
-        ))
-        headerVC.view.backgroundColor = .clear
-        
-        UnlockVC.pushAuth(
-            on: self,
-            title: lang("Confirm Swap"),
-            customHeaderVC: headerVC,
-            onAuthTask: { [weak self] passcode, onTaskDone in
-                guard let self else {return}
-                let sellingToken = tokensSelectorVM.sellingToken
-                let buyingToken = tokensSelectorVM.buyingToken
-                swapVM.swapNow(sellingToken: sellingToken,
-                               buyingToken: buyingToken,
-                               passcode: passcode, onTaskDone: { _, error in
-                    failureError = error as? BridgeCallError
-                    onTaskDone()
-                })
-            },
-            onDone: { [weak self] _ in
-                guard let self else { return }
-                if let failureError {
-                    showAlert(error: failureError) { [weak self] in
-                        guard let self else { return }
-                        dismiss(animated: true)
-                    }
-                } else {
-                    dismiss(animated: true)
-                }
-            })
+        startSwapFlow(presentCrosschain: false)
     }
     
     private func continueChainFromTon() {
-        if let cexEstimate = swapVM.cexEstimate {
-            let crossChainSwapVC = CrossChainSwapVC(
-                sellingToken: (tokensSelectorVM.sellingToken, tokensSelectorVM.sellingAmount ?? 0),
-                buyingToken: (tokensSelectorVM.buyingToken, tokensSelectorVM.buyingAmount ?? 0),
-                swapType: swapVM.swapType,
+        if let cexEstimate = swapModel.crosschain.cexEstimate {
+            let networkFee = cexEstimate.realNetworkFee ?? cexEstimate.networkFee ?? .zero
+            let crosschainSwapVC = CrosschainFromWalletVC(
+                sellingToken: TokenAmount(swapModel.input.sellingAmount ?? 0, swapModel.input.sellingToken),
+                buyingToken: TokenAmount(swapModel.input.buyingAmount ?? 0, swapModel.input.buyingToken),
                 swapFee: cexEstimate.swapFee,
-                networkFee: 0,
-                payinAddress: "",
-                exchangerTxId: "",
-                dt: Date()
+                networkFee: networkFee
             )
-            navigationController?.pushViewController(crossChainSwapVC, animated: true)
+            navigationController?.pushViewController(crosschainSwapVC, animated: true)
         }
     }
     
     private func continueChainToTon() {
         
-        guard let swapEstimate = swapVM.cexEstimate else { return }
+        guard let swapEstimate = swapModel.crosschain.cexEstimate else { return }
         
         if swapEstimate.isDiesel == true {
             if swapEstimate.dieselStatus == .notAuthorized {
@@ -270,63 +163,11 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
             }
             return
         }
-        
-        var toTonTransaction: ApiActivity? = nil   // filled if cex to ton done, to present cross-chain-swap info
-        var failureError: BridgeCallError? = nil    // filled if any error occures
-
-        let fromToken = tokensSelectorVM.sellingToken
-        let toToken = tokensSelectorVM.buyingToken
-        guard
-            let fromAmount = tokensSelectorVM.sellingAmount,
-            let toAmount = tokensSelectorVM.buyingAmount
-        else {
-            return
-        }
-            
-        let headerVC = UIHostingController(rootView: SwapConfirmHeaderView(
-            fromAmount: fromAmount,
-            fromToken: fromToken,
-            toAmount: toAmount,
-            toToken: toToken
-        ))
-        headerVC.view.backgroundColor = .clear
-        
-        UnlockVC.pushAuth(
-            on: self,
-            title: lang("Confirm Swap"),
-            customHeaderVC: headerVC,
-            onAuthTask: { [weak self] passcode, onTaskDone in
-                guard let self else {return}
-                let sellingToken = tokensSelectorVM.sellingToken
-                let buyingToken = tokensSelectorVM.buyingToken
-                swapVM.swapNow(sellingToken: sellingToken,
-                               buyingToken: buyingToken,
-                               passcode: passcode, onTaskDone: { cexTransactionToTon, error in
-                    toTonTransaction = cexTransactionToTon
-                    failureError = error as? BridgeCallError
-                    onTaskDone()
-                })
-            },
-            onDone: { [weak self] _ in
-                guard let self else { return }
-                guard failureError == nil else {
-                    showAlert(error: failureError!) { [weak self] in
-                        guard let self else { return }
-                        dismiss(animated: true)
-                    }
-                    return
-                }
-                if let transaction = toTonTransaction {
-                    let crossChainSwapVC = CrossChainSwapVC(transaction: transaction)
-                    navigationController?.pushViewController(crossChainSwapVC, animated: true)
-                } else {
-                    dismiss(animated: true)
-                }
-            })
+        startSwapFlow(presentCrosschain: true)
     }
     
-    private func continueCrossChainImmediate() {
-        guard let swapEstimate = swapVM.cexEstimate else { return }
+    private func continueCrosschainImmediate() {
+        guard let swapEstimate = swapModel.crosschain.cexEstimate else { return }
         
         if swapEstimate.isDiesel == true {
             if swapEstimate.dieselStatus == .notAuthorized {
@@ -334,62 +175,85 @@ public class SwapVC: WViewController, WSensitiveDataProtocol {
             }
             return
         }
-        
-        var toTonTransaction: ApiActivity? = nil   // filled if cex to ton done, to present cross-chain-swap info
-        var failureError: BridgeCallError? = nil    // filled if any error occures
+        startSwapFlow(presentCrosschain: false)
+    }
 
-        let fromToken = tokensSelectorVM.sellingToken
-        let toToken = tokensSelectorVM.buyingToken
+    private enum SwapResult {
+        case success(ApiActivity?)
+        case failure(BridgeCallError)
+    }
+
+    private func startSwapFlow(presentCrosschain: Bool) {
+        let fromToken = swapModel.input.sellingToken
+        let toToken = swapModel.input.buyingToken
         guard
-            let fromAmount = tokensSelectorVM.sellingAmount,
-            let toAmount = tokensSelectorVM.buyingAmount
+            let fromAmount = swapModel.input.sellingAmount,
+            let toAmount = swapModel.input.buyingAmount
         else {
             return
         }
-            
+
         let headerVC = UIHostingController(rootView: SwapConfirmHeaderView(
-            fromAmount: fromAmount,
-            fromToken: fromToken,
-            toAmount: toAmount,
-            toToken: toToken
+            fromAmount: TokenAmount(fromAmount, fromToken),
+            toAmount: TokenAmount(toAmount, toToken)
         ))
         headerVC.view.backgroundColor = .clear
-        
+
+        var swapResult: SwapResult?
         UnlockVC.pushAuth(
             on: self,
             title: lang("Confirm Swap"),
             customHeaderVC: headerVC,
             onAuthTask: { [weak self] passcode, onTaskDone in
-                guard let self else {return}
-                let sellingToken = tokensSelectorVM.sellingToken
-                let buyingToken = tokensSelectorVM.buyingToken
-                swapVM.swapNow(sellingToken: sellingToken,
-                               buyingToken: buyingToken,
-                               passcode: passcode, onTaskDone: { cexTransactionToTon, error in
-                    toTonTransaction = cexTransactionToTon
-                    failureError = error as? BridgeCallError
+                guard let self else { return }
+                let sellingToken = swapModel.input.sellingToken
+                let buyingToken = swapModel.input.buyingToken
+                awaitingActivity = true
+                Task {
+                    swapResult = await self.performSwap(passcode: passcode, sellingToken: sellingToken, buyingToken: buyingToken)
                     onTaskDone()
-                })
+                }
             },
             onDone: { [weak self] _ in
-                guard let self else { return }
-                guard failureError == nil else {
-                    showAlert(error: failureError!) { [weak self] in
-                        guard let self else { return }
-                        dismiss(animated: true)
-                    }
-                    return
-                }
-                if let transaction = toTonTransaction {
-                    let crossChainSwapVC = CrossChainSwapVC(transaction: transaction)
-                    navigationController?.pushViewController(crossChainSwapVC, animated: true)
-                } else {
-                    dismiss(animated: true)
-                }
+                guard let self, let swapResult else { return }
+                handleSwapResult(swapResult, presentCrosschain: presentCrosschain)
             })
     }
-}
 
+    private func performSwap(passcode: String, sellingToken: ApiToken, buyingToken: ApiToken) async -> SwapResult {
+        do {
+            let activity = try await swapModel.swapNow(sellingToken: sellingToken, buyingToken: buyingToken, passcode: passcode)
+            return .success(activity)
+        } catch {
+            let bridgeError = (error as? BridgeCallError) ?? .unknown(baseError: error)
+            return .failure(bridgeError)
+        }
+    }
+
+    private func handleSwapResult(_ result: SwapResult, presentCrosschain: Bool) {
+        switch result {
+        case .success(let activity):
+            if presentCrosschain, let swap = activity?.swap {
+                let crosschainSwapVC = CrosschainToWalletVC(swap: swap, accountId: nil)
+                navigationController?.pushViewController(crosschainSwapVC, animated: true)
+            }
+        case .failure(let error):
+            awaitingActivity = false
+            showAlert(error: error) { [weak self] in
+                guard let self else { return }
+                dismiss(animated: true)
+            }
+        }
+    }
+    
+    func authorizeDiesel() {
+        if let telegramURL = account.dieselAuthLink {
+            if UIApplication.shared.canOpenURL(telegramURL) {
+                UIApplication.shared.open(telegramURL, options: [:], completionHandler: nil)
+            }
+        }
+    }
+}
 
 extension SwapVC: WKeyboardObserverDelegate {
     public func keyboardWillShow(info: WKeyboardDisplayInfo) {
@@ -411,209 +275,33 @@ extension SwapVC: WKeyboardObserverDelegate {
     }
 }
 
-
 extension SwapVC: WalletCoreData.EventsObserver {
     public func walletCore(event: WalletCoreData.Event) {
+        switch event {
+        case .newLocalActivity(let update):
+            handleNewActivities(accountId: update.accountId, activities: update.activities)
+        case .newActivities(let update):
+            handleNewActivities(accountId: update.accountId, activities: (update.pendingActivities ?? []) + update.activities)
+        default:
+            break
+        }
+    }
+
+    private func handleNewActivities(accountId: String, activities: [ApiActivity]) {
+        guard awaitingActivity, accountId == account.id else { return }
+        guard let activity = activities.first(where: { activity in
+            if case .swap = activity {
+                return true
+            }
+            return false
+        }) else { return }
+        awaitingActivity = false
+        AppActions.showActivityDetails(accountId: accountId, activity: activity, context: .swapConfirmation)
     }
 }
 
-
-extension SwapVC: SwapSelectorsDelegate {
-    // called once anything changes...
-    func swapDataChanged(
-        swapSide: SwapSide,
-        selling: TokenAmount,
-        buying: TokenAmount
-    ) {
-        var selling = selling
-        var buying = buying
-        
-        // to get full token object containing minter address!
-        selling.token = TokenStore.tokens[selling.token.slug] ?? selling.token
-        buying.token = TokenStore.tokens[buying.token.slug] ?? buying.token
-
-        // update swap type
-        
-        swapVM.updateSwapType(selling: selling, buying: buying)
-        
-        // receive estimatations
-        self.enqueueTask = { [weak self] in
-            guard let self else { return }
-            updateTask?.cancel()
-            updateTask = Task { [weak self] in
-                do {
-                    try await self?.swapVM.swapDataChanged(changedFrom: swapSide, selling: selling, buying: buying)
-                } catch {
-                }
-                try? await Task.sleep(for: .seconds(2)) // regardless if failed or not, wait until trying again
-                guard !Task.isCancelled else {
-                    return
-                }
-                self?.enqueueTask?()
-            }
-        }
-
-        self.enqueueTask?()
-        
-        // if all are 0, just show enter amounts!
-        if (swapSide == .selling && selling.amount <= 0) || (swapSide == .buying && buying.amount <= 0) {
-            continueButton.isEnabled = false
-            continueButton.showLoading = false
-            continueButton.setTitle(swapVM.isValidPair ? lang("Enter Amounts") : lang("Invalid Pair"),
-                                    for: .normal)
-            return
-        }
-    }
-
-    func maxAmountPressed(maxAmount: BigInt?) {
-        var maxAmount = maxAmount ?? BalanceStore.currentAccountBalances[tokensSelectorVM.sellingToken.slug] ?? 0
-        let feeData = FeeEstimationHelpers.networkFeeBigInt(
-            sellToken: tokensSelectorVM.sellingToken,
-            swapType: swapVM.swapType,
-            networkFee: swapVM.swapEstimate?.networkFee.value
-        )
-        if feeData?.isNativeIn == true {
-            maxAmount -= feeData!.fee
-            
-            if (swapVM.swapType == .inChain) {
-                let amountForNextSwap = feeData?.chain?.gas.maxSwap ?? 0
-                let amountIn = tokensSelectorVM.sellingAmount ?? 0
-                let shouldIgnoreNextSwap = amountIn > 0 && (maxAmount - amountIn) <= amountForNextSwap
-                if (!shouldIgnoreNextSwap && maxAmount > amountForNextSwap) {
-                    maxAmount -= amountForNextSwap
-                }
-            }
-        }
-        tokensSelectorVM.sellingAmount = max(0, maxAmount)
-        swapDataChanged(
-            swapSide: .selling,
-            selling: TokenAmount(tokensSelectorVM.sellingAmount ?? 0, tokensSelectorVM.sellingToken),
-            buying: TokenAmount(tokensSelectorVM.buyingAmount ?? 0, tokensSelectorVM.buyingToken)
-        )
-    }
-    
-    private func authorizeDiesel() {
-        let telegramURLString = "https://t.me/MyTonWalletBot?start=auth-\(AccountStore.account?.tonAddress ?? "")"
-        
-        if let telegramURL = URL(string: telegramURLString) {
-            if UIApplication.shared.canOpenURL(telegramURL) {
-                UIApplication.shared.open(telegramURL, options: [:], completionHandler: nil)
-            }
-        }
+extension SwapVC: SwapModelDelegate {
+    func applyButtonConfiguration(_ config: SwapButtonConfiguration) {
+        config.apply(to: continueButton)
     }
 }
-
-
-extension SwapVC: SwapVMDelegate {
-    
-    @MainActor
-    func updateIsValidPair() {
-        if !swapVM.isValidPair {
-            continueButton.setTitle(lang("Invalid Pair"), for: .normal)
-            continueButton.isEnabled = false
-            continueButton.showLoading = false
-        } else {
-            continueButton.setTitle(
-                WStrings.Swap_Submit_Text(
-                    from: tokensSelectorVM.sellingToken.symbol,
-                    to: tokensSelectorVM.buyingToken.symbol
-                ),
-                for: .normal
-            )
-        }
-    }
-    
-    // called on estimate data received!
-    @MainActor
-    func receivedEstimateData(swapEstimate: ApiSwapEstimateResponse?, selectedDex: ApiSwapDexLabel?, lateInit: ApiSwapCexEstimateResponse.LateInitProperties?) {
-        
-        guard swapVM.isValidPair else {
-            continueButton.setTitle(lang("Invalid Pair"), for: .normal)
-            continueButton.isEnabled = false
-            continueButton.showLoading = false
-            return
-        }
-
-        guard let swapEstimate, let lateInit else {
-            continueButton.isEnabled = false
-            continueButton.showLoading = false
-            return
-        }
-        
-        // update token selector data
-        let displayEstimate = swapEstimate.displayEstimate(selectedDex: selectedDex)
-        tokensSelectorVM.updateWithEstimate(.init(fromAmount: displayEstimate.fromAmount?.value ?? 0,
-                                                toAmount: displayEstimate.toAmount?.value ?? 0,
-                                                maxAmount: lateInit.maxAmount))
-
-        // check if swap is possible
-        let swapError = swapVM.checkDexSwapError(swapEstimate: swapEstimate, lateInit: lateInit)
-        continueButton.showLoading = false
-        if let swapError {
-            continueButton.setTitle(swapError, for: .normal)
-        } else {
-            if lateInit.isDiesel == true {
-                if swapEstimate.dieselStatus == .notAuthorized {
-                    continueButton.setTitle(WStrings.Swap_AuthorizeDiesel_Text(symbol: tokensSelectorVM.sellingToken.symbol.uppercased()), for: .normal)
-                    continueButton.isEnabled = true
-                    return
-                }
-            }
-            if swapVM.swapType == .crossChainFromTon && AccountStore.account?.supports(chain: tokensSelectorVM.buyingToken.chain) == false {
-                continueButton.setTitle(lang("Continue"), for: .normal)
-            } else {
-                continueButton.setTitle(
-                    WStrings.Swap_Submit_Text(
-                        from: tokensSelectorVM.sellingToken.symbol,
-                        to: tokensSelectorVM.buyingToken.symbol
-                    ),
-                    for: .normal
-                )
-            }
-        }
-        continueButton.isEnabled = swapError == nil
-    }
-    
-    @MainActor
-    func receivedCexEstimate(swapEstimate: ApiSwapCexEstimateResponse) {
-        
-        if !swapVM.isValidPair {
-            continueButton.setTitle(lang("Invalid Pair"), for: .normal)
-            continueButton.isEnabled = false
-            continueButton.showLoading = false
-        }
-
-        // update token selector data
-        tokensSelectorVM.updateWithEstimate(.init(fromAmount: swapEstimate.fromAmount.value, toAmount: swapEstimate.toAmount.value))
-                
-        // check if swap is possible
-        if swapVM.isValidPair {
-            let swapError = swapVM.checkCexSwapError(swapEstimate: swapEstimate)
-            continueButton.showLoading = false
-            if let swapError {
-                continueButton.setTitle(swapError, for: .normal)
-            } else {
-                if swapEstimate.isDiesel == true {
-                    if swapEstimate.dieselStatus == .notAuthorized {
-                        continueButton.setTitle(WStrings.Swap_AuthorizeDiesel_Text(symbol: tokensSelectorVM.sellingToken.symbol.uppercased()), for: .normal)
-                        continueButton.isEnabled = true
-                        return
-                    }
-                }
-                if swapVM.swapType == .crossChainFromTon && AccountStore.account?.supports(chain: tokensSelectorVM.buyingToken.chain) == false {
-                    continueButton.setTitle(lang("Continue"), for: .normal)
-                } else {
-                    continueButton.setTitle(
-                        WStrings.Swap_Submit_Text(
-                            from: tokensSelectorVM.sellingToken.symbol,
-                            to: tokensSelectorVM.buyingToken.symbol
-                        ),
-                        for: .normal
-                    )
-                }
-            }
-            continueButton.isEnabled = swapError == nil
-        }
-    }
-}
-

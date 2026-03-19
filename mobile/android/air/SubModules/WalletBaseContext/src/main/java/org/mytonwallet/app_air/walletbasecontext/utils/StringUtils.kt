@@ -1,14 +1,23 @@
 package org.mytonwallet.app_air.walletbasecontext.utils
 
 import android.graphics.Typeface
+import android.net.Uri
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.SpannedString
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import androidx.core.net.toUri
 import org.mytonwallet.app_air.walletbasecontext.theme.WColorGradients
-import kotlin.text.iterator
+import java.text.BreakIterator
+import java.util.Locale
+import kotlin.math.max
+
+private const val dots = "···"
+const val NBSP = "\u00A0"
+const val WORD_JOIN = "\u2060"
 
 val String.gradientColors: IntArray
     get() {
@@ -33,35 +42,105 @@ val String.shortChars: String
         return shortText
     }
 
-fun String.formatStartEndAddress(prefix: Int = 4, suffix: Int = 4): String {
+fun String.formatStartEndAddress(prefix: Int = 6, suffix: Int = 6): String {
     if (length < prefix + suffix + 3) {
         return this
     }
     val start = this.take(prefix)
     val end = this.takeLast(suffix)
-    return "$start···$end"
+    return "$start$dots$end"
 }
 
-fun String.insertGroupingSeparator(separator: Char = ' ', everyNthPosition: Int = 3): String {
-    var result = StringBuilder()
-    var count = 0
-    var hasDot = this.contains(".")
+fun String.trimAddress(keepCount: Int): String {
+    return trimAddressToResult(keepCount).trimmed
+}
 
-    for (char in this.reversed()) {
-        if (hasDot) {
-            result.insert(0, char)
-            if (char == '.') {
-                hasDot = false
-            }
-            continue
+fun String.trimAddressToResult(keepCount: Int): TrimResult {
+    if (keepCount <= 0) {
+        return TrimResult.fullTrim(this)
+    }
+    if (keepCount >= length) {
+        return TrimResult.noTrim(this)
+    }
+    if (keepCount <= 6) {
+        return TrimResult(
+            original = this,
+            trimmed = formatStartEndAddress(0, keepCount),
+            isTrimmed = true,
+            originalPrefixCount = 0,
+            originalPostfixCount = keepCount
+        )
+    }
+    val prefixCount = keepCount / 2
+    val postfixCount = keepCount - prefixCount
+    return TrimResult(
+        original = this,
+        trimmed = formatStartEndAddress(prefixCount, postfixCount),
+        isTrimmed = true,
+        originalPrefixCount = prefixCount,
+        originalPostfixCount = postfixCount
+    )
+}
+
+fun String.trimDomain(keepCount: Int, keepTopLevelDomain: Boolean = true): String {
+    return trimDomainToResult(keepCount, keepTopLevelDomain).trimmed
+}
+
+fun String.trimDomainToResult(keepCount: Int, keepTopLevelDomain: Boolean = true): TrimResult {
+    if (keepCount <= 0) {
+        return TrimResult.fullTrim(this)
+    }
+    if (length < 2 || keepCount >= length) {
+        return TrimResult.noTrim(this)
+    }
+    val dotIndex = indexOf(".")
+    if (dotIndex <= 0 || !keepTopLevelDomain) {
+        val postfixCount = keepCount / 2
+        val prefixCount = keepCount - postfixCount
+        return TrimResult(
+            original = this,
+            trimmed = formatStartEndAddress(prefixCount, postfixCount),
+            isTrimmed = true,
+            originalPrefixCount = prefixCount,
+            originalPostfixCount = postfixCount
+        )
+    }
+    if (dotIndex <= 3) {
+        return TrimResult.noTrim(this)
+    }
+    val minorSubdomain = take(dotIndex)
+    val majorSubdomain = substring(dotIndex)
+    val requestedTrimCount = length - keepCount
+    val minorSubdomainKeepCount = max(1, minorSubdomain.length - requestedTrimCount)
+    val prefix = "${minorSubdomain.take(minorSubdomainKeepCount)}$dots"
+    return TrimResult(
+        original = this,
+        trimmed = "$prefix$majorSubdomain",
+        isTrimmed = true,
+        originalPrefixCount = minorSubdomainKeepCount,
+        originalPostfixCount = length - dotIndex
+    )
+}
+
+fun String.insertGroupingSeparator(separator: Char = thinSpace, everyNthPosition: Int = 3): String {
+    val dotIndex = indexOf('.')
+    val integerPart = if (dotIndex >= 0) substring(0, dotIndex) else this
+    val decimalPart = if (dotIndex >= 0) substring(dotIndex) else ""
+
+    if (integerPart.isEmpty()) return this
+
+    val capacity =
+        integerPart.length + (integerPart.length - 1) / everyNthPosition + decimalPart.length
+    val result = StringBuilder(capacity)
+
+    integerPart.forEachIndexed { index, char ->
+        if (index > 0 && (integerPart.length - index) % everyNthPosition == 0) {
+            result.append(separator)
         }
-        if (count != 0 && count % everyNthPosition == 0) {
-            result.insert(0, separator)
-        }
-        result.insert(0, char)
-        count += 1
+        result.append(char)
     }
 
+    result.append(decimalPart)
     return result.toString()
 }
 
@@ -198,4 +277,140 @@ fun String.coloredSubstring(target: String, color: Int): SpannableString {
         )
     }
     return spannable
+}
+
+fun String.firstGrapheme(): String {
+    val it = BreakIterator.getCharacterInstance(Locale.getDefault())
+    it.setText(this)
+    val start = it.first()
+    val end = it.next()
+    return if (end != BreakIterator.DONE) substring(start, end) else ""
+}
+
+fun String.toUriOrNull(): Uri? = try {
+    toUri()
+} catch (_: Throwable) {
+    null
+}
+
+fun SpannedString.replaceSpacesWithNbsp(): SpannedString {
+    val sb = SpannableStringBuilder(this)
+
+    for (i in sb.length - 1 downTo 0) {
+        if (sb[i] == ' ') {
+            sb.replace(i, i + 1, NBSP)
+        }
+    }
+
+    return SpannedString(sb)
+}
+
+fun String.findMatches(keyword: String): List<IntRange> {
+    if (keyword.isEmpty() || isEmpty()) {
+        return emptyList()
+    }
+    val result = mutableListOf<IntRange>()
+    var from = 0
+    while (from < length) {
+        val index = indexOf(keyword, startIndex = from, ignoreCase = true)
+        if (index == -1) {
+            break
+        }
+        val end = index + keyword.length
+        result.add(index until end)
+        from = end
+    }
+    return result
+}
+
+data class TrimResult(
+    val original: String,
+    val trimmed: String,
+    val isTrimmed: Boolean,
+    val originalPrefixCount: Int,
+    val originalPostfixCount: Int
+) {
+
+    fun findMatchesInTrimmed(keyword: String): List<IntRange> {
+        if (keyword.isEmpty() || original.isEmpty() || trimmed.isEmpty()) {
+            return emptyList()
+        }
+
+        if (!isTrimmed) {
+            return original.findMatches(keyword)
+        }
+
+        val originalLength = original.length
+        val prefixCount = originalPrefixCount.coerceIn(0, originalLength)
+        val postfixCount = originalPostfixCount.coerceIn(0, originalLength)
+
+        if (prefixCount == 0 && postfixCount == 0) {
+            return emptyList()
+        }
+
+        val tailStartOriginal = (originalLength - postfixCount).coerceAtLeast(0)
+
+        if (prefixCount >= tailStartOriginal) {
+            return original.findMatches(keyword)
+        }
+
+        val middleLen = (trimmed.length - prefixCount - postfixCount).coerceAtLeast(0)
+        val tailStartTrimmed = prefixCount + middleLen
+
+        val result = ArrayList<IntRange>()
+        var from = 0
+        while (from < originalLength) {
+            val matchStart = original.indexOf(keyword, startIndex = from, ignoreCase = true)
+            if (matchStart == -1) {
+                break
+            }
+            val matchEnd = matchStart + keyword.length
+
+            // Prefix intersection
+            if (matchStart < prefixCount) {
+                val start = matchStart.coerceAtLeast(0)
+                val end = matchEnd.coerceAtMost(prefixCount)
+                if (start < end) {
+                    result.add(start until end)
+                }
+            }
+
+            // Postfix intersection
+            if (matchEnd > tailStartOriginal) {
+                val start = matchStart.coerceAtLeast(tailStartOriginal)
+                val end = matchEnd.coerceAtMost(originalLength)
+                if (start < end) {
+                    val resultStart = tailStartTrimmed + (start - tailStartOriginal)
+                    val resultEnd = tailStartTrimmed + (end - tailStartOriginal)
+                    result.add(resultStart until resultEnd)
+                }
+            }
+
+            from = matchEnd
+        }
+        return result
+    }
+
+    companion object {
+
+        fun fullTrim(original: String): TrimResult {
+            return TrimResult(
+                original = original,
+                trimmed = "",
+                isTrimmed = true,
+                originalPrefixCount = 0,
+                originalPostfixCount = 0
+            )
+        }
+
+        fun noTrim(original: String): TrimResult {
+            return TrimResult(
+                original = original,
+                trimmed = original,
+                isTrimmed = false,
+                originalPrefixCount = original.length,
+                originalPostfixCount = original.length
+            )
+        }
+    }
 }

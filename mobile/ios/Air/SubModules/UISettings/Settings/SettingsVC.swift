@@ -10,33 +10,41 @@ import UIPasscode
 import UIComponents
 import WalletCore
 import WalletContext
+import SwiftUI
+import Dependencies
+import Perception
 
 private let log = Log("SettingsVC")
 
-
 @MainActor
-public class SettingsVC: WViewController, Sendable {
+public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver, UICollectionViewDelegate {
     
     typealias Section = SettingsSection.Section
     typealias Row = SettingsItem.Identifier
     
-    private var settingsVM = SettingsVM()
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Row>!
     private var settingsHeaderView: SettingsHeaderView!
     private var pauseReloadData: Bool = false
+    private var isExpandedSplitLayout: Bool {
+        splitViewController?.isCollapsed == false
+    }
+        
+    @Dependency(\.accountStore.currentAccountId) private var currentAccountId
+    @Dependency(\.accountStore.orderedAccountIds) private var orderedAccountIds
     
     public override var hideNavigationBar: Bool {
-        true
-    }
-    
-    public override func loadView() {
-        super.loadView()
-        setupViews()
+        if IOS_26_MODE_ENABLED, #available(iOS 26, iOSApplicationExtension 26, *) {
+            false
+        } else {
+            true
+        }
     }
     
     public override func viewDidLoad() {
         super.viewDidLoad()
+
+        setupViews()
         WalletCoreData.add(eventObserver: self)
     }
     
@@ -49,62 +57,82 @@ public class SettingsVC: WViewController, Sendable {
     
     // MARK: - Setup settings
     func setupViews() {
+        view.backgroundColor = WTheme.groupedBackground
+        
+        settingsHeaderView = SettingsHeaderView()
+        
+        if IOS_26_MODE_ENABLED, #available(iOS 26, iOSApplicationExtension 26, *) {
+            addNavigationBar()
+            // set title to get blurred background
+            navigationItem.attributedTitle = AttributedString(lang("Settings"), attributes: AttributeContainer([.foregroundColor: UIColor.clear]))
+            navigationItem.leftItemsSupplementBackButton = true
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                title: lang("Receive"),
+                image: UIImage.airBundle("QRIcon").withRenderingMode(.alwaysTemplate),
+                primaryAction: UIAction { [weak self] _ in self?.showReceiveWithQR() }
+            )
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                title: lang("More"),
+                image: UIImage(systemName: "ellipsis")?.withRenderingMode(.alwaysTemplate),
+                menu: makeMoreMenu()
+            )
+            navigationItem.titleView = settingsHeaderView.headerTouchTarget
+        } else {
+            additionalSafeAreaInsets = UIEdgeInsets(top: settingsHeaderView.layoutGeometry.legacyNavBarHeight, left: 0, bottom: 0, right: 0)
+        }
         
         var _configuration = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
         _configuration.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
             if case .account(let accountId) = self?.dataSource.itemIdentifier(for: indexPath) {
-                let deleteAction = UIContextualAction(style: .destructive, title: lang("Remove Wallet"), handler: { contextualAction, view, callback in
+                let deleteAction = UIContextualAction(style: .destructive, title: lang("Remove Wallet")) { _, _, callback in
                     self?.signoutPressed(removingAccountId: accountId, callback: callback)
-                })
+                }
                 let actions = UISwipeActionsConfiguration(actions: [deleteAction])
                 actions.performsFirstActionWithFullSwipe = true
                 return actions
             }
             return nil
         }
-        _configuration.separatorConfiguration.color = WTheme.separator
-        _configuration.separatorConfiguration.bottomSeparatorInsets.leading = 60
+        if IOS_26_MODE_ENABLED, #available(iOS 26, iOSApplicationExtension 26, *) {
+        } else {
+            _configuration.separatorConfiguration.color = WTheme.separator
+        }
+        _configuration.separatorConfiguration.bottomSeparatorInsets.leading = 62
         _configuration.headerMode = .none
         
+        let topSectionInset = settingsHeaderView.layoutGeometry.topSectionInset
         let layout = UICollectionViewCompositionalLayout(sectionProvider: { [weak self] sectionIdx, env in
             var configuration = _configuration
             configuration.footerMode = sectionIdx + 1 == self?.collectionView.numberOfSections ? .supplementary : .none
             let section = NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: env)
-            section.contentInsets.top = 0
-            section.contentInsets.bottom = 24
+            section.contentInsets.top = sectionIdx == 0 ? topSectionInset : 0
+            section.contentInsets.bottom = 16
             return section
         })
         
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.register(SettingsItemCell.self, forCellWithReuseIdentifier: "settingsItem")
-        collectionView.register(SettingsAccountCell.self, forCellWithReuseIdentifier: "account")
         collectionView.register(FooterView.self, forSupplementaryViewOfKind: UICollectionView.elementKindSectionFooter, withReuseIdentifier: UICollectionView.elementKindSectionFooter)
         collectionView.delegate = self
         collectionView.delaysContentTouches = false
         collectionView.allowsSelection = true
-        collectionView.contentInset.top = defaultHeight
+        collectionView.contentInset.top = settingsHeaderView.layoutGeometry.scrollTopContentInset
+        collectionView.backgroundColor = WTheme.groupedBackground
+
+        let listCellRegistration = AccountListCell.makeRegistration()
         
         dataSource = UICollectionViewDiffableDataSource<Section, Row>(collectionView: collectionView) { [weak self] (tableView, indexPath, itemIdentifier) -> UICollectionViewCell? in
-            guard let self else {
-                return tableView.dequeueReusableCell(withReuseIdentifier: "settingsItem", for: indexPath) as? SettingsItemCell
-            }
+            guard let self else { fatalError() }
             let settingsItem = itemIdentifier.content
             switch itemIdentifier {
             case .account(accountId: let accountId):
-                guard let cell = tableView.dequeueReusableCell(withReuseIdentifier: "account", for: indexPath) as? SettingsAccountCell else { return nil }
-                cell.configure(
-                    with: accountId,
-                    title: settingsItem.title,
-                    subtitle: settingsItem.subtitle,
-                    value: settingsVM.value(for: settingsItem)
-                )
-                return cell
+                return tableView.dequeueConfiguredReusableCell(using: listCellRegistration, for: indexPath, item: accountId)
             default:
                 guard let cell = tableView.dequeueReusableCell(withReuseIdentifier: "settingsItem", for: indexPath) as? SettingsItemCell else { return nil }
                 cell.configure(
                     with: settingsItem,
-                    value: settingsVM.value(for: settingsItem)
+                    value: value(for: settingsItem)
                 )
                 return cell
             }
@@ -122,7 +150,7 @@ public class SettingsVC: WViewController, Sendable {
                 return nil
             }
         }
-        dataSource.apply(settingsVM.makeSnapshot(), animatingDifferences: false)
+        dataSource.apply(makeSnapshot(), animatingDifferences: false)
         
         // Add table view
         view.addSubview(collectionView)
@@ -134,10 +162,9 @@ public class SettingsVC: WViewController, Sendable {
         ])
         
         // Add header view
-        settingsHeaderView = SettingsHeaderView(vc: self)
-        settingsHeaderView.config()
-        collectionView.addSubview(settingsHeaderView)
-        settingsHeaderView.setupViews()
+        view.addSubview(settingsHeaderView)
+        settingsHeaderView.setupViews(moreMenu: makeMoreMenu())
+        settingsHeaderView.delegate = self
         NSLayoutConstraint.activate([
             settingsHeaderView.topAnchor.constraint(equalTo: view.topAnchor),
             settingsHeaderView.leftAnchor.constraint(equalTo: view.leftAnchor),
@@ -146,17 +173,9 @@ public class SettingsVC: WViewController, Sendable {
                 
         addBottomBarBlur()
         
-        updateTheme()
+        collectionView.reloadData()
     }
-    
-    public override func updateTheme() {
-        if !pauseReloadData {
-            view.backgroundColor = WTheme.groupedBackground
-            collectionView.backgroundColor = WTheme.groupedBackground
-            collectionView.reloadData()
-        }
-    }
-    
+        
     public override func scrollToTop(animated: Bool) {
         collectionView?.setContentOffset(CGPoint(x: 0, y: -collectionView.adjustedContentInset.top), animated: animated)
     }
@@ -164,44 +183,22 @@ public class SettingsVC: WViewController, Sendable {
     private func selected(item: SettingsItem.Identifier) {
         switch item {
         case .editWalletName:
-            let alertController = UIAlertController(title: lang("Enter wallet name:"),
-                                                    message: nil,
-                                                    preferredStyle: .alert)
-            alertController.addTextField()
-            let textField = alertController.textFields![0]
-            textField.text = AccountStore.account?.title ?? ""
-            textField.autocapitalizationType = .words
-            textField.autocorrectionType = .yes
-            
-            let submitAction = UIAlertAction(title: lang("OK"), style: .default) { [unowned alertController] _ in
-                let walletName = alertController.textFields![0].text ?? ""
-                Task {
-                    do {
-                        try await AccountStore.updateAccountTitle(accountId: AccountStore.accountId!, newTitle: walletName.nilIfEmpty)
-                    } catch {
-                        log.error("rename failed: \(error, .public)")
-                    }
-                }
-            }
-            alertController.addAction(submitAction)
-            
-            let cancelAction = UIAlertAction(title: lang("Cancel"), style: .cancel)
-            alertController.addAction(cancelAction)
-            
-            topViewController()?.present(alertController, animated: true)
+            AppActions.showRenameAccount(accountId: AccountStore.accountId!)
             
         case .account(let accountId):
             pauseReloadData = true // prevent showing new data while switching away from settings tab
             Task {
                 do {
                     _ = try await AccountStore.activateAccount(accountId: accountId)
+                    AppActions.showHome(popToRoot: true)
                 } catch {
                     fatalError("failed to activate account: \(accountId)")
                 }
             }
-            
+        case .walletSettings:
+            AppActions.showWalletSettings()
         case .addAccount:
-            AppActions.showAddWallet(showCreateWallet: true, showSwitchToOtherVersion: true)
+            AppActions.showAddWallet(network: .mainnet, showCreateWallet: true, showSwitchToOtherVersion: true)
         case .notifications:
             navigationController?.pushViewController(NotificationsSettingsVC(), animated: true)
         case .appearance:
@@ -223,64 +220,41 @@ public class SettingsVC: WViewController, Sendable {
         case .tips:
             AppActions.openTipsChannel()
         case .helpCenter:
-            let url = URL(string: HELP_CENTER_URL)!
             let title = lang("Help Center")
-            navigationController?.pushPlainWebView(title: title, url: url)
+            let url = Language.current == .ru ? HELP_CENTER_URL_RU : HELP_CENTER_URL
+            navigationController?.pushPlainWebView(title: title, url: URL(string: url)!)
         case .support:
             UIApplication.shared.open(URL(string: "https://t.me/\(SUPPORT_USERNAME)")!)
         case .about:
             let vc = AboutVC(showLegalSection: true)
             navigationController?.pushViewController(vc, animated: true)
-        case .signout:
-            if let accountId = AccountStore.accountId {
-                signoutPressed(removingAccountId: accountId, callback: { _ in })
-            }
+        case .useResponsibly:
+            navigationController?.pushViewController(UseResponsiblyVC(), animated: true)
         }
     }
     
     private func signoutPressed(removingAccountId: String, callback: @escaping (Bool) -> ()) {
-        let accountToDelete = AccountStore.accountsById[removingAccountId]
         let isCurrentAccount = removingAccountId == AccountStore.accountId
-        var logoutWarning = lang("$logout_warning")
-        if Language.current == .en && accountToDelete?.type != .mnemonic && accountToDelete?.tonAddress != nil {
-            logoutWarning += "\n\n" + lang("$logout_warning2")
-        }
-        logoutWarning = logoutWarning.replacingOccurrences(of: "**", with: "")
-        showAlert(
-            title: lang("Remove Wallet"),
-            text: logoutWarning,
-            button: lang("Remove Wallet"),
-            buttonStyle: .destructive,
-            buttonPressed: { [weak self] in
-                guard let self else { return }
-                Task { @MainActor in
-                    do {
-                        if AccountStore.accountsById.count == 1 {
-                            // it is the last account id, delete all data and restart app
-                            try await AccountStore.resetAccounts()
-                        } else {
-                            let nextAccount = isCurrentAccount ? AccountStore.accountsById.keys.first(where: { $0 != removingAccountId }) : AccountStore.accountId
-                            let _ = try await AccountStore.removeAccount(accountId: removingAccountId, nextAccountId: nextAccount!)
-                            if isCurrentAccount {
-                                DispatchQueue.main.async {
-                                    self.tabBarController?.selectedIndex = 0
-                                }
-                            }
-                        }
-                        callback(true)
-                    } catch {
-                        log.fault("delete account error: \(error)")
-                        self.showAlert(error: error)
-                        callback(false)
-                    }
+        let removingAccount = AccountStore.accountsById[removingAccountId] ?? DUMMY_ACCOUNT
+        showDeleteAccountAlert(
+            accountToDelete: removingAccount,
+            isCurrentAccount: isCurrentAccount,
+            onSuccess: { [weak self] in
+                if isCurrentAccount {
+                    self?.tabBarController?.selectedIndex = 0
                 }
+                callback(true)
             },
-            secondaryButton: lang("Cancel"),
-            secondaryButtonPressed: { [weak self] in
-                guard let self else { return }
-                reloadData(animated: true)
+            onCancel: { [weak self] in
+                self?.reloadData(animated: true)
                 callback(false)
-            })
+            },
+            onFailure: { [weak self] error in
+                log.fault("delete account error: \(error)")
+                self?.showAlert(error: error)
+                callback(false)
+            }
+        )
     }
     
     @objc func onVersionMultipleTap(_ gesture: UIGestureRecognizer) {
@@ -288,10 +262,101 @@ public class SettingsVC: WViewController, Sendable {
             (UIApplication.shared.delegate as? MtwAppDelegateProtocol)?.showDebugView()
         }
     }
-}
+    
+    private func showReceiveWithQR() {
+        AppActions.showReceive(chain: nil, title: lang("Your Address"))
+    }
+    
+    private func removeWalllet() {
+        if let accountId = AccountStore.accountId {
+            signoutPressed(removingAccountId: accountId, callback: { _ in })
+        }
+    }
+    
+    private func makeMoreMenu() -> UIMenu {
+        var items: [UIMenuElement] = []
+        
+        items += UIAction(title: lang("Remove Wallet"), image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+            self?.removeWalllet()
+        }
+                    
+        return UIMenu(title: "", children: items)
+    }
+    
+    // MARK: Data source
+    
+    func makeSnapshot() -> NSDiffableDataSourceSnapshot<SettingsVC.Section, SettingsVC.Row> {
+        var snapshot = NSDiffableDataSourceSnapshot<SettingsVC.Section, SettingsVC.Row>()
+        snapshot.appendSections([.header])
+        snapshot.appendItems([.editWalletName])
+        
+        if !isExpandedSplitLayout {
+            snapshot.appendSections([.accounts])
+            let currentAccountId = self.currentAccountId
+            let otherAccounts = AccountStore.orderedAccountIds
+                .filter { $0 != currentAccountId }
+            if otherAccounts.count <= 6 {
+                snapshot.appendItems(otherAccounts.map(SettingsItem.Identifier.account))
+            } else {
+                snapshot.appendItems(otherAccounts.prefix(5).map(SettingsItem.Identifier.account))
+                snapshot.appendItems([.walletSettings])
+            }
+            
+            snapshot.appendItems([.addAccount])
+        }
+        
+        // General section
+        snapshot.appendSections([.general])
+        snapshot.appendItems([.appearance])
+        if AuthSupport.accountsSupportAppLock {
+            snapshot.appendItems([.security])
+        }
+        snapshot.appendItems([.assetsAndActivity])
+        if let count = AccountStore.walletVersionsData?.versions.count, count > 0 {
+            snapshot.appendItems([.walletVersions])
+        }
+        if let count = DappsStore.dappsCount, count > 0 {
+            snapshot.appendItems([.connectedApps])
+        }
+        snapshot.appendItems([.notifications])
+        snapshot.appendItems([.language])
 
+        // Questions and answers
+        snapshot.appendSections([.questionAndAnswers])
+        if ConfigStore.shared.config?.supportAccountsCount ?? 1 > 0 {
+            snapshot.appendItems([.support])
+        }
+        snapshot.appendItems([.helpCenter])
+        snapshot.appendItems([.tips])
+        snapshot.appendItems([.useResponsibly])
 
-extension SettingsVC: UICollectionViewDelegate {
+        // About
+        snapshot.appendSections([.about])
+        snapshot.appendItems([.about])
+                
+        return snapshot
+    }
+    
+    func value(for item: SettingsItem) -> String? {
+        if let value = item.value {
+            // item already has a cached value on the item model
+            return value
+        }
+        switch item.id {
+        case .language:
+            return Language.current.nativeName
+        case .walletVersions:
+            return AccountStore.walletVersionsData?.currentVersion
+        case .connectedApps:
+            return DappsStore.dappsCount != nil ? "\(DappsStore.dappsCount!)" : ""
+        case .support:
+            return "@\(SUPPORT_USERNAME)"
+        default:
+            return nil
+        }
+    }
+
+    // MARK: - Collection view delegate
     
     public func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
         true
@@ -307,8 +372,8 @@ extension SettingsVC: UICollectionViewDelegate {
     
     // scroll delegation
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        if collectionView.contentSize.height + view.safeAreaInsets.top + view.safeAreaInsets.bottom > collectionView.frame.height {
-            let requiredInset = max(16, collectionView.frame.height + 40 + 16 - collectionView.contentSize.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom)
+        if collectionView.contentSize.height + view.safeAreaInsets.vertical > collectionView.frame.height {
+            let requiredInset: CGFloat = max(16.0, collectionView.frame.height + 56.0 - collectionView.contentSize.height - view.safeAreaInsets.vertical)
             collectionView.contentInset.bottom = requiredInset
         }
     }
@@ -322,22 +387,27 @@ extension SettingsVC: UICollectionViewDelegate {
                                           targetContentOffset: UnsafeMutablePointer<CGPoint>) {
         let topInset = collectionView.adjustedContentInset.top
         let realTargetY = targetContentOffset.pointee.y + topInset
+        let lg = settingsHeaderView.layoutGeometry
+        let fullScrollRange = lg.fullScrollRange
+        
         // snap to views
-        if realTargetY > 0 && collectionView.contentSize.height + view.safeAreaInsets.top + view.safeAreaInsets.bottom > collectionView.frame.height {
-            if realTargetY < 162 {
-                let isGoingDown = targetContentOffset.pointee.y > scrollView.contentOffset.y
-                let isStopped = abs(velocity.y) < 5
-                if isGoingDown || (isStopped && realTargetY >= 85) {
-                    targetContentOffset.pointee.y = 162 - topInset
+        if realTargetY > 0 && collectionView.contentSize.height + view.safeAreaInsets.vertical > collectionView.frame.height {
+            if realTargetY < fullScrollRange {
+                var isGoingDown = targetContentOffset.pointee.y > scrollView.contentOffset.y
+                if abs(velocity.y) < 5 {
+                    isGoingDown = realTargetY < fullScrollRange * lg.collapseThreshold
+                }
+                if isGoingDown {
+                    targetContentOffset.pointee.y = -topInset
                 } else {
-                    targetContentOffset.pointee.y = 0 - topInset
+                    targetContentOffset.pointee.y = fullScrollRange - topInset
                 }
             }
         }
     }
-}
 
-extension SettingsVC: WalletCoreData.EventsObserver {
+    // MARK: - Observer
+    
     public nonisolated func walletCore(event: WalletCoreData.Event) {
         DispatchQueue.main.async { [self] in
             switch event {
@@ -354,18 +424,18 @@ extension SettingsVC: WalletCoreData.EventsObserver {
                 configHeader()
 
             case .balanceChanged:
-                updateDescriptionLabel()
+                updateHeaderBalance()
 
             case .notActiveAccountBalanceChanged:
                 reloadData(animated: true)
 
             case .baseCurrencyChanged(to: _), .tokensChanged:
-                updateDescriptionLabel()
+                updateHeaderBalance()
                 reloadData(animated: true)
                 
             case .stakingAccountData(let data):
                 if data.accountId == AccountStore.accountId {
-                    updateDescriptionLabel()
+                    updateHeaderBalance()
                     reloadData(animated: true)
                 }
 
@@ -387,24 +457,29 @@ extension SettingsVC: WalletCoreData.EventsObserver {
         }
     }
     
-    private func updateDescriptionLabel() {
+    private func updateHeaderBalance() {
         if !pauseReloadData {
-            settingsHeaderView?.updateDescriptionLabel()
+            settingsHeaderView?.updateBalance()
         }
     }
     
     private func reloadData(animated: Bool) {
         if animated {
             if !pauseReloadData {
-                let snapshot = settingsVM.makeSnapshot()
-                dataSource.apply(snapshot, animatingDifferences: animated)
+                dataSource.apply(makeSnapshot(), animatingDifferences: animated)
             }
         } else {
             UIView.performWithoutAnimation {
-                var snapshot = settingsVM.makeSnapshot()
+                var snapshot = makeSnapshot()
                 snapshot.reconfigureItems(snapshot.itemIdentifiers)
                 dataSource.apply(snapshot, animatingDifferences: false)
             }
         }
+    }
+}
+
+ extension SettingsVC: @MainActor SettingsHeaderViewDelegate {
+    func settingsHeaderViewDidTapQRCodeButton() {
+        showReceiveWithQR()
     }
 }

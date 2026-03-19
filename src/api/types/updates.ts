@@ -2,10 +2,12 @@ import type { SignDataPayload } from '@tonconnect/protocol';
 
 import type { GlobalState } from '../../global/types';
 import type { ApiTonWalletVersion } from '../chains/ton/types';
-import type { ApiTonConnectProof } from '../tonConnect/types';
+import type { TonConnectProof } from '../dappProtocols/adapters';
+import type { StoredDappConnection } from '../dappProtocols/storage';
 import type { ApiActivity } from './activities';
 import type {
   ApiAccountConfig,
+  ApiBackendConfig,
   ApiSwapAsset,
   ApiSwapVersion,
   ApiVestingInfo,
@@ -24,7 +26,6 @@ import type {
   ApiTokenWithPrice,
   ApiWalletWithVersionInfo,
 } from './misc';
-import type { ApiDapp } from './storage';
 import type { ApiCheckTransactionDraftResult } from './transfer';
 
 export type ApiUpdateBalances = {
@@ -60,7 +61,6 @@ export type ApiUpdateNewActivities = {
    * UI should handle both changes in one update.
    */
   pendingActivities?: readonly ApiActivity[];
-  noForward?: boolean; // Forbid cyclic update redirection to/from NBS
 };
 
 export type ApiUpdateNewLocalActivities = {
@@ -123,7 +123,8 @@ export type ApiUpdateDappSignData = {
   type: 'dappSignData';
   promiseId: string;
   accountId: string;
-  dapp: ApiDapp;
+  dapp: StoredDappConnection;
+  operationChain: ApiChain;
   payloadToSign: SignDataPayload;
 };
 
@@ -131,12 +132,18 @@ export type ApiUpdateDappSendTransactions = {
   type: 'dappSendTransactions';
   promiseId: string;
   accountId: string;
-  dapp: ApiDapp;
+  dapp: StoredDappConnection;
+  // Dapp may have many chains, so need to specify current operation chain
+  operationChain: ApiChain;
   transactions: ApiDappTransfer[];
   emulation?: Pick<ApiEmulationResult, 'activities' | 'realFee'>;
   /** Unix seconds */
   validUntil?: number;
   vestingAddress?: string;
+  // No useful transfers in solana
+  shouldHideTransfers?: boolean;
+  // Deal with solana b58/b64 issues based on requested method
+  isLegacyOutput?: boolean;
 };
 
 export type ApiUpdateTonConnectOnline = {
@@ -148,12 +155,12 @@ export type ApiUpdateDappConnect = {
   identifier?: string;
   promiseId: string;
   accountId: string;
-  dapp: ApiDapp;
+  dapp: StoredDappConnection;
   permissions: {
     address: boolean;
     proof: boolean;
   };
-  proof?: ApiTonConnectProof;
+  proof?: TonConnectProof;
 };
 
 export type ApiUpdateDappConnectComplete = {
@@ -210,7 +217,11 @@ export type ApiUpdateNfts = {
   type: 'updateNfts';
   accountId: string;
   nfts: ApiNft[];
-  shouldAppend?: boolean;
+  chain: ApiChain;
+  collectionAddress?: string;
+  isFullLoading?: boolean;
+  /** Complete set of addresses seen during a streaming session. Sent with the final `isFullLoading: false` update. */
+  streamedAddresses?: string[];
 };
 
 export type ApiUpdateNftReceived = {
@@ -252,7 +263,9 @@ export type ApiUpdateConfig = {
   supportAccountsCount?: number;
   countryCode?: ApiCountryCode;
   isAppUpdateRequired: boolean;
+  shouldAutoSwitchToAir?: boolean;
   swapVersion?: ApiSwapVersion;
+  seasonalTheme: ApiBackendConfig['seasonalTheme'];
 };
 
 export type ApiUpdateWalletVersions = {
@@ -304,7 +317,6 @@ export type ApiMigrateCoreApplication = {
   secondAccountId: string;
   secondAddress: string;
   isTonProxyEnabled?: boolean;
-  isTonMagicEnabled?: boolean;
 };
 
 export type ApiUpdateAccountConfig = {

@@ -10,8 +10,8 @@ import WalletContext
 
 extension Api {
     
-    public static func fetchPrivateKey(accountId: String, password: String) async throws -> String {
-        try await bridge.callApi("fetchPrivateKey", accountId, password, decoding: String.self)
+    public static func fetchPrivateKey(accountId: String, chain: ApiChain, password: String) async throws -> String {
+        try await bridge.callApi("fetchPrivateKey", accountId, chain, password, decoding: String.self)
     }
 
     public static func fetchMnemonic(accountId: String, password: String) async throws -> [String] {
@@ -55,70 +55,26 @@ extension Api {
         try await bridge.callApi("getWalletBalance", chain, network, address, decoding: BigInt.self)
     }
     
-    public static func getAddressInfo(network: ApiNetwork, toAddress: String) async throws -> ApiGetAddressInfoResult {
-        try await bridge.callApi("getAddressInfo", network, toAddress, decoding: ApiGetAddressInfoResult.self)
+    public static func getAddressInfo(chain: ApiChain, network: ApiNetwork, address: String) async throws -> ApiGetAddressInfoResult {
+        try await bridge.callApi("getAddressInfo", chain, network, address, decoding: ApiGetAddressInfoResult.self)
     }
 }
 
 
 // MARK: - Types
 
-public struct ApiDappRequestConfirmation: Encodable {
+public struct ApiDappRequestConfirmation: Encodable, Sendable {
     public var accountId: String
-    /** Base64. Shall miss when no proof is required. */
-    public var proofSignature: String?
+    /** Base64. Shall miss when no proof is required. Can be multiple for multichain. */
+    public var proofSignatures: [String]?
     
-    public init(accountId: String, proofSignature: String?) {
+    public init(accountId: String, proofSignatures: [String]?) {
         self.accountId = accountId
-        self.proofSignature = proofSignature
+        self.proofSignatures = proofSignatures
     }
 }
 
-public struct ContractInfo: Equatable, Hashable, Codable, Sendable {
-    public var name: ContractName
-    public var type: ContractType?
-    public var hash: String
-    public var isSwapAllowed: Bool?
-};
-
-public enum ContractName: String, Equatable, Hashable, Codable, Sendable {
-        
-    // from ApiTonWalletVersion
-    case simpleR1 = "simpleR1"
-    case simpleR2 = "simpleR2"
-    case simpleR3 = "simpleR3"
-    case v2R1 = "v2R1"
-    case v2R2 = "v2R2"
-    case v3R1 = "v3R1"
-    case v3R2 = "v3R2"
-    case v4R2 = "v4R2"
-    case W5 = "W5"
-
-    case v4R1 = "v4R1"
-    case highloadV2 = "highloadV2"
-    case multisig = "multisig"
-    case multisigV2 = "multisigV2"
-    case multisigNew = "multisigNew"
-    case nominatorPool = "nominatorPool"
-    case vesting = "vesting"
-    case dedustPool = "dedustPool"
-    case dedustVaultNative = "dedustVaultNative"
-    case dedustVaultJetton = "dedustVaultJetton"
-    case stonPtonWallet = "stonPtonWallet"
-    case stonRouter = "stonRouter"
-    case stonRouterV2_1 = "stonRouterV2_1"
-    case stonPoolV2_1 = "stonPoolV2_1"
-    case stonRouterV2_2 = "stonRouterV2_2"
-    case stonPoolV2_2 = "stonPoolV2_2"
-    case stonPtonWalletV2 = "stonPtonWalletV2"
-}
-
-public enum ContractType: String, Equatable, Hashable, Codable, Sendable {
-    case wallet = "wallet"
-    case staking = "staking"
-}
-
-public struct ApiGetAddressInfoResult: Decodable {
+public struct ApiGetAddressInfoResult: Decodable, Sendable {
     public var addressName: String?
     public var isScam: Bool?
     public var resolvedAddress: String?

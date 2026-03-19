@@ -7,9 +7,12 @@ import type { ApiImportAddressByChain } from '../../api/types';
 
 import renderText from '../../global/helpers/renderText';
 import buildClassName from '../../util/buildClassName';
-import { getSupportedChains } from '../../util/chain';
+import { getChainConfig, getChainTitle, getSupportedChains } from '../../util/chain';
 import { stopEvent } from '../../util/domEvents';
-import { isValidAddressOrDomain } from '../../util/isValidAddressOrDomain';
+import isEmptyObject from '../../util/isEmptyObject';
+import { isTonsiteAddress, isValidAddressOrDomain } from '../../util/isValidAddress';
+import { formatEnumeration } from '../../util/langProvider';
+import { getHostnameFromUrl } from '../../util/url';
 import { ANIMATED_STICKERS_PATHS } from '../ui/helpers/animatedAssets';
 
 import useFocusAfterAnimation from '../../hooks/useFocusAfterAnimation';
@@ -28,11 +31,13 @@ import styles from './Auth.module.scss';
 type OwnProps = {
   isActive?: boolean;
   isLoading?: boolean;
+  isInModal?: boolean;
   onCancel: NoneToVoidFunction;
+  onClose?: NoneToVoidFunction;
 };
 
 function AuthImportViewAccount({
-  isActive, isLoading, onCancel,
+  isActive, isLoading, isInModal, onCancel, onClose,
 }: OwnProps) {
   const { importViewAccount } = getActions();
 
@@ -64,18 +69,20 @@ function AuthImportViewAccount({
     const addresses = value.trim().split(/\s+/);
     const addressByChain: ApiImportAddressByChain = {};
 
-    const hasValidAddress = addresses.reduce((isValid, address) => {
+    for (let address of addresses) {
       for (const chain of getSupportedChains()) {
+        if (getChainConfig(chain).isDnsSupported && isTonsiteAddress(address)) {
+          address = getHostnameFromUrl(address);
+        }
         if (isValidAddressOrDomain(address, chain)) {
           addressByChain[chain] = address;
-          return true;
+          // Continuing the loop, because addresses can be valid in multiple chains, for example in Ethereum blockchain
+          // forks. The user doesn't specify the intended blockchain, so we add all that this address can belong to.
         }
       }
+    }
 
-      return isValid;
-    }, false);
-
-    if (hasValidAddress) {
+    if (!isEmptyObject(addressByChain)) {
       importViewAccount({ addressByChain });
       inputRef.current?.blur(); // To hide the virtual keyboard to show the loading indicator in the button
     } else {
@@ -85,7 +92,11 @@ function AuthImportViewAccount({
 
   return (
     <div className={modalStyles.transitionContentWrapper}>
-      <ModalHeader title={lang('View Any Address')} onBackButtonClick={onCancel} />
+      <ModalHeader
+        title={lang('View Any Address')}
+        onBackButtonClick={onCancel}
+        onClose={onClose}
+      />
       <form
         action="#"
         className={buildClassName(modalStyles.transitionContent, 'custom-scroll')}
@@ -112,9 +123,13 @@ function AuthImportViewAccount({
           onInput={handleChange}
         />
 
-        <p className={styles.info}>{renderText(lang('$import_view_account_note'))}</p>
+        <p className={styles.info}>
+          {renderText(lang('$import_view_account_note', {
+            chains: formatEnumeration(lang, getSupportedChains().map(getChainTitle), 'or'),
+          }))}
+        </p>
 
-        <div className={styles.buttons}>
+        <div className={buildClassName(styles.buttons, isInModal && styles.buttonsInModal)}>
           <Button
             isPrimary
             isSubmit

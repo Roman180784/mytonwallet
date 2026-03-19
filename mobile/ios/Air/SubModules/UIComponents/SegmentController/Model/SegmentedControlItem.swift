@@ -3,19 +3,35 @@ import SwiftUI
 import UIKit
 import WalletContext
 
-public struct SegmentedControlItem: Identifiable, Equatable {
+public struct SegmentedControlItem: Identifiable, Equatable, Hashable, Sendable {
     
-    public var index: Int
     public var id: String
-    public var content: AnyView
-    
-    public init(index: Int, id: String, content: AnyView) {
-        self.index = index
+    var title: String
+    var menuContext: MenuContext?
+    var hidesMenuIcon: Bool
+    var isDeletable: Bool
+    var viewController: WSegmentedControllerContent
+        
+    public init(id: String, title: String, menuContext: MenuContext? = nil, hidesMenuIcon: Bool = false, isDeletable: Bool = true, viewController: WSegmentedControllerContent) {
         self.id = id
-        self.content = content
+        self.title = title
+        self.menuContext = menuContext
+        self.hidesMenuIcon = hidesMenuIcon
+        self.isDeletable = isDeletable
+        self.viewController = viewController
     }
     
-    public static func == (lhs: SegmentedControlItem, rhs: SegmentedControlItem) -> Bool {
+    public static func ==(lhs: SegmentedControlItem, rhs: SegmentedControlItem) -> Bool {
         lhs.id == rhs.id
+            && lhs.title == rhs.title
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+    }
+    
+    var shouldShowMenuIconWhenActive: Bool {
+        menuContext != nil && !hidesMenuIcon
     }
 }

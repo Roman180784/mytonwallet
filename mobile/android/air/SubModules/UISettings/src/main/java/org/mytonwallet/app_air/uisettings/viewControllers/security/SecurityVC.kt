@@ -2,7 +2,6 @@ package org.mytonwallet.app_air.uisettings.viewControllers.security
 
 import android.content.Context
 import android.os.Build
-import android.view.Gravity
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -13,21 +12,21 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.isGone
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.commonViews.KeyValueRowView
+import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.drawable.SeparatorBackgroundDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.widgets.WBaseView
 import org.mytonwallet.app_air.uicomponents.widgets.WEditableItemView
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WSwitch
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
+import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup.BackgroundStyle
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeConfirmVC
 import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeViewState
 import org.mytonwallet.app_air.uisettings.viewControllers.RecoveryPhraseVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
@@ -37,10 +36,15 @@ import org.mytonwallet.app_air.walletcontext.helpers.BiometricHelpers
 import org.mytonwallet.app_air.walletcontext.models.MAutoLockOption
 import org.mytonwallet.app_air.walletcontext.secureStorage.WSecureStorage
 import org.mytonwallet.app_air.walletcore.WalletCore
+import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiMethod
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 
 class SecurityVC(context: Context, private var currentPasscode: String) : WViewController(context) {
+    override val TAG = "Security"
+
+    override val displayedAccount =
+        DisplayedAccount(AccountStore.activeAccountId, AccountStore.isPushedTemporary)
 
     override val shouldDisplayBottomBar = true
 
@@ -51,13 +55,12 @@ class SecurityVC(context: Context, private var currentPasscode: String) : WViewC
         forceSeparator = true
     }
 
-    private val backupTitleLabel: WLabel by lazy {
-        val lbl = WLabel(context)
-        lbl.text = LocaleController.getString("\$back_up_security")
-        lbl.setStyle(16f, WFont.Medium)
-        lbl.gravity = Gravity.CENTER_VERTICAL
-        lbl.setPadding(20.dp, 0, 20.dp, 0)
-        lbl
+    private val backupTitleLabel = HeaderCell(context).apply {
+        configure(
+            LocaleController.getString("\$back_up_security"),
+            titleColor = WColor.Tint,
+            HeaderCell.TopRounding.FIRST_ITEM
+        )
     }
 
     private val backupRow = KeyValueRowView(
@@ -77,7 +80,7 @@ class SecurityVC(context: Context, private var currentPasscode: String) : WViewC
                         return@call
                     }
                     navigationController?.push(
-                        RecoveryPhraseVC(context, words)
+                        RecoveryPhraseVC(context, displayedAccount.network, words)
                     )
                 })
         }
@@ -88,13 +91,12 @@ class SecurityVC(context: Context, private var currentPasscode: String) : WViewC
         v
     }
 
-    private val passcodeTitleLabel: WLabel by lazy {
-        val lbl = WLabel(context)
-        lbl.text = LocaleController.getString("Passcode")
-        lbl.setStyle(16f, WFont.Medium)
-        lbl.gravity = Gravity.CENTER_VERTICAL
-        lbl.setPadding(20.dp, 0, 20.dp, 0)
-        lbl
+    private val passcodeTitleLabel = HeaderCell(context).apply {
+        configure(
+            LocaleController.getString("Passcode"),
+            titleColor = WColor.Tint,
+            HeaderCell.TopRounding.NORMAL
+        )
     }
 
     private val biometricLabel: WLabel by lazy {
@@ -150,13 +152,12 @@ class SecurityVC(context: Context, private var currentPasscode: String) : WViewC
 
     private val spacer2 = WBaseView(context)
 
-    private val appLockLabel: WLabel by lazy {
-        val lbl = WLabel(context)
-        lbl.text = LocaleController.getString("App Lock")
-        lbl.setStyle(16f, WFont.Medium)
-        lbl.gravity = Gravity.CENTER_VERTICAL
-        lbl.setPadding(20.dp, 0, 20.dp, 0)
-        lbl
+    private val appLockLabel = HeaderCell(context).apply {
+        configure(
+            LocaleController.getString("App Lock"),
+            titleColor = WColor.Tint,
+            HeaderCell.TopRounding.NORMAL
+        )
     }
 
     private val lockTimeView = WEditableItemView(context).apply {
@@ -197,7 +198,11 @@ class SecurityVC(context: Context, private var currentPasscode: String) : WViewC
                         }
                     },
                     popupWidth = WRAP_CONTENT,
-                    aboveView = false
+                    positioning = WMenuPopup.Positioning.BELOW,
+                    windowBackgroundStyle = BackgroundStyle.Cutout.fromView(
+                        lockTimeView,
+                        roundRadius = 40f.dp
+                    )
                 )
             }
         }
@@ -210,17 +215,17 @@ class SecurityVC(context: Context, private var currentPasscode: String) : WViewC
             ViewConstants.HORIZONTAL_PADDINGS.dp,
             0
         )
-        if (AccountStore.activeAccount?.isViewOnly != true) {
-            v.addView(backupTitleLabel, ViewGroup.LayoutParams(MATCH_PARENT, 48.dp))
+        if (AccountStore.activeAccount?.accountType == MAccount.AccountType.MNEMONIC) {
+            v.addView(backupTitleLabel, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             v.addView(backupRow)
             v.addView(spacer1, ViewGroup.LayoutParams(MATCH_PARENT, ViewConstants.GAP.dp))
         }
-        v.addView(passcodeTitleLabel, ViewGroup.LayoutParams(MATCH_PARENT, 48.dp))
-        v.addView(biometricAuthRow, ConstraintLayout.LayoutParams(MATCH_PARENT, 56.dp))
+        v.addView(passcodeTitleLabel, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        v.addView(biometricAuthRow, ConstraintLayout.LayoutParams(MATCH_PARENT, 50.dp))
         v.addView(changePasscodeRow)
         v.addView(spacer2, ViewGroup.LayoutParams(MATCH_PARENT, ViewConstants.GAP.dp))
-        v.addView(appLockLabel, ViewGroup.LayoutParams(MATCH_PARENT, 48.dp))
-        v.addView(autoLockRow, ConstraintLayout.LayoutParams(MATCH_PARENT, 56.dp))
+        v.addView(appLockLabel, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        v.addView(autoLockRow, ConstraintLayout.LayoutParams(MATCH_PARENT, 50.dp))
         v.setConstraints {
             if (AccountStore.activeAccount?.isViewOnly != true) {
                 toTop(backupTitleLabel)
@@ -279,42 +284,33 @@ class SecurityVC(context: Context, private var currentPasscode: String) : WViewC
     override fun updateTheme() {
         super.updateTheme()
 
-        if (ThemeManager.uiMode.hasRoundedCorners) {
-            view.setBackgroundColor(WColor.SecondaryBackground.color)
-        } else {
-            view.setBackgroundColor(WColor.SecondaryBackground.color)
-            val spacerBackground = WColor.SecondaryBackground.color
-            spacer1.setBackgroundColor(spacerBackground)
-        }
+        view.setBackgroundColor(WColor.SecondaryBackground.color)
         if (AccountStore.activeAccount?.isViewOnly != true) {
-            backupTitleLabel.setTextColor(WColor.Tint.color)
             backupTitleLabel.setBackgroundColor(
                 WColor.Background.color,
-                ViewConstants.TOP_RADIUS.dp,
+                ViewConstants.TOOLBAR_RADIUS.dp,
                 0f,
             )
             backupRow.setBackgroundColor(WColor.Background.color)
             passcodeTitleLabel.setBackgroundColor(
                 WColor.Background.color,
-                ViewConstants.BIG_RADIUS.dp,
+                ViewConstants.BLOCK_RADIUS.dp,
                 0f,
             )
         } else {
             passcodeTitleLabel.setBackgroundColor(
                 WColor.Background.color,
-                ViewConstants.TOP_RADIUS.dp,
+                ViewConstants.TOOLBAR_RADIUS.dp,
                 0f,
             )
         }
-        passcodeTitleLabel.setTextColor(WColor.Tint.color)
         biometricAuthRow.background = separatorBackgroundDrawable
         biometricAuthRow.addRippleEffect(WColor.SecondaryBackground.color)
         biometricLabel.setTextColor(WColor.PrimaryText.color)
         changePasscodeRow.setBackgroundColor(WColor.Background.color)
-        appLockLabel.setTextColor(WColor.Tint.color)
         appLockLabel.setBackgroundColor(
             WColor.Background.color,
-            ViewConstants.BIG_RADIUS.dp,
+            ViewConstants.BLOCK_RADIUS.dp,
             0f,
         )
         autoLockRow.setBackgroundColor(WColor.Background.color)

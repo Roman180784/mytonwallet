@@ -59,6 +59,7 @@ class TonConnectRequestSendVC(
     private val connectionType: ApiConnectionType,
     private var update: ApiUpdate.ApiUpdateDappSignRequest? = null
 ) : WViewControllerWithModelStore(context), CustomListAdapter.ItemClickListener, SkeletonContainer {
+    override val TAG = "TonConnectRequestSend"
 
     override val shouldDisplayTopBar = true
 
@@ -180,7 +181,7 @@ class TonConnectRequestSendVC(
             topToTop(
                 bottomReversedCornerViewUpsideDown,
                 cancelButtonView,
-                -20f - ViewConstants.BIG_RADIUS
+                -ViewConstants.GAP - ViewConstants.BLOCK_RADIUS
             )
             toBottom(bottomReversedCornerViewUpsideDown)
             toLeft(cancelButtonView, 20f)
@@ -211,6 +212,13 @@ class TonConnectRequestSendVC(
         }
 
         confirmButtonView.setOnClickListener {
+            if (AccountStore.accountById(update?.accountId)?.isViewOnly == true) {
+                window?.topViewController?.showAlert(
+                    LocaleController.getString("Error"),
+                    LocaleController.getString("Action is not possible on a view-only wallet.")
+                )
+                return@setOnClickListener
+            }
             if (AccountStore.activeAccount?.isHardware == true) {
                 confirmHardware()
             } else {
@@ -329,6 +337,7 @@ class TonConnectRequestSendVC(
             }
 
             is TonConnectRequestSendViewModel.Event.OpenDappInBrowser -> {
+                activeDialog?.dismiss()
                 window?.dismissLastNav(onCompletion = {
                     WalletCore.notifyEvent(WalletEvent.OpenUrl(event.url))
                 })
@@ -351,8 +360,8 @@ class TonConnectRequestSendVC(
         if (isShowingSkeleton) {
             headerSkeletonContainer.setBackgroundColor(
                 WColor.Background.color,
-                ViewConstants.TOP_RADIUS.dp,
-                ViewConstants.BIG_RADIUS.dp
+                ViewConstants.TOOLBAR_RADIUS.dp,
+                ViewConstants.BLOCK_RADIUS.dp
             )
             headerImageSkeletonView.setBackgroundColor(WColor.SecondaryBackground.color, 20f.dp)
             headerTitleSkeletonView.setBackgroundColor(WColor.SecondaryBackground.color, 12f.dp)
@@ -433,13 +442,14 @@ class TonConnectRequestSendVC(
     private val ledgerSignDataObject: LedgerConnectVC.SignData
         get() {
             val updateValue = update ?: throw Exception("Update is null")
+            val accountId = updateValue.accountId
             return when (updateValue) {
                 is ApiUpdate.ApiUpdateDappSendTransactions -> {
-                    LedgerConnectVC.SignData.SignDappTransfers(updateValue)
+                    LedgerConnectVC.SignData.SignDappTransfers(accountId, updateValue)
                 }
 
                 is ApiUpdate.ApiUpdateDappSignData -> {
-                    LedgerConnectVC.SignData.SignDappData(updateValue)
+                    LedgerConnectVC.SignData.SignDappData(accountId, updateValue)
                 }
 
                 else -> {

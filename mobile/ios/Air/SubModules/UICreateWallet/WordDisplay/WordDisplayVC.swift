@@ -7,13 +7,10 @@
 
 import UIKit
 import SwiftUI
-import WalletCore
 import WalletContext
-import UIHome
-import UISettings
 import UIComponents
 
-public class WordDisplayVC: WViewController {
+public class WordDisplayVC: CreateWalletBaseVC {
 
     let introModel: IntroModel
     let wordList: [String]
@@ -36,23 +33,19 @@ public class WordDisplayVC: WViewController {
     }
 
     func setupViews() {
-        addNavigationBar(
-            title: wordList.count == 24 ? lang("24 Words") : lang("12 Words"),
-            closeIcon: !canGoBack,
-            addBackButton: weakifyGoBackIfAvailable(),
-        )
+        
+        navigationItem.title = wordList.count == 24 ? lang("24 Words") : lang("12 Words")
+        if !canGoBack {
+            addCloseNavigationItemIfNeeded()
+        }
         
         hostingController = addHostingController(makeView(), constraints: .fill)
-        
-        bringNavigationBarToFront()
     }
     
     func makeView() -> WordDisplayView {
         WordDisplayView(
             introModel: introModel,
             words: wordList,
-            navigationBarInset: navigationBarHeight,
-            onScroll: weakifyUpdateProgressiveBlur(),
         )
     }
 }
@@ -60,10 +53,9 @@ public class WordDisplayVC: WViewController {
 #if DEBUG
 @available(iOS 18.0, *)
 #Preview {
-    UIFont.registerAirFonts()
     LocalizationSupport.shared.setLanguageCode("ru")
     return WordDisplayVC(
-        introModel: IntroModel(password: nil),
+        introModel: IntroModel(network: .mainnet, password: nil),
         wordList: [
             "word 1", "word 2", "word 3", "word 4",
             "word 5", "word 6", "word 7", "word 8",

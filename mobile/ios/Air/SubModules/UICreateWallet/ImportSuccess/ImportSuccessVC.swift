@@ -7,10 +7,8 @@
 
 import SwiftUI
 import UIKit
-import WalletCore
 import WalletContext
 import UIPasscode
-import UIHome
 import UIComponents
 
 public enum SuccessKind {
@@ -19,7 +17,7 @@ public enum SuccessKind {
     case importedView
 }
 
-public class ImportSuccessVC: WViewController {
+public class ImportSuccessVC: CreateWalletBaseVC {
     
     var introModel: IntroModel
     private let successKind: SuccessKind
@@ -61,6 +59,6 @@ public class ImportSuccessVC: WViewController {
 @available(iOS 18.0, *)
 #Preview {
     LocalizationSupport.shared.setLanguageCode("ru")
-    return UINavigationController(rootViewController: ImportSuccessVC(.imported, introModel: IntroModel(password: nil)))
+    return UINavigationController(rootViewController: ImportSuccessVC(.imported, introModel: IntroModel(network: .mainnet, password: nil)))
 }
 #endif

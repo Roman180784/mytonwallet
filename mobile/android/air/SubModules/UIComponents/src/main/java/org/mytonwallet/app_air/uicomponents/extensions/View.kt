@@ -2,9 +2,13 @@ package org.mytonwallet.app_air.uicomponents.extensions
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Build
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.utils.Vec2i
+import org.mytonwallet.app_air.walletbasecontext.utils.vec2i
 import kotlin.math.roundToInt
 
 fun View.setOnClickListener(listener: (() -> Unit)?) {
@@ -13,6 +17,11 @@ fun View.setOnClickListener(listener: (() -> Unit)?) {
     } ?: run {
         this.setOnClickListener(null)
     }
+}
+
+fun View.disableInteraction() {
+    isEnabled = false
+    isClickable = false
 }
 
 fun View.setPaddingDp(left: Float, top: Float, right: Float, bottom: Float) {
@@ -59,6 +68,12 @@ fun View.setPaddingDpLocalized(start: Int, top: Int, end: Int, bottom: Int) {
     )
 }
 
+fun ViewGroup.suppressLayoutCompat(suppress: Boolean) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        suppressLayout(suppress)
+    }
+}
+
 fun FrameLayout.LayoutParams.setMarginsDp(left: Float, top: Float, right: Float, bottom: Float) {
     this.setMargins(
         left.dp.roundToInt(),
@@ -93,3 +108,22 @@ fun View.asImage(): Bitmap? {
     draw(canvas)
     return bitmap
 }
+
+fun View.getLocationOnScreen(out: Vec2i = vec2i()): Vec2i {
+    getLocationOnScreen(out)
+    return out
+}
+
+fun View.getLocationInWindow(out: Vec2i = vec2i()): Vec2i {
+    getLocationInWindow(out)
+    return out
+}
+
+inline val Int.exactly: Int
+    get() = View.MeasureSpec.makeMeasureSpec(this, View.MeasureSpec.EXACTLY)
+
+inline val Int.atMost: Int
+    get() = View.MeasureSpec.makeMeasureSpec(this, View.MeasureSpec.AT_MOST)
+
+inline val Int.unspecified: Int
+    get() = View.MeasureSpec.makeMeasureSpec(this, View.MeasureSpec.UNSPECIFIED)

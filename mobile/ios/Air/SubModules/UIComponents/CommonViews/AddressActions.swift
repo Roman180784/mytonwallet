@@ -1,5 +1,5 @@
 //
-//  BaseCurrencyValueText.swift
+//  AddressActions.swift
 //  MyTonWalletAir
 //
 //  Created by nikstar on 22.11.2024.
@@ -9,57 +9,93 @@ import SwiftUI
 import WalletCore
 import WalletContext
 
+@MainActor func makeTappableAddressMenu(accountContext: AccountContext, addressModel: AddressViewModel) -> () -> MenuConfig {
+    let chain = addressModel.chain
+    
+    return {
+        var menuItems: [MenuItem] = [
+            .customView(id: "0-view-account", view: {
+                    AnyView(ViewAccountMenuItem(addressModel: addressModel))
+                }, height: 60, width: 250),
+            .wideSeparator()
+        ]
+        
+        if let address = addressModel.addressToCopy {
+            menuItems += .button(id: "0-copy", title: lang("Copy Address"), trailingIcon: .air("SendCopy")) {
+                UIPasteboard.general.string = address
+                AppActions.showToast(animationName: "Copy", message: lang("%chain% Address Copied", arg1: chain.title))
+                Haptics.play(.lightTap)
+            }
+        }
+        
+        if chain.isSupported, let saveKey = addressModel.effectiveSaveKey {
+            if let saved = accountContext.savedAddresses.get(chain: chain, address: saveKey) {
+                menuItems += .button(id: "0-unsave", title: lang("Remove from Saved"), trailingIcon: .system("star.slash")) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation {
+                            accountContext.savedAddresses.delete(saved)
+                        }
+                    }
+                }
+            } else {
+                menuItems += .button(id: "0-save", title: lang("Save Address"), trailingIcon: .system("star")) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        AppActions.showSaveAddressDialog(accountContext: accountContext, chain: chain, address: saveKey)
+                    }
+                }
+            }
+        }
+                
+        if chain.isSupported, let address = addressModel.addressToCopy {
+            menuItems += .button(id: "0-open-explorer", title: lang("Open in Explorer"), trailingIcon: .air("SendGlobe")) {
+                let url = ExplorerHelper.addressUrl(chain: chain, address: address)
+                AppActions.openInBrowser(url)
+            }
+        }
 
-public struct AddressActions: View {
-    
-    var address: String
-    var showSaveToFavorites: Bool
-    
-    public init(address: String, showSaveToFavorites: Bool) {
-        self.address = address
-        self.showSaveToFavorites = showSaveToFavorites
+        return MenuConfig(menuItems: menuItems)
     }
-    
+}
+
+private struct ViewAccountMenuItem: View {
+    var addressModel: AddressViewModel
+
+    @Environment(MenuContext.self) var menuContext
+
     public var body: some View {
-        Button(action: onCopy) {
-            Label {
-                Text(lang("Copy"))
-            } icon: {
-                Image("SendCopy", bundle: AirBundle)
+        let address = addressModel.address ?? "?"
+        let name = addressModel.name
+        let chain = addressModel.chain
+        let account = MAccount(id: "", title: name, type: .view, byChain: [chain: AccountChain(address: address)], isTemporary: true)
+        
+        SelectableMenuItem(id: "0-view-account", action: {
+            topViewController()?.dismiss(animated: true) {
+                AppActions.showTemporaryViewAccount(addressOrDomainByChain: [chain.rawValue: address])
             }
-        }
-        Button(action: onOpenExplorer) {
-            Label {
-                Text(lang("Open in Explorer"))
-            } icon: {
-                Image("SendGlobe", bundle: AirBundle)
+        }, dismissOnSelect: true) {
+            HStack(spacing: 8) {
+                AccountIcon(account: account)
+                
+                VStack(alignment: .leading) {
+                    if let name {
+                        Text(name)
+                            .font(.system(size: 17))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(formatStartEndAddress(address, prefix: 6, suffix: 6))
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text(formatStartEndAddress(address, prefix: 6, suffix: 6))
+                            .font(.system(size: 17))
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image.airBundle("DetailsChevronRight")
             }
+            .padding(.horizontal, 4)
         }
-//        if showSaveToFavorites" {
-//            Button(action: onSaveToFavorites) {
-//                Label {
-//                    Text(lang("Save to Favorites"))
-//                } icon: {
-//                    Image("SendFavorites", bundle: AirBundle)
-//                }
-//            }
-//        }"
-    }
-    
-    func onCopy() {
-        UIPasteboard.general.string = address
-        topWViewController()?.showToast(animationName: "Copy", message: lang("Address was copied!"))
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-    }
-    
-    func onOpenExplorer() {
-        let chain = availableChains.first(where: { $0.validate(address: address) }) ?? ApiChain.ton
-        let url = ExplorerHelper.addressUrl(chain: chain, address: address)
-        AppActions.openInBrowser(url)
-    }
-    
-    func onSaveToFavorites() {
-        topWViewController()?.showToast(message: "Not implemented")
-        UINotificationFeedbackGenerator().notificationOccurred(.error)
     }
 }

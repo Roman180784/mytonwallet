@@ -11,7 +11,8 @@ import androidx.core.view.isGone
 import org.mytonwallet.app_air.uicomponents.commonViews.WalletTypeView
 import org.mytonwallet.app_air.uicomponents.drawable.CheckboxDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.extensions.updateDotsTypeface
+import org.mytonwallet.app_air.uicomponents.extensions.unspecified
+import org.mytonwallet.app_air.uicomponents.extensions.styleDots
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
@@ -23,6 +24,7 @@ import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.formatStartEndAddress
+import org.mytonwallet.app_air.walletcontext.utils.colorWithAlpha
 import org.mytonwallet.app_air.walletcore.models.MAccount
 
 class NotificationSettingsAccountCell(
@@ -62,14 +64,9 @@ class NotificationSettingsAccountCell(
         WalletTypeView(context)
     }
 
-    private val separator: WView by lazy {
-        val v = WView(context)
-        v
-    }
-
     init {
         layoutParams.apply {
-            height = 64.dp
+            height = 60.dp
         }
         addView(imageView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         addView(
@@ -81,13 +78,12 @@ class NotificationSettingsAccountCell(
             LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
         )
         addView(subtitleLabel)
-        addView(separator, LayoutParams(0, 1))
         setConstraints {
             toStart(imageView, 25f)
             toCenterY(imageView)
 
             // Title
-            toTop(titleLabel, 6f)
+            toTop(titleLabel, 4f)
             toStart(titleLabel, 68f)
             setHorizontalBias(titleLabel.id, 0f)
             constrainedWidth(titleLabel.id, true)
@@ -104,10 +100,6 @@ class NotificationSettingsAccountCell(
             toEnd(subtitleLabel, 20f)
             setHorizontalBias(subtitleLabel.id, 0f)
             constrainedWidth(subtitleLabel.id, true)
-
-            toBottom(separator)
-            toStart(separator, 72f)
-            toEnd(separator)
 
             createVerticalChain(
                 ConstraintSet.PARENT_ID, ConstraintSet.TOP,
@@ -153,20 +145,16 @@ class NotificationSettingsAccountCell(
         subtitleLabel.text = SpannableStringBuilder(
             account.tonAddress?.formatStartEndAddress()
         ).apply {
-            updateDotsTypeface()
+            styleDots()
         }
         subtitleLabel.isGone = subtitleLabel.text.isNullOrEmpty()
-        separator.isGone = isLast
 
         setConstraints {
             val badgeWidth =
                 if (badgeLabel.isGone)
                     0
                 else {
-                    badgeLabel.measure(
-                        MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-                        MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-                    )
+                    badgeLabel.measure(0.unspecified, 0.unspecified)
                     badgeLabel.measuredWidth
                 }
             toEndPx(titleLabel, 24.dp + badgeWidth)
@@ -179,13 +167,15 @@ class NotificationSettingsAccountCell(
         setBackgroundColor(
             WColor.Background.color,
             0f,
-            if (isLast) ViewConstants.BIG_RADIUS.dp else 0f
+            if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f
         )
         addRippleEffect(WColor.SecondaryBackground.color)
         titleLabel.setTextColor(WColor.PrimaryText.color)
         subtitleLabel.setTextColor(WColor.SecondaryText.color)
-        badgeLabel.setColor(WColor.SecondaryText.color)
-        separator.setBackgroundColor(WColor.Separator.color)
+        badgeLabel.setColor(
+            WColor.SecondaryText.color.colorWithAlpha(41),
+            WColor.SecondaryText.color
+        )
         checkboxDrawable.checkedColor = WColor.Tint.color
         checkboxDrawable.uncheckedColor = WColor.SecondaryText.color
     }

@@ -7,9 +7,14 @@ import type { Account, AccountState } from '../../../global/types';
 
 import { IS_CORE_WALLET } from '../../../config';
 import renderText from '../../../global/helpers/renderText';
-import { selectCurrentAccountState, selectNetworkAccounts } from '../../../global/selectors';
+import {
+  selectCurrentAccountId,
+  selectNetworkAccounts,
+  selectOrderedAccounts,
+} from '../../../global/selectors';
 import { getAccountTitle } from '../../../util/account';
 import buildClassName from '../../../util/buildClassName';
+import isViewAccount from '../../../util/isViewAccount';
 import { IS_IOS_APP } from '../../../util/windowEnvironment';
 
 import useLang from '../../../hooks/useLang';
@@ -26,14 +31,18 @@ interface OwnProps {
   isOpen?: boolean;
   onClose: (shouldCloseSettings: boolean) => void;
   isInAppLock?: boolean;
+  // If provided, logout will be performed for this account instead of current
+  targetAccountId?: string;
 }
 
 interface StateProps {
-  currentAccountId: string;
+  accountId: string;
   hasManyAccounts: boolean;
   accounts: Record<string, Account>;
+  orderedAccounts: Array<[string, Account]>;
   accountStates: Record<string, AccountState>;
   isBackupRequired?: boolean;
+  isViewMode: boolean;
 }
 
 interface LinkAccount {
@@ -43,13 +52,14 @@ interface LinkAccount {
 
 function LogOutModal({
   isOpen,
-  currentAccountId,
+  accountId,
   hasManyAccounts,
-  accounts,
+  orderedAccounts,
   accountStates,
   isBackupRequired,
-  onClose,
+  isViewMode,
   isInAppLock,
+  onClose,
 }: OwnProps & StateProps) {
   const { signOut, switchAccount } = getActions();
 
@@ -61,8 +71,8 @@ function LogOutModal({
       return [];
     }
 
-    return Object.entries(accounts).reduce<LinkAccount[]>((acc, [id, account]) => {
-      if (id !== currentAccountId && accountStates[id]?.isBackupRequired) {
+    return orderedAccounts.reduce<LinkAccount[]>((acc, [id, account]) => {
+      if (id !== accountId && accountStates[id]?.isBackupRequired) {
         acc.push({
           id,
           title: getAccountTitle(account) ?? '',
@@ -71,7 +81,7 @@ function LogOutModal({
 
       return acc;
     }, []);
-  }, [accounts, accountStates, currentAccountId, hasManyAccounts]);
+  }, [orderedAccounts, accountStates, accountId, hasManyAccounts]);
 
   useEffect(() => {
     if (isOpen) {
@@ -86,7 +96,8 @@ function LogOutModal({
 
   const handleLogOut = useLastCallback(() => {
     onClose(!isLogOutFromAllAccounts && hasManyAccounts);
-    signOut({ level: IS_CORE_WALLET ? 'all' : isLogOutFromAllAccounts ? 'network' : 'account' });
+    const level = IS_CORE_WALLET ? 'all' : (isLogOutFromAllAccounts ? 'network' : 'account');
+    signOut({ level, accountId: level === 'account' ? accountId : undefined });
   });
 
   const handleClose = useLastCallback(() => {
@@ -154,12 +165,12 @@ function LogOutModal({
     <Modal
       isOpen={isOpen}
       isCompact
-      title={IS_IOS_APP ? lang('Remove Wallet') : lang('Log Out')}
+      title={lang('Remove')}
       onClose={handleClose}
       isInAppLock={isInAppLock}
     >
       <p className={buildClassName(modalStyles.text, modalStyles.text_noExtraMargin)}>
-        {renderText(lang('$logout_warning', '12/24'))}
+        {renderText(isViewMode ? lang('$logout_view_mode_warning') : lang('$logout_warning', '12/24'))}
       </p>
       {!(IS_CORE_WALLET || !!isInAppLock) && hasManyAccounts && (
         <Checkbox
@@ -188,18 +199,25 @@ function LogOutModal({
 }
 
 export default memo(
-  withGlobal<OwnProps>((global): StateProps => {
+  withGlobal<OwnProps>((global, ownProps): StateProps => {
     const accounts = selectNetworkAccounts(global) || {};
-    const currentAccountState = selectCurrentAccountState(global);
+    const orderedAccounts = selectOrderedAccounts(global);
+    const fallbackAccountId = selectCurrentAccountId(global);
+    const accountId = ownProps.targetAccountId ?? fallbackAccountId!;
+    const targetAccountState = global.byAccountId[accountId];
     const accountIds = Object.keys(accounts);
     const hasManyAccounts = accountIds.length > 1;
+    const targetAccount = accounts[accountId];
+    const isViewMode = targetAccount && isViewAccount(targetAccount.type);
 
     return {
-      currentAccountId: global.currentAccountId!,
+      accountId,
       hasManyAccounts,
       accounts,
+      orderedAccounts,
       accountStates: global.byAccountId,
-      isBackupRequired: currentAccountState?.isBackupRequired,
+      isBackupRequired: targetAccountState?.isBackupRequired,
+      isViewMode,
     };
   })(LogOutModal),
 );

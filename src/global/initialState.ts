@@ -11,6 +11,7 @@ import {
   SignDataState,
   StakingState,
   SwapState,
+  TransactionInfoState,
   TransferState,
 } from './types';
 
@@ -24,18 +25,19 @@ import {
   DEFAULT_TRANSFER_TOKEN_SLUG,
   INIT_SWAP_ASSETS,
   IS_CORE_WALLET,
+  IS_EXPLORER,
   SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
   SWAP_API_VERSION,
   THEME_DEFAULT,
-  TOKEN_INFO,
 } from '../config';
-import { mapValues } from '../util/iteratees';
+import { getTokenInfo } from '../util/chain';
+import { buildCollectionByKey, mapValues } from '../util/iteratees';
 import { IS_IOS_APP, USER_AGENT_LANG_CODE } from '../util/windowEnvironment';
 
-export const STATE_VERSION = 47;
+export const STATE_VERSION = 53;
 
 export const INITIAL_STATE: GlobalState = {
-  appState: AppState.Auth,
+  appState: IS_EXPLORER ? AppState.Main : AppState.Auth,
 
   auth: {
     state: AuthState.none,
@@ -83,11 +85,11 @@ export const INITIAL_STATE: GlobalState = {
   stakingDefault: DEFAULT_STAKING_STATE,
 
   tokenInfo: {
-    bySlug: TOKEN_INFO,
+    bySlug: getTokenInfo(),
   },
 
   swapTokenInfo: {
-    bySlug: INIT_SWAP_ASSETS,
+    bySlug: buildCollectionByKey(Object.values(INIT_SWAP_ASSETS), 'slug'),
   },
 
   swapVersion: SWAP_API_VERSION,
@@ -102,10 +104,10 @@ export const INITIAL_STATE: GlobalState = {
     animationLevel: ANIMATION_LEVEL_DEFAULT,
     areTinyTransfersHidden: !SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
     canPlaySounds: true,
+    hasOpenedAir: false,
     langCode: USER_AGENT_LANG_CODE,
     byAccountId: {},
     areTokensWithNoCostHidden: !SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
-    isSortByValueEnabled: true,
     isAppLockEnabled: true,
     autolockValue: DEFAULT_AUTOLOCK_OPTION,
     baseCurrency: DEFAULT_PRICE_CURRENCY,
@@ -114,20 +116,27 @@ export const INITIAL_STATE: GlobalState = {
   byAccountId: {},
 
   dialogs: [],
-  notifications: [],
+  toasts: [],
 
   stateVersion: STATE_VERSION,
+  currentTemporaryViewAccountId: undefined,
+
   restrictions: {
     isLimitedRegion: false,
     isSwapDisabled: IS_IOS_APP || IS_CORE_WALLET,
     isOnRampDisabled: IS_IOS_APP || IS_CORE_WALLET,
+    isOffRampDisabled: IS_IOS_APP || IS_CORE_WALLET,
     isNftBuyingDisabled: IS_IOS_APP,
   },
 
   mediaViewer: {},
 
+  currentTransactionInfo: {
+    state: TransactionInfoState.None,
+  },
+
   pushNotifications: {
-    enabledAccounts: {},
+    enabledAccounts: [],
   },
 
   currencyRates: mapValues(CURRENCIES, (currency) => currency.fallbackRate) as ApiCurrencyRates,

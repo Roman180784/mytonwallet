@@ -9,13 +9,12 @@ import {
   APP_VERSION,
   IS_CORE_WALLET,
   IS_EXTENSION,
-  MTW_TIPS_CHANNEL_NAME,
 } from '../../config';
 import { getHelpCenterUrl } from '../../global/helpers/getHelpCenterUrl';
 import renderText from '../../global/helpers/renderText';
 import buildClassName from '../../util/buildClassName';
 import { handleUrlClick } from '../../util/openUrl';
-import { getBlogUrl } from '../../util/url';
+import { getBlogUrl, getTelegramNewsChannelUrl, getTelegramTipsChannelUrl } from '../../util/url';
 
 import useAppTheme from '../../hooks/useAppTheme';
 import useHistoryBack from '../../hooks/useHistoryBack';
@@ -75,7 +74,7 @@ function SettingsAbout({
       ) : (
         <Header
           isActive={isActive}
-          title={`${APP_NAME} ${APP_VERSION} ${APP_ENV_MARKER}`}
+          title={`${APP_NAME} ${APP_VERSION} ${APP_ENV_MARKER || ''}`}
           topTargetRef={headerRef}
           onBackClick={handleBackClick}
         />
@@ -105,7 +104,7 @@ function SettingsAbout({
         <p className={styles.blockTitle}>{lang('%app_name% Resources', { app_name: APP_NAME })}</p>
         <div className={styles.settingsBlock}>
           <a
-            href={`https://t.me/${MTW_TIPS_CHANNEL_NAME[lang.code!] ?? MTW_TIPS_CHANNEL_NAME.en}`}
+            href={getTelegramTipsChannelUrl(lang.code!)}
             target="_blank"
             rel="noreferrer"
             className={styles.item}
@@ -142,7 +141,7 @@ function SettingsAbout({
           </a>
         </div>
 
-        <p className={styles.blockTitle}>{lang('Frequency Questions and Answers')}</p>
+        <p className={styles.blockTitle}>{lang('Frequent Questions & Answers')}</p>
         <div className={buildClassName(styles.settingsBlock, styles.settingsBlock_text)}>
           {IS_EXTENSION ? (
             <>
@@ -159,24 +158,11 @@ function SettingsAbout({
                   {lang('More info and demo.')}
                 </a>
               </p>
-              <hr className={styles.separator} />
-              <h3 className={buildClassName(styles.text, styles.heading)}>
-                <Emoji from="🦄" /> {lang('What is TON Magic?')}
-              </h3>
-              <p className={buildClassName(styles.text, styles.textInChat)}>
-                {renderText(lang('$about_extension_description2'))}
-              </p>
-              <p className={buildClassName(styles.text, styles.textInChat)}>
-                {lang('$about_extension_description3')}{' '}
-                <a href="https://telegra.ph/Telegram--TON-11-10" target="_blank" rel="noopener noreferrer">
-                  {lang('More info and demo.')}
-                </a>
-              </p>
             </>
           ) : (
             <>
               <h3 className={buildClassName(activityStyles.comment, activityStyles.colorIn, styles.heading)}>
-                {lang('$about_proxy_magic_title', { ninja: <Emoji from="🥷" />, unicorn: <Emoji from="🦄" /> })}
+                <Emoji from="🥷" /> {lang('What is TON Proxy?')}
               </h3>
               <p className={buildClassName(styles.text, styles.textInChat)}>
                 {lang('$about_proxy_magic_description', {
@@ -213,7 +199,7 @@ function SettingsAbout({
             {lang('$about_wallet_community', {
               community_link: (
                 <a
-                  href={lang.code === 'ru' ? 'https://t.me/MyTonWalletRu' : 'https://t.me/MyTonWalletEn'}
+                  href={getTelegramNewsChannelUrl(lang.code!)}
                   target="_blank"
                   rel="noreferrer"
                 >

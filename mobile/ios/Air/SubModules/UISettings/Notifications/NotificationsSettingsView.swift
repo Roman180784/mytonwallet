@@ -5,60 +5,56 @@ import UIKit
 import UIComponents
 import WalletContext
 import WalletCore
+import Perception
 
 private let log = Log("NotificationsVC")
 
 struct NotificationsSettingsView: View {
     
-    @ObservedObject var viewModel: NotificationsSettingsViewModel
-    var navigationBarHeight: CGFloat
-    var onScroll: (CGFloat) -> ()
+    var viewModel: NotificationsSettingsViewModel
     
     @State private var areNotificationsOn: Bool = false
-    @Namespace private var ns
     
     var body: some View {
-        InsetList(topPadding: 16, spacing: 24) {
-            if viewModel.notificationsAreAllowed {
-                notificationsSection
-                    .scrollPosition(ns: ns, offset: navigationBarHeight + 16, callback: onScroll)
-                walletSelectionSection
-            } else {
-                enableNotificationsSection
-                    .scrollPosition(ns: ns, offset: navigationBarHeight + 16, callback: onScroll)
-            }
-            soundsSection
-                .padding(.top, 8)
-                .padding(.bottom, 48)
-        }
-        .navigationBarInset(navigationBarHeight)
-        .coordinateSpace(name: ns)
-        .onChange(of: areNotificationsOn) { areNotificationsOn in
-            withAnimation {
-                if areNotificationsOn {
-                    viewModel.toggledOn()
+        WithPerceptionTracking {
+            InsetList(topPadding: 16, spacing: 24) {
+                if viewModel.notificationsAreAllowed {
+                    notificationsSection
+                    walletSelectionSection
                 } else {
-                    viewModel.toggledOff()
+                    enableNotificationsSection
+                }
+                soundsSection
+                    .padding(.top, 8)
+                    .padding(.bottom, 48)
+            }
+            .onChange(of: areNotificationsOn) { areNotificationsOn in
+                withAnimation {
+                    if areNotificationsOn {
+                        viewModel.toggledOn()
+                    } else {
+                        viewModel.toggledOff()
+                    }
                 }
             }
-        }
-        .onChange(of: viewModel.selectedCount) { selectedCount in
-            withAnimation {
+            .onChange(of: viewModel.selectedCount) { _ in
+                withAnimation {
+                    areNotificationsOn = viewModel.selectedCount > 0
+                }
+            }
+            .onAppear {
                 areNotificationsOn = viewModel.selectedCount > 0
             }
-        }
-        .onAppear {
-            areNotificationsOn = viewModel.selectedCount > 0
-        }
-        .task {
-            for await _ in NotificationCenter.default.notifications(named: UIScene.didActivateNotification) {
-                viewModel.checkIfNotificationsAreEnabled()
+            .task {
+                for await _ in NotificationCenter.default.notifications(named: UIScene.didActivateNotification) {
+                    viewModel.checkIfNotificationsAreEnabled()
+                }
             }
-        }
-        .onChange(of: viewModel.playSounds) { playSounds in
-            Task {
-                AppStorageHelper.sounds = playSounds
-                try await GlobalStorage.syncronize()
+            .onChange(of: viewModel.playSounds) { playSounds in
+                Task {
+                    AppStorageHelper.sounds = playSounds
+                    try await GlobalStorage.syncronize()
+                }
             }
         }
     }
@@ -97,20 +93,26 @@ struct NotificationsSettingsView: View {
         }
     }
     
+    @ViewBuilder
     var walletSelectionSection: some View {
+        @Perception.Bindable var viewModel = viewModel
         InsetSection {
             ForEach($viewModel.selectableAccounts) { $selectableAccount in
-                SelectableAccountRow(
-                    selectableAccount: $selectableAccount,
-                    canSelectAnother: viewModel.canSelectAnother
-                )
+                WithPerceptionTracking {
+                    SelectableAccountRow(
+                        selectableAccount: $selectableAccount,
+                        canSelectAnother: viewModel.canSelectAnother
+                    )
+                }
             }
         } header: {
             Text(lang("Select up to %count% wallets for notifications", arg1: "\(MAX_PUSH_NOTIFICATIONS_ACCOUNT_COUNT)"))
         }
     }
     
+    @ViewBuilder
     var soundsSection: some View {
+        @Perception.Bindable var viewModel = viewModel
         InsetSection {
             InsetCell(verticalPadding: 0) {
                 HStack {
@@ -154,15 +156,14 @@ struct SelectableAccountRow: View {
                 HStack(spacing: 6) {
                     Text(account.displayName)
                         .font(.system(size: 16, weight: .medium))
-                    AccountTypeBadge(account.type, style: .list)
+                    AccountTypeBadge(account.type)
                         .foregroundStyle(Color.air.secondaryLabel)
                 }
-                if let firstAddress = account.firstAddress {
-                    Text("\(formatStartEndAddress(firstAddress))")
-                        .font14h18()
-                        .fixedSize()
-                        .foregroundStyle(Color.air.secondaryLabel)
-                }
+                let firstAddress = account.firstAddress
+                Text("\(formatStartEndAddress(firstAddress))")
+                    .font14h18()
+                    .fixedSize()
+                    .foregroundStyle(Color.air.secondaryLabel)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

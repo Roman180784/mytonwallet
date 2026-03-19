@@ -3,11 +3,12 @@ import type { ActionPerformed, Token } from '@capacitor/push-notifications';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { getActions, getGlobal, setGlobal } from '../../global';
 
-import type { ApiStakingType } from '../../api/types';
+import type { ApiChain, ApiStakingType } from '../../api/types';
 import type { GlobalState } from '../../global/types';
 
+import { TONCOIN } from '../../config';
 import { selectAccountIdByAddress } from '../../global/selectors';
-import { selectNotificationTonAddressesSlow } from '../../global/selectors/notifications';
+import { selectNotificationAddressesSlow } from '../../global/selectors/notifications';
 import { callApi } from '../../api';
 import { MINUTE } from '../../api/constants';
 import { pick } from '../iteratees';
@@ -18,6 +19,7 @@ interface ShowTxMessageData {
   action: 'swap' | 'nativeTx';
   address: string;
   txId: string;
+  chain?: ApiChain; // `ton` by default
 }
 
 interface StakingMessageData {
@@ -32,6 +34,7 @@ interface OpenActivityMessageData {
   action: 'jettonTx';
   address: string;
   slug: string;
+  txId: string;
 }
 
 interface OpenUrlMessageData {
@@ -83,11 +86,7 @@ export async function initNotificationsWithGlobal(global: GlobalState) {
 
   let notificationStatus = await PushNotifications.checkPermissions();
 
-  if (notificationStatus.receive === 'prompt-with-rationale') {
-    return;
-  }
-
-  if (notificationStatus.receive === 'prompt') {
+  if (notificationStatus.receive === 'prompt-with-rationale' || notificationStatus.receive === 'prompt') {
     notificationStatus = await PushNotifications.requestPermissions();
   }
 
@@ -102,7 +101,6 @@ export async function initNotificationsWithGlobal(global: GlobalState) {
 function handlePushNotificationActionPerformed(notification: ActionPerformed) {
   const {
     showAnyAccountTx,
-    showAnyAccountTokenActivity,
     openAnyAccountStakingInfo,
     switchAccountAndOpenUrl,
     openDomainRenewalModal,
@@ -110,7 +108,10 @@ function handlePushNotificationActionPerformed(notification: ActionPerformed) {
   const global = getGlobal();
   const notificationData = notification.notification.data as MessageData;
   const { action, address } = notificationData;
-  const accountId = address === undefined ? undefined : selectAccountIdByAddress(global, 'ton', address);
+  const chain = 'chain' in notificationData && notificationData.chain
+    ? notificationData.chain
+    : TONCOIN.chain;
+  const accountId = address === undefined ? undefined : selectAccountIdByAddress(global, chain, address);
   const network = 'mainnet';
 
   if (action === 'openUrl') {
@@ -126,10 +127,10 @@ function handlePushNotificationActionPerformed(notification: ActionPerformed) {
 
   if (action === 'nativeTx' || action === 'swap') {
     const { txId } = notificationData;
-    showAnyAccountTx({ accountId, txId, network });
+    showAnyAccountTx({ accountId, txId, network, chain });
   } else if (action === 'jettonTx') {
-    const { slug } = notificationData;
-    showAnyAccountTokenActivity({ accountId, slug, network });
+    const { txId } = notificationData;
+    showAnyAccountTx({ accountId, txId, network, chain });
   } else if (action === 'staking') {
     const { stakingId } = notificationData;
     openAnyAccountStakingInfo({ accountId, network, stakingId });
@@ -146,12 +147,13 @@ function handlePushNotificationRegistration(token: Token) {
 
   window.addEventListener('focus', async () => {
     const global = getGlobal();
-    const notificationAccounts = Object.keys(global.pushNotifications.enabledAccounts || []);
+    const notificationAccounts = global.pushNotifications.enabledAccounts;
     if (notificationAccounts.length && nextUpdatePushNotifications <= Date.now()) {
       await callApi('subscribeNotifications', {
         userToken,
         platform: getCapacitorPlatform()!,
-        addresses: Object.values(selectNotificationTonAddressesSlow(global, notificationAccounts)),
+        langCode: global.settings.langCode,
+        addresses: Object.values(selectNotificationAddressesSlow(global, notificationAccounts)).flat(),
       });
       nextUpdatePushNotifications = Date.now() + (60 * MINUTE);
     }

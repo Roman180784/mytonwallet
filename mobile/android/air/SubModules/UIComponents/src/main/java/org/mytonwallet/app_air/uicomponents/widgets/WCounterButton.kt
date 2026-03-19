@@ -14,13 +14,15 @@ import android.view.ViewGroup
 import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.drawable.counter.Counter
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.extensions.exactly
 import org.mytonwallet.app_air.uicomponents.extensions.setPaddingDp
+import org.mytonwallet.app_air.uicomponents.extensions.sp
 import org.mytonwallet.app_air.uicomponents.helpers.CancelableRunnable
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.helpers.typeface
+import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
-import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
@@ -32,7 +34,7 @@ class WCounterButton(
     WThemedView {
     private val textPaintSecondary = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = WFont.Regular.typeface
-        textSize = 14f.dp
+        textSize = 14f.sp
     }
     private val counter = Counter(textPaintSecondary, this)
     private val ripple = WRippleDrawable.create(8f.dp)
@@ -158,10 +160,7 @@ class WCounterButton(
             counter.requiredWidth + paddingLeft + paddingRight + (if (shouldShowDrawable) ICON.dp else 0)
         }
 
-        super.onMeasure(
-            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-            heightMeasureSpec
-        )
+        super.onMeasure(width.exactly, heightMeasureSpec)
         if (shouldShowDrawable)
             drawable.setBounds(0, 0, 16.dp, 16.dp)
     }

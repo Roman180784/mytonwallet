@@ -2,18 +2,18 @@ import React, { memo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiNetwork } from '../../api/types';
-import type { Account } from '../../global/types';
+import type { Account, DeveloperSettingsOverrides } from '../../global/types';
+import type { Log } from '../../util/logs';
 import type { DropdownItem } from '../ui/Dropdown';
 
 import { APP_COMMIT_HASH, APP_ENV, APP_VERSION, IS_CORE_WALLET, IS_EXTENSION, IS_TELEGRAM_APP } from '../../config';
-import { selectIsMultichainAccount } from '../../global/selectors';
+import { selectCurrentAccountId, selectIsMultichainAccount, selectSeasonalThemeOverride } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import { copyTextToClipboard } from '../../util/clipboard';
 import { getBuildPlatform, getFlagsValue } from '../../util/getBuildPlatform';
 import { getPlatform } from '../../util/getPlatform';
 import { mapValues } from '../../util/iteratees';
 import { getLogs } from '../../util/logs';
-import { getLogsFromNative } from '../../util/multitab';
 import { shareFile } from '../../util/share';
 import { IS_IOS } from '../../util/windowEnvironment';
 import { callApi } from '../../api';
@@ -39,7 +39,10 @@ interface StateProps {
   currentAccountId?: string;
   accountsById?: Record<string, Account>;
   canViewAllWalletVersions: boolean;
+  seasonalThemeOverride?: DeveloperSettingsOverrides['seasonalTheme'];
 }
+
+type SeasonalThemeOverrideOption = NonNullable<DeveloperSettingsOverrides['seasonalTheme']> | 'default';
 
 const NETWORK_OPTIONS: DropdownItem<ApiNetwork>[] = [{
   value: 'mainnet',
@@ -47,6 +50,20 @@ const NETWORK_OPTIONS: DropdownItem<ApiNetwork>[] = [{
 }, {
   value: 'testnet',
   name: 'Testnet',
+}];
+
+const SEASONAL_THEME_OVERRIDE_OPTIONS: DropdownItem<SeasonalThemeOverrideOption>[] = [{
+  value: 'default',
+  name: 'Auto',
+}, {
+  value: '__undefined',
+  name: 'None',
+}, {
+  value: 'newYear',
+  name: 'New Year',
+}, {
+  value: 'valentine',
+  name: 'Valentine',
 }];
 
 // iOS allows downloading files even in TMA, however, in other platforms,
@@ -63,13 +80,15 @@ function SettingsDeveloperOptions({
   currentAccountId,
   accountsById,
   canViewAllWalletVersions,
+  seasonalThemeOverride,
 }: OwnProps & StateProps) {
   const {
     startChangingNetwork,
+    setDeveloperSettingsOverride,
     closeSettings,
     openAddAccountModal,
     copyStorageData,
-    showNotification,
+    showToast,
   } = getActions();
   const lang = useLang();
   const currentNetwork = NETWORK_OPTIONS[isTestnet ? 1 : 0].value;
@@ -85,12 +104,19 @@ function SettingsDeveloperOptions({
     openAddAccountModal({ forceAddingTonOnlyAccount: true });
   });
 
+  const handleSeasonalThemeOverrideChange = useLastCallback((newValue: SeasonalThemeOverrideOption) => {
+    setDeveloperSettingsOverride({
+      key: 'seasonalTheme',
+      value: newValue === 'default' ? undefined : newValue,
+    });
+  });
+
   const handleDownloadLogs = useLastCallback(async () => {
     const logsString = await getLogsString({ currentAccountId, accountsById });
 
     if (!CAN_DOWNLOAD_LOGS) {
       await copyTextToClipboard(logsString);
-      showNotification({ message: lang('Logs were copied!'), icon: 'icon-copy' });
+      showToast({ message: lang('Logs Copied'), icon: 'icon-copy' });
       onClose();
     } else {
       const filename = `${IS_CORE_WALLET ? 'tonwallet' : 'mytonwallet'}_logs_${new Date().toISOString()}.json`;
@@ -143,6 +169,19 @@ function SettingsDeveloperOptions({
         </div>
       </div>
 
+      <p className={styles.blockTitle}>{lang('Overrides')}</p>
+      <div className={styles.settingsBlock}>
+        <Dropdown
+          label={lang('Seasonal Theme Override')}
+          items={SEASONAL_THEME_OVERRIDE_OPTIONS}
+          selectedValue={seasonalThemeOverride ?? 'default'}
+          theme="light"
+          arrow="chevron"
+          className={buildClassName(styles.item, styles.item_small)}
+          onChange={handleSeasonalThemeOverrideChange}
+        />
+      </div>
+
       {isCopyStorageEnabled && (
         <>
           <p className={styles.blockTitle}>{lang('Dangerous')}</p>
@@ -182,7 +221,7 @@ function SettingsDeveloperOptions({
 }
 
 export default memo(withGlobal<OwnProps>((global): StateProps => {
-  const currentAccountId = global.currentAccountId;
+  const currentAccountId = selectCurrentAccountId(global);
   const accountsById = global.accounts?.byId;
   const canViewAllWalletVersions = !selectIsMultichainAccount(global, currentAccountId!);
 
@@ -190,6 +229,7 @@ export default memo(withGlobal<OwnProps>((global): StateProps => {
     currentAccountId,
     accountsById,
     canViewAllWalletVersions,
+    seasonalThemeOverride: selectSeasonalThemeOverride(global),
   };
 })(SettingsDeveloperOptions));
 
@@ -202,9 +242,8 @@ async function getLogsString({
     addressByChain: mapValues(account.byChain, (accountChain) => accountChain.address),
   }));
 
-  const [mainLogs, bottomSheetLogs, apiLogs = []] = await Promise.all([
+  const [mainLogs, apiLogs = []] = await Promise.all([
     getLogs(),
-    getLogsFromNative(),
     callApi('getLogs'),
   ]);
 
@@ -226,9 +265,8 @@ async function getLogsString({
       currentAccountId,
       accountsInfo,
       logs: [
-        ...mainLogs.map((log) => ({ ...log, context: 'main' })),
-        ...bottomSheetLogs.map((log) => ({ ...log, context: 'bottomSheet' })),
-        ...apiLogs.map((log) => ({ ...log, context: 'api' })),
+        ...mainLogs.map((log: Log) => ({ ...log, context: 'main' })),
+        ...apiLogs.map((log: Log) => ({ ...log, context: 'api' })),
       ]
         .sort((a, b) => a.time - b.time)
         .map((log) => ({ ...log, time: new Date(log.time).toISOString() })),

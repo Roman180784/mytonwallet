@@ -61,10 +61,7 @@ $tab-1-height: 348;
     }
   }
 
-  &:active {
-    // Optimization
-    transition: none;
-  }
+  @include mixins.active-transition-optimization();
 
   :global(html.animation-level-0) & {
     transition: none !important;
@@ -173,6 +170,15 @@ $tab-1-height: 348;
 
 .tabText {
   z-index: 2;
+}
+
+.name {
+  white-space: nowrap;
+}
+
+.divider {
+  margin: 0 0.25rem;
+  color: var(--color-gray-4);
 }
 
 .tabDelimiter {

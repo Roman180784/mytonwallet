@@ -3,59 +3,63 @@ import SwiftUI
 import UIComponents
 import WalletCore
 import WalletContext
+import Perception
 
 struct ClaimRewardsView: View {
     
-    @ObservedObject var viewModel: ClaimRewardsModel
+    var viewModel: ClaimRewardsModel
     
     var body: some View {
-        HStack {
-            if viewModel.isConfirming {
-                ClaimRewardsConfirmContent(viewModel: viewModel)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity
-                                .combined(with: .offset(y: 70))
-                                .combined(with: .scale(scale: 0.95))
-                                .animation(.spring(duration: 0.25).delay(0.1)),
-                            removal: .opacity
-                                .combined(with: .offset(y: 70))
-                                .combined(with: .scale(scale: 0.95))
-                                .animation(.smooth(duration: 0.2))
-                        )
-                    )
-            } else {
-                ClaimRewardsButtonContent(viewModel: viewModel)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity
-                                .combined(with: .offset(y: -20))
-                                .combined(with: .scale(scale: 0.95))
-                                .animation(.spring(duration: 0.2).delay(0.1)),
-                            removal: .opacity
-                                .combined(with: .offset(y: -20))
-                                .combined(with: .scale(scale: 0.95))
-                                .animation(.smooth(duration: 0.2))
+        WithPerceptionTracking {
+            @Perception.Bindable var viewModel = viewModel
+            HStack {
+                if viewModel.isConfirming {
+                    ClaimRewardsConfirmContent(viewModel: viewModel)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity
+                                    .combined(with: .offset(y: 70))
+                                    .combined(with: .scale(scale: 0.95))
+                                    .animation(.spring(duration: 0.25).delay(0.1)),
+                                removal: .opacity
+                                    .combined(with: .offset(y: 70))
+                                    .combined(with: .scale(scale: 0.95))
+                                    .animation(.smooth(duration: 0.2))
                             )
-                    )
+                        )
+                } else {
+                    ClaimRewardsButtonContent(viewModel: viewModel)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity
+                                    .combined(with: .offset(y: -20))
+                                    .combined(with: .scale(scale: 0.95))
+                                    .animation(.spring(duration: 0.2).delay(0.1)),
+                                removal: .opacity
+                                    .combined(with: .offset(y: -20))
+                                    .combined(with: .scale(scale: 0.95))
+                                    .animation(.smooth(duration: 0.2))
+                                )
+                        )
+                }
             }
+            .background {
+                Rectangle().fill(.background)
+            }
+            .clipShape(.rect(cornerRadius: 30))
+            .contentShape(.rect(cornerRadius: 30))
+            .shadow(color: .black.opacity(0.2), radius: 16, x: 0, y: 4)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background {
+                whiteGradient
+                    .allowsHitTesting(false)
+            }
+            .frame(height: 300, alignment: .bottom)
+            .frame(height: 100, alignment: .bottom)
         }
-        .background {
-            Rectangle().fill(.background)
-        }
-        .clipShape(.rect(cornerRadius: 30))
-        .contentShape(.rect(cornerRadius: 30))
-        .shadow(color: .black.opacity(0.2), radius: 16, x: 0, y: 4)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .background {
-            whiteGradient
-                .allowsHitTesting(false)
-        }
-        .frame(height: 300, alignment: .bottom) // prevent hosting view resizing 
-        .frame(height: 100, alignment: .bottom) // limit background hit testing
     }
     
     var whiteGradient: some View {
@@ -72,18 +76,23 @@ struct ClaimRewardsView: View {
 }
 
 struct ClaimRewardsButtonContent: View {
-    @ObservedObject var viewModel: ClaimRewardsModel
+    var viewModel: ClaimRewardsModel
+    private var accountContext: AccountContext { viewModel.accountContext }
     
     var body: some View {
-        HStack(spacing: 10) {
-            icon
-            labels
-            claimButton
-                .padding(.trailing, 5)
+        WithPerceptionTracking {
+            HStack(spacing: 10) {
+                icon
+                labels
+                if accountContext.account.supportsEarn {
+                    claimButton
+                        .padding(.trailing, 5)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(height: 60)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .frame(height: 60)
     }
     
     var icon: some View {
@@ -102,7 +111,7 @@ struct ClaimRewardsButtonContent: View {
     
     var labels: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(lang("Accumulated rewards"))
+            Text(lang("Accumulated Rewards"))
                 .fontWeight(.medium)
             Text(amount: viewModel.amount, format: .init())
                 .contentTransition(.numericText())
@@ -123,31 +132,34 @@ struct ClaimRewardsButtonContent: View {
 }
 
 struct ClaimRewardsConfirmContent: View {
-    @ObservedObject var viewModel: ClaimRewardsModel
+    var viewModel: ClaimRewardsModel
+    private var accountContext: AccountContext { viewModel.accountContext }
     
     var body: some View {
-        VStack {
-            Text(lang("Claim Rewards"))
-                .fontWeight(.semibold)
-                .padding(.vertical, 12)
-                .padding(.bottom, 6)
-            amountSection
-            HStack {
-                Button(lang("Cancel")) {
-                    withAnimation(.spring(duration: 0.25)) {
-                        viewModel.isConfirming = false
+        WithPerceptionTracking {
+            VStack {
+                Text(lang("Claim Rewards"))
+                    .fontWeight(.semibold)
+                    .padding(.vertical, 12)
+                    .padding(.bottom, 6)
+                amountSection
+                HStack {
+                    Button(lang("Cancel")) {
+                        withAnimation(.spring(duration: 0.25)) {
+                            viewModel.isConfirming = false
+                        }
                     }
+                    .buttonStyle(WUIButtonStyle(style: .secondary))
+                    Button(lang("Confirm")) {
+                        viewModel.onClaim()
+                    }
+                    .buttonStyle(WUIButtonStyle(style: .primary))
                 }
-                .buttonStyle(WUIButtonStyle(style: .secondary))
-                Button(lang("Confirm")) {
-                    viewModel.onClaim()
-                }
-                .buttonStyle(WUIButtonStyle(style: .primary))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
         }
-        .padding(.vertical, 10)
     }
     
     var amountSection: some View {
@@ -160,9 +172,9 @@ struct ClaimRewardsConfirmContent: View {
             EmptyView()
         } footer: {
             HStack(alignment: .firstTextBaseline) {
-                let currency = TokenStore.baseCurrency ?? .USD
+                let currency = TokenStore.baseCurrency
                 let rate = viewModel.amount.token.price ?? 1
-                let balance = BalanceStore.currentAccountBalances[TONCOIN_SLUG] ?? 0
+                let balance = accountContext.balances[TONCOIN_SLUG] ?? 0
                 let fees = getFee(.claimJettons)
                 let isEnoughNative = balance >= fees.gas ?? 0
                 let convAmount = viewModel.amount.convertTo(currency, exchangeRate: rate)
@@ -196,7 +208,7 @@ struct ClaimRewardsConfirmContent: View {
 #if DEBUG
 @available(iOS 18, *)
 #Preview {
-    @Previewable @StateObject var viewModel = ClaimRewardsModel()
+    @Previewable @State var viewModel = ClaimRewardsModel(accountContext: AccountContext(source: .current))
     let _ = (viewModel.amount = TokenAmount(132_000_001, .MYCOIN))
     ClaimRewardsView(viewModel: viewModel)
         .fixedSize(horizontal: false, vertical: true)

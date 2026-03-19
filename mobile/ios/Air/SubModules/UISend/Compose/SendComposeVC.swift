@@ -1,5 +1,5 @@
 //
-//  SendConfirmVC.swift
+//  SendComposeVC.swift
 //  UISend
 //
 //  Created by Sina on 4/20/24.
@@ -13,22 +13,18 @@ import WalletCore
 import WalletContext
 import UIPasscode
 
-
 class SendComposeVC: WViewController, WSensitiveDataProtocol {
 
     let model: SendModel
     var hostingController: UIHostingController<SendComposeView>?
     var continueButtonConstraint: NSLayoutConstraint?
+    var continueButtonFallbackConstraint: NSLayoutConstraint?
     
     private var continueButton: WButton { self.bottomButton! }
-    private var startWithKeyboardActive: Bool { model.addressOrDomain.isEmpty }
     
     public init(model: SendModel) {
         self.model = model
         super.init(nibName: nil, bundle: nil)
-        model.showToast = { [weak self] animationName, message in
-            self?.showToast(animationName: animationName, message: message)
-        }
     }
     
     required init?(coder: NSCoder) {
@@ -38,10 +34,10 @@ class SendComposeVC: WViewController, WSensitiveDataProtocol {
     public override func viewDidLoad() {
         super.viewDidLoad()
         setupViews()
-        WKeyboardObserver.observeKeyboard(delegate: self)
-        model.continueStateChanged = { [weak self] canContinue, insufficientFunds, draftStatus in
+        observe { [weak self] in
             guard let self else { return }
-            if draftStatus.status == .loading {
+            let (canContinue, insufficientFunds, draftStatus, isAddressLoading) = model.continueState
+            if draftStatus.status == .loading || isAddressLoading {
                 continueButton.showLoading = true
                 continueButton.isEnabled = false
             } else {
@@ -49,13 +45,13 @@ class SendComposeVC: WViewController, WSensitiveDataProtocol {
                 continueButton.isEnabled = canContinue
                 
                 let title: String = if draftStatus.status == .invalid,
-                                       draftStatus.address == model.addressOrDomain, !model.addressOrDomain.isEmpty {
+                                       draftStatus.transactionDraft?.resolvedAddress == model.addressOrDomain, !model.addressOrDomain.isEmpty {
                     lang("Invalid address")
                 } else if insufficientFunds {
-                    WStrings.InsufficientBalance_Text(symbol: model.token?.symbol ?? "TON")
+                    lang("Insufficient Balance")
                 } else {
-                    if model.toAddressDraft?.diesel?.status == .notAuthorized {
-                        WStrings.Swap_AuthorizeDiesel_Text(symbol: model.token?.symbol.uppercased() ?? "")
+                    if model.draftData.transactionDraft?.diesel?.status == .notAuthorized {
+                        lang("Authorize %token% Fee", arg1: model.token.symbol)
                     } else {
                         lang("Continue")
                     }
@@ -65,16 +61,42 @@ class SendComposeVC: WViewController, WSensitiveDataProtocol {
                 }
             }
         }
+        observe { [weak self] in
+            guard let self else { return }
+            navigationItem.setLeftBarButtonItems(model.addressInput.isFocused ? [
+                UIBarButtonItem(title: "", image: UIImage(systemName: "chevron.backward"), primaryAction: UIAction { _ in endEditing() })
+            ] : nil, animated: true)
+        }
+        observe { [weak self] in
+            guard let self else { return }
+            let canContinue = model.canContinue
+            UIView.animate(withDuration: 0.3) {
+                self.continueButtonConstraint?.isActive = canContinue
+                self.view.layoutIfNeeded()
+            }
+        }
+    }
+    
+    private func buildNavigationItem() {
+        switch model.mode {
+        case .burnNft, .sellToMoonpay:
+            assertionFailure("Should not be available on this screen")
+            fallthrough
+        case .sendNft:
+            navigationItem.title = lang("Send")
+        case .regular:
+            navigationItem.titleView = HostingView {
+                SendComposeTitleView(
+                    onSellTapped: { [weak self] in self?.showSell() },
+                    onMultisendTapped: { [weak self] in self?.showMultisend() }
+                )
+            }
+        }
+        addCloseNavigationItemIfNeeded()
     }
     
     private func setupViews() {
-        
-        let title = model.nftSendMode != nil ? lang("Send NFT") : lang("Send")
-        addNavigationBar(
-            centerYOffset: 1,
-            title: title,
-            closeIcon: true)
-        navigationBarProgressiveBlurDelta = 12
+        buildNavigationItem()
         
         let hostingController = UIHostingController(rootView: makeView())
         self.hostingController = hostingController
@@ -96,12 +118,16 @@ class SendComposeVC: WViewController, WSensitiveDataProtocol {
         continueButton.isEnabled = model.canContinue
         continueButton.addTarget(self, action: #selector(continuePressed), for: .touchUpInside)
         
-        let c = startWithKeyboardActive ? -max(WKeyboardObserver.keyboardHeight, 291) + 50 : -34
-        let constraint = continueButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16 + c)
-        constraint.isActive = true
+        let constraint = continueButton.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -16)
         self.continueButtonConstraint = constraint
-        
-        bringNavigationBarToFront()
+
+        let constraint2 = continueButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16).withPriority(.defaultHigh)
+        self.continueButtonFallbackConstraint = constraint2
+
+        NSLayoutConstraint.activate([
+            constraint,
+            constraint2,
+        ])
         
         updateTheme()
         
@@ -112,12 +138,10 @@ class SendComposeVC: WViewController, WSensitiveDataProtocol {
         view.backgroundColor = WTheme.sheetBackground
     }
     
-    func makeView() -> SendComposeView {
+    private func makeView() -> SendComposeView {
         SendComposeView(
             model: model,
             isSensitiveDataHidden: AppStorageHelper.isSensitiveDataHidden,
-            navigationBarInset: navigationBarHeight,
-            onScrollPositionChange: { [weak self] y in self?.updateNavigationBarProgressiveBlur(y) }
         )
     }
     
@@ -125,53 +149,54 @@ class SendComposeVC: WViewController, WSensitiveDataProtocol {
         hostingController?.rootView = makeView()
     }
     
-    @objc func continuePressed() {
+    @objc private func continuePressed() {
         view.resignFirstResponder()
-        if model.toAddressDraft?.diesel?.status == .notAuthorized {
+        if model.draftData.transactionDraft?.diesel?.status == .notAuthorized {
             authorizeDiesel()
+            return
         }
-        if let token = model.token, token.isPricelessToken || token.isStakedToken {
+        if model.token.isPricelessToken || model.token.isStakedToken {
             let alert = UIAlertController(title: lang("Warning"), message: lang("$service_token_transfer_warning"), preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: lang("Cancel"), style: .cancel) { _ in
                 return
             })
             alert.addAction(UIAlertAction(title: lang("OK"), style: .default) { _ in
-                self.model.onComposeContinue()
+                self._onContinue()
             })
             present(alert, animated: true, completion: nil)
         } else {
-            model.onComposeContinue()
+            _onContinue()
         }
+    }
+    
+    func _onContinue() {
+        endEditing()
+        let vc = SendConfirmVC(model: model)
+        navigationController?.pushViewController(vc, animated: true)
     }
     
     private func authorizeDiesel() {
-        let telegramURLString = "https://t.me/MyTonWalletBot?start=auth-\(AccountStore.account?.tonAddress ?? "")"
-        
-        if let telegramURL = URL(string: telegramURLString) {
-            if UIApplication.shared.canOpenURL(telegramURL) {
-                UIApplication.shared.open(telegramURL, options: [:], completionHandler: nil)
-            }
-        }
+        guard let telegramURL = model.account.dieselAuthLink else { return }
+        UIApplication.shared.open(telegramURL, options: [:], completionHandler: nil)
     }
-}
 
-
-extension SendComposeVC: WKeyboardObserverDelegate {
-    public func keyboardWillShow(info: WKeyboardDisplayInfo) {
-        UIView.animate(withDuration: info.animationDuration) { [self] in
-            if let continueButtonConstraint {
-                continueButtonConstraint.constant = -info.height - 16
-                view.layoutIfNeeded()
-            }
-        }
+    private func showSell() {
+        dismiss(animated: true)
+        AppActions.showSell(account: model.account, tokenSlug: model.token.slug)
     }
     
-    public func keyboardWillHide(info: WKeyboardDisplayInfo) {
-        UIView.animate(withDuration: info.animationDuration) { [self] in
-            if let continueButtonConstraint {
-                continueButtonConstraint.constant =  -view.safeAreaInsets.bottom - 16
-                view.layoutIfNeeded()
-            }
-        }
+    private func showMultisend() {
+        dismiss(animated: true)
+        AppActions.showMultisend()
     }
 }
+
+
+
+#if DEBUG
+@available(iOS 18, *)
+#Preview {
+    let vc = SendComposeVC(model: SendModel(prefilledValues: .init()))
+    previewSheet(vc)
+}
+#endif

@@ -4,28 +4,30 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.text.Spannable
 import android.text.SpannableStringBuilder
-import android.text.method.LinkMovementMethod
 import android.text.style.RelativeSizeSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.widget.LinearLayout
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.extensions.updateDotsTypeface
+import org.mytonwallet.app_air.uicomponents.extensions.setPaddingDp
+import org.mytonwallet.app_air.uicomponents.extensions.styleDots
 import org.mytonwallet.app_air.uicomponents.helpers.AddressPopupHelpers
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
+import org.mytonwallet.app_air.uicomponents.helpers.spans.ExtraHitLinkMovementMethod
 import org.mytonwallet.app_air.uicomponents.helpers.spans.WForegroundColorSpan
 import org.mytonwallet.app_air.uicomponents.helpers.typeface
 import org.mytonwallet.app_air.uicomponents.image.Content
 import org.mytonwallet.app_air.uicomponents.image.WCustomImageView
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
-import org.mytonwallet.app_air.walletbasecontext.theme.WColor
-import org.mytonwallet.app_air.walletcontext.utils.CoinUtils
-import org.mytonwallet.app_air.walletbasecontext.utils.formatStartEndAddress
-import org.mytonwallet.app_air.walletcore.moshi.ApiTokenWithPrice
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.theme.WColor
+import org.mytonwallet.app_air.walletbasecontext.utils.formatStartEndAddress
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
+import org.mytonwallet.app_air.walletcontext.utils.CoinUtils
+import org.mytonwallet.app_air.walletcore.moshi.ApiTokenWithPrice
+import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import java.lang.ref.WeakReference
-import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
 class PasscodeHeaderSendView(
@@ -45,6 +47,7 @@ class PasscodeHeaderSendView(
         textAlignment = TEXT_ALIGNMENT_CENTER
         typeface = WFont.Regular.typeface
         setTextColor(WColor.PrimaryText)
+        setPaddingDp(8, 2, 8, 2)
     }
 
     init {
@@ -70,11 +73,11 @@ class PasscodeHeaderSendView(
 
         val subtitleSizeSp = 16f
         val subtitleLineHeightDp = 24.dp
-        val subtitleTopMargin = 12.dp
+        val subtitleTopMargin = 10.dp
 
         val paddingHorizontal = 20.dp
         val paddingVertical = 24.dp
-        val totalVerticalPadding = paddingVertical * 2
+        val totalVerticalPadding = paddingVertical * 2 - 2.dp
 
         // Total desired height
         val desiredHeight = imageSize + titleTopMargin + titleLineHeightDp +
@@ -138,7 +141,7 @@ class PasscodeHeaderSendView(
         )
         sendingTextView.layoutParams = LayoutParams(
             LayoutParams.WRAP_CONTENT,
-            scaledSubtitleLineHeight
+            scaledSubtitleLineHeight + 4.dp
         ).apply {
             topMargin = scaledSubtitleTopMargin
         }
@@ -147,6 +150,7 @@ class PasscodeHeaderSendView(
     fun configSendingToken(
         token: ApiTokenWithPrice,
         amountString: String,
+        network: MBlockchainNetwork,
         resolvedAddress: String?
     ) {
         val amount = SpannableStringBuilder(amountString)
@@ -154,20 +158,23 @@ class PasscodeHeaderSendView(
         CoinUtils.setSpanToFractionalPart(amount, RelativeSizeSpan(28f / 36f))
 
         val a = resolvedAddress?.formatStartEndAddress() ?: ""
-        val sendingToText = LocaleController.getString("Sending To")
-        val textWidth = sendingTextView.paint.measureText(sendingToText)
+        val sendingToText = LocaleController.getString("Send to")
         val address = SpannableStringBuilder(sendingToText).apply {
             append(" $a")
             AddressPopupHelpers.configSpannableAddress(
-                viewController,
-                this,
-                length - a.length,
-                a.length,
-                token.slug,
-                resolvedAddress ?: "",
-                textWidth.roundToInt()
+                viewController = viewController,
+                title = null,
+                spannedString = this,
+                startIndex = length - a.length,
+                length = a.length,
+                network = network,
+                blockchain = token.mBlockchain,
+                address = resolvedAddress ?: "",
+                popupXOffset = 0,
+                centerHorizontally = true,
+                showTemporaryViewOption = false
             )
-            updateDotsTypeface()
+            styleDots()
             setSpan(
                 WForegroundColorSpan(WColor.SecondaryText),
                 length - a.length - 1,
@@ -176,7 +183,7 @@ class PasscodeHeaderSendView(
             )
         }
 
-        config(Content.of(token), amount, address)
+        config(Content.of(token, AccountStore.activeAccount?.isMultichain == true), amount, address)
     }
 
     fun config(
@@ -191,7 +198,8 @@ class PasscodeHeaderSendView(
         tokenToSendIconView.set(content)
         tokenToSendTextView.text = title
         sendingTextView.text = subtitle
-        sendingTextView.movementMethod = LinkMovementMethod.getInstance()
+        sendingTextView.movementMethod =
+            ExtraHitLinkMovementMethod(sendingTextView.paddingLeft, sendingTextView.paddingTop)
         sendingTextView.highlightColor = Color.TRANSPARENT
     }
 

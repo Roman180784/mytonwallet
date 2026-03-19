@@ -6,12 +6,14 @@ data class SettingsItem(
     val identifier: Identifier,
     val icon: Int? = null,
     val title: String,
+    val subtitle: String? = null,
     val value: String? = null,
     val hasTintColor: Boolean,
     val account: MAccount? = null
 ) {
     enum class Identifier {
         ACCOUNT,
+        SHOW_ALL_WALLETS,
         ADD_ACCOUNT,
         NOTIFICATION_SETTINGS,
         APPEARANCE,
@@ -20,8 +22,13 @@ data class SettingsItem(
         LANGUAGE,
         SECURITY,
         WALLET_VERSIONS,
-        QUESTION_AND_ANSWERS,
-        TERMS,
+        ASK_A_QUESTION,
+        HELP_CENTER,
+        MTW_FEATURES,
+        USE_RESPONSIBILITY,
+        MTW_CARDS_NFT,
+        INSTALL_ON_DESKTOP,
+        ABOUT_MTW,
         SWITCH_TO_LEGACY,
         NONE,
     }

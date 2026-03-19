@@ -46,6 +46,10 @@ import java.util.Date
 import kotlin.math.roundToInt
 
 class RenewVC(context: Context, val nft: ApiNft) : WViewController(context) {
+    override val TAG = "Renew"
+
+    override val displayedAccount =
+        DisplayedAccount(AccountStore.activeAccountId, AccountStore.isPushedTemporary)
 
     override val shouldDisplayTopBar = false
 
@@ -109,7 +113,7 @@ class RenewVC(context: Context, val nft: ApiNft) : WViewController(context) {
     override fun updateTheme() {
         super.updateTheme()
 
-        view.setBackgroundColor(WColor.SecondaryBackground.color, ViewConstants.BIG_RADIUS.dp, 0f)
+        view.setBackgroundColor(WColor.SecondaryBackground.color, ViewConstants.BLOCK_RADIUS.dp, 0f)
         nftTagView.setBackgroundColor(
             WColor.Background.color,
             12f.dp
@@ -118,13 +122,16 @@ class RenewVC(context: Context, val nft: ApiNft) : WViewController(context) {
 
     @SuppressLint("SetTextI18n")
     private fun calculateFee() {
+        val accountId = displayedAccount.accountId ?: return
         WalletCore.call(
             ApiMethod.Domains.CheckDnsRenewalDraft(
-                AccountStore.activeAccountId!!,
+                accountId,
                 listOf(nft)
             ), callback = { res, err ->
+                if (isDestroyed)
+                    return@call
                 this.realFee = res?.realFee ?: BigInteger.ZERO
-                if (err != null || realFee == null || isDisappeared) {
+                if (err != null || realFee == null) {
                     Handler(Looper.getMainLooper()).postDelayed({
                         calculateFee()
                     }, 5000)
@@ -148,7 +155,7 @@ class RenewVC(context: Context, val nft: ApiNft) : WViewController(context) {
                             )
                         }"
                     feeLabel.alpha = 0f
-                    feeLabel.fadeIn { }
+                    feeLabel.fadeIn()
                 } else {
                     renewButton.isEnabled = false
                     renewButton.setText(LocaleController.getString("Insufficient Balance"))

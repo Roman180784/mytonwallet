@@ -1,7 +1,7 @@
 
 import Foundation
 
-public let STATE_VERSION: Int = 47
+public let STATE_VERSION: Int = 51
 
 private let log = Log("GlobalStorage+Migration")
 
@@ -20,7 +20,7 @@ extension _GlobalStorage {
     public func migrate() async throws {
         
         if let v = self.stateVersion, v > STATE_VERSION {
-            assertionFailure()
+            log.fault("migration error: stateVersion=\(v) greater than STATE_VERSION=\(STATE_VERSION)")
         }
         
         if let v = self.stateVersion, v >= STATE_VERSION {
@@ -84,7 +84,30 @@ extension _GlobalStorage {
             // accounts are migrated in switchStorageToCapacitor
             self.stateVersion = 47
         }
+
+        if let v = self.stateVersion, v == 47 {
+            update {
+                if var pushNotifications = $0["pushNotifications"] as? [String: Any] {
+                    if let enabledAccounts = pushNotifications["enabledAccounts"] as? [String: Any] {
+                        pushNotifications["enabledAccounts"] = Array(enabledAccounts.keys)
+                    }
+                    $0["pushNotifications"] = pushNotifications
+                }
+            }
+            self.stateVersion = 48
+        }
         
+
+        if let v = self.stateVersion, v < 50 {
+            // Android app specific migration
+            self.stateVersion = 50
+        }
+
+        if let v = self.stateVersion, v == 50 {
+            _clearActivities()
+            self.stateVersion = 51
+        }
+
         assert(self.stateVersion == STATE_VERSION)
         
         try await syncronize()

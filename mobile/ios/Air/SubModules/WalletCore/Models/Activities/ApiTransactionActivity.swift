@@ -18,7 +18,7 @@ public struct ApiTransactionActivity: BaseActivity, Codable, Equatable, Hashable
     public let timestamp: Int64
     /** The amount to show in the UI (may mismatch the actual attached TON amount */
     public let amount: BigInt
-    public let fromAddress: String
+    public let fromAddress: String?
     public let toAddress: String?
     public let comment: String?
     public let encryptedComment: String?
@@ -39,7 +39,7 @@ public struct ApiTransactionActivity: BaseActivity, Codable, Equatable, Hashable
      * - 'pendingTrusted' — awaiting confirmation and trusted (initiated by our app)
      * - 'pending' — awaiting confirmation from an external/unauthenticated source, like TonConnect emulation
      */
-    public let status: ApiTransactionStatus
+    public var status: ApiTransactionStatus
     
     public init(id: String, kind: String, shouldHide: Bool? = nil, externalMsgHashNorm: String?, shouldReload: Bool? = nil, shouldLoadDetails: Bool? = nil, extra: BaseActivityExtra? = nil, timestamp: Int64, amount: BigInt, fromAddress: String, toAddress: String?, comment: String?, encryptedComment: String?, fee: BigInt, slug: String, isIncoming: Bool, normalizedAddress: String?, type: ApiTransactionType?, metadata: ApiAddressInfo?, nft: ApiNft?, status: ApiTransactionStatus) {
         self.id = id
@@ -75,13 +75,33 @@ public struct ApiTransactionActivity: BaseActivity, Codable, Equatable, Hashable
 public enum ApiTransactionStatus: String, Equatable, Codable, Hashable, Sendable {
     case pending
     case pendingTrusted
+    case confirmed
     case completed
     case failed
 }
 
 public extension ApiTransactionActivity {
+    
+    var peerAddress: String? {
+        isIncoming ? fromAddress : toAddress
+    }
+    
     var addressToShow: String {
-        metadata?.name ?? (isIncoming ? fromAddress : toAddress) ?? ""
+        metadata?.name ?? peerAddress ?? ""
+    }
+    
+    enum AddressKind {
+        case from
+        case to
+        case peer
+    }
+    
+    func getAddress(for kind: AddressKind) -> String? {
+        switch kind {
+        case .from: return fromAddress
+        case .to: return toAddress
+        case .peer: return peerAddress
+        }
     }
 }
 

@@ -28,7 +28,7 @@ Change: Cambiar
 "%1$d Secret Words": Frases Semilla
 Secret Words: Frases Semilla
 $auth_import_mnemonic_description: |
-  Puedes restaurar el acceso a tu billetera ingresando las **12 o 24 palabras secretas** que anotaste al crear la billetera.
+  Puedes restaurar el acceso a tu billetera ingresando las **%counts% palabras secretas** que anotaste al crear la billetera.
 Let’s make sure your secrets words are recorded correctly.: Asegurémonos de que hayas guardado la frase semilla correctamente.
 $check_words_description: Ahora verifiquemos que haya escrito sus palabras secretas correctamente.
 $mnemonic_list_description: Escriba estas palabras en el **orden correcto** y guárdelas en un **lugar seguro**.
@@ -37,14 +37,14 @@ $mnemonic_warning: |
   No lo envíes ni lo muestres a nadie,
   no lo ingreses en ningún lugar.
 View Secret Words: Ver palabras secretas
-View TON Private Key: Ver clave privada de TON
-Can be imported to non-multichain wallets for TON.: Puede ser importado a carteras no multichain para TON.
-Can be imported to any multichain wallet supporting TON.: Puede ser importado a cualquier cartera multichain compatible con TON.
+View %chain% Private Key: Ver clave privada de %chain%
+Can be imported to non-multichain wallets for %chain%.: Puede ser importado a carteras no multichain para %chain%.
+Can be imported to any multichain wallet supporting %chain%.: Puede ser importado a cualquier cartera multichain compatible con %chain%.
 Let's Check: Revisemos
 Let's Check!: ¡Revisemos!
 Safety Rules: Normas de seguridad
 $safety_rules_private_key_one: |
-  En la siguiente pantalla verá la **clave privada de TON**. Guárdela correctamente y **almacénela en un lugar seguro**.
+  En la siguiente pantalla verá la **clave privada de %chain%**. Guárdela correctamente y **almacénela en un lugar seguro**.
 $safety_rules_private_key_two: Permite **abrir tu billetera** si pierdes tu contraseña o el acceso a este dispositivo.
 $safety_rules_private_key_three: Si alguien más ve esta clave privada, tus fondos **pueden ser robados**. **No la envíes ni la muestres a nadie**, ni siquiera a desarrolladores o soporte técnico.
 $safety_rules_one: |
@@ -58,9 +58,6 @@ Search...: Buscar...
 Main menu: Menú principal
 TON Proxy: TON Proxy
 Toggle TON Proxy: Alternar TON Proxy
-TON Magic: TON Magic
-Toggle TON Magic: Alternar TON Magic
-Open Telegram Web: Abrir Telegram Web
 Back Up Secret Words: Copia de seguridad
 Settings: Configuración
 About %app_name%: Acerca de %app_name%
@@ -74,10 +71,7 @@ $about_description2: Un monedero **sin custodia y seguro**. Los desarrolladores 
 What is TON Proxy?: ¿Qué es el TON Proxy?
 $about_extension_description1: TON Proxy abre un camino al **Internet descentralizado** al permitir acceder anónimamente a TON Sites.
 More info and demo.: Más información y demo.
-$about_extension_description2: TON Magic proporciona **integración nativa con Telegram** parcheando la aplicación web oficial de Telegram.
-$about_extension_description3: Actívalo para enviar y recibir Toncoins de cualquier usuario de Telegram.
-$about_proxy_magic_title: ¿Qué pasa con %ninja% TON Proxy y %unicorn% TON Magic?
-$about_proxy_magic_description: Para disfrutar de **Internet descentralizado**, acceder a **TON Sites**, y aprovechar la **integración nativa de Telegram**, no dude en instalar la %extension_link%.
+$about_proxy_magic_description: Para disfrutar de **Internet descentralizado** y acceder a **TON Sites**, no dude en instalar la %extension_link%.
 $about_extension_link_text: "**extensión %app_name%**"
 Is it open source?: ¿Es de código abierto?
 $about_wallet_github: Sí. Siéntase libre de explorar nuestro %github_link%.
@@ -86,6 +80,8 @@ Is there a community?: ¿Hay una comunidad?
 $about_wallet_community: Claro, bienvenido a nuestro %community_link%.
 $about_community_link_text: "**canal de Telegram**"
 Currency History: Historia del activo
+Net Worth: Valor neto
+Price: Precio
 Enter Password: Introduce la contraseña
 Send: Enviar
 Add Wallet: Agregar monedero
@@ -93,14 +89,12 @@ Done: Listo
 Delete: Borrar
 Delete Saved Address: Eliminar dirección guardada
 Are you sure you want to remove this address from your saved ones?: ¿Está seguro de que desea eliminar esta dirección?
-You will be able to save it again via Transaction Info with this address.: Podrá guardarla nuevamente a través de la información de una transacción con esta dirección.
 Address removed from saved: Dirección guardada eliminada
 Warning!: ¡Advertencia!
-Log Out: Cerrar sesión
 $logout_without_backup_warning: No ha realizado copia de seguridad de este monedero. Si cierra sesión, perderá el acceso a sus activos.
 $logout_accounts_without_backup_warning: No ha realizado copia de seguridad de %links%. Si cierra sesión, perderá el acceso a sus activos.
 $logout_warning: Esto desconectará el monedero de esta aplicación. Podrá restaurar su monedero usando la frase semilla...
-Your address was copied!: ¡Su dirección fue copiada!
+$logout_view_mode_warning: Esto desconectará el monedero de esta aplicación.
 Create Deposit Link: Crear enlace de depósito
 $receive_invoice_description: |
   Puede especificar la cantidad y
@@ -109,10 +103,13 @@ Amount: Cantidad
 Comment: Comentario
 Comment or Memo: Comentario o Memo
 Share this URL to receive %token%: Comparte esta URL para recibir %token%
-Invoice link was copied!: ¡Se copió el enlace de la factura!
+Invoice Link Copied: Se copió el enlace de la factura
 Theme: Tema
 Language: Idioma
 Enable Animations: Habilitar animaciones
+Enable Seasonal Theming: Activar tema estacional
+Disable Seasonal Theming: Desactivar tema estacional
+You can always enable seasonal theming again in the appearance settings.: Puedes volver a activar el tema estacional en la configuración de apariencia.
 Base Currency: Moneda base
 Investor View: Modo Inversor
 Toggle Investor View: Alternar Modo Inversor
@@ -132,16 +129,16 @@ $state_init_invalid: Datos de inicialización de contrato inválidos.
 Sign: Firmar
 Done!: ¡Listo!
 Signing was confirmed!: ¡La firma fue confirmada!
-Transaction Info: Información de la transacción
-Transaction in progress: Transacción en curso
-Comment was copied!: ¡El comentario fue copiado!
+Activity Details: Detalles de la actividad
+No activities found: No se encontraron actividades
+Comment Copied: El comentario fue copiado
 Sender: Remitente
 Recipient: Receptor
-Address was copied!: ¡Se copió la dirección!
+"%chain% Address Copied": "Dirección %chain% copiada"
 Repeat: Repetir
 Switch Account: Cambiar de monedero
 Copy wallet address: Copiar la dirección del monedero
-View address on %ton_explorer_name%: Ver dirección en %ton_explorer_name%
+View address on %explorer_name%: Ver dirección en %explorer_name%
 You have just created a new wallet: Acabas de crear un nuevo monedero
 You can now transfer your tokens from another wallet or exchange.: Ahora puede transferir sus tokens desde otro monedero o intercambio.
 Assets: Activos
@@ -185,22 +182,21 @@ Fee: Comisión
 Edit: Editar
 Confirm: Confirmar
 Coins have been sent!: ¡Se han enviado monedas!
-Transaction Sent!: ¡Transacción enviada!
 Data Signed!: ¡Datos firmados!
 Details: Detalles
+View details: Ver detalles
 Change password visibility: Cambiar la visibilidad de la contraseña
 Amount value: Valor de la cantidad
 Save Address: Guardar dirección
 Name: Nombre
 Save: Guardar
 Copy: Copiar
-Remove From Saved: Eliminar de guardados
+Remove from Saved: Eliminar de guardados
 View on Explorer: Ver en el explorador
 No suggestions, you're on your own!: Sin sugerencias, ¡estás solo!
 Play Sounds: Reproducir sonidos
 Focus on asset value rather than current balance: Centrarse en el valor de los activos en lugar del saldo actual
 $logout_confirm: Cerrar sesión en **todos** los monederos
-$logout_warning2: Los monederos se encuentran en la cadena de bloques descentralizada de TON. Si desea que se elimine el monedero, simplemente transfiera todos los activos y déjela completamente vacía.
 $tiny_transfers_help: Desactive esta opción para mostrar transacciones de menos de $%value%. Tenga en cuenta que tales transacciones se utilizan a menudo con fines de spam y estafa.
 Today: Hoy
 Yesterday: Ayer
@@ -216,14 +212,13 @@ Earn from your tokens while holding them: Gana con tus tokens mientras los manti
 Why this is safe: Por qué esto es seguro
 Why is staking safe?: ¿Por qué el staking es seguro?
 $safe_staking_description1: El staking es **totalmente descentralizado** y operado por los **TON Liquid Staking smart contracts**.
-$safe_staking_description2: La participación depositada se utilizará para la validación de la red TON como parte de su esencia de **prueba de participación**.
+$safe_staking_description2: La participación depositada se utilizará para la validación de la red %chain% como parte de su esencia de **prueba de participación**.
 $safe_staking_description3: Puede retirar su apuesta en **cualquier momento** y se depositará de nuevo en su cuenta dentro de **dos días**.
 $safe_staking_description_jetton1: El staking de tokens es **completamente descentralizado** y operado por contratos inteligentes de **código abierto** desarrollados por %jvault_link% y que han pasado **auditorías de seguridad**.
 $safe_staking_description_jetton2: Puede retirar su participación en **cualquier momento** y se depositará de nuevo en su cuenta **al instante**.
 $min_value: Min %value%
 Est. balance in a year: Saldo estimado en un año
 Confirm Staking: Confirmar staking
-Confirm operation with your password: Confirme la operación con su contraseña
 Coins have been staked!: ¡Has apostado monedas!
 View: Ver
 Stake More: Apostar más
@@ -260,17 +255,15 @@ Unexpected: Error inesperado
 You can save this address for quick access while sending.: Puede guardar esta dirección como acceso rápido mientras envía.
 Stake Again: Apostar de nuevo
 Earned: Ganado
-Connect Dapp: Conectar Dapp
 Select wallet to use on this dapp: Seleccione la billetera para usar en esta dapp
 Connect: Conectar
 Dapp Permissions: Permisos de la Dapp
 $dapp_can_view_balance: "%dappname% podrá ver la dirección y el saldo del monedero."
-Send Transaction: Enviar transacción
 Payload: Carga útil
 $many_transactions:
-  zeroValue: Sin transacciones
-  oneValue: "%1$d transacción"
-  otherValue: "%1$d transacciones"
+  zeroValue: Sin transferencias
+  oneValue: "%1$d transferencia"
+  otherValue: "%1$d transferencias"
 Total Amount: Cantidad total
 $unstaking_short: Retirando
 Handle ton:// links: Habilitar enlaces ton://
@@ -288,13 +281,11 @@ Disconnect Dapp: Desconectar Dapp
 Disconnect Dapps: Desconectar Dapps
 Are you sure you want to disconnect?: ¿Estás seguro de que quieres desconectar %dappname%?
 Are you sure you want to disconnect all websites?: ¿Estás seguro de que quieres desconectar todas las dapps?
-$dapps-description: Puede iniciar sesión en dapps compatibles con %app_name%. Pueden ver la dirección del monedero, el saldo y solicitar operaciones.
 Logged in with %app_name%: Conectado con %app_name%
 No active connections: No hay conexiones activas
 Other: Otros
 Assets & Activity: Activos & Actividad
 Token Settings: Configuración de fichas
-My Tokens: Mis Tokens
 Add Token: Agregar token
 Delete Token: Eliminar token
 Are you sure you want to delete?: ¿Está seguro de que desea eliminar %token%?
@@ -313,11 +304,9 @@ Driver: Conductor
 Unlock it and open the %chain% App: Desbloquéalo y abre la aplicación de %chain%
 Maybe you need to check the password or change the driver.: Tal vez necesite verificar la contraseña o cambiar el controlador.
 Confirm via Ledger: Confirmar a través de Ledger
-Please confirm transaction on your Ledger: Confirme la transacción en su libro mayor
 Declined: Declinado
 Switch to the newly opened tab to connect Ledger.: Cambia a la pestaña recién abierta para conectar el Ledger.
 Once connected, switch back to this window to proceed.: Una vez conectado, vuelve a esta ventana para continuar.
-Not all transactions were sent successfully: No todas las transacciones se enviaron correctamente
 The time on your device is incorrect, sync it and try again: El tiempo en su dispositivo es incorrecto, sincronícelo y vuelva a intentarlo
 Name or Address...: Nombre o Dirección...
 Such error, many tabs: Tal error, muchas pestañas
@@ -325,12 +314,11 @@ $many_tabs_error_description: |
   %app_name% solo admite una pestaña activa con la aplicación.
   Vuelva a cargar esta página para continuar usando esta pestaña o ciérrela.
 Reload App: Recargar aplicación
-Please confirm operation on your Ledger: Por favor, confirme la operación en su Ledger
 Token Not Found: Token no encontrado
 Try another keyword or address.: Prueba con otra palabra clave o dirección.
 Decrypt: Descifrar
 Encrypted Message: Mensaje encriptado
-Message is encrypted.: El mensaje está encriptado.
+Message is encrypted: El mensaje está encriptado
 Agree: Aceptar
 $swap_action: Intercambiar
 Swap: Intercambiar
@@ -395,18 +383,17 @@ Your address on another blockchain: Tu dirección en otra blockchain
 Please provide an address of your wallet in %blockchain% blockchain to receive bought tokens.: Proporcione una dirección de su billetera en %blockchain% blockchain para recibir los tokens comprados.
 The time for sending coins is over.: El tiempo para enviar monedas ha terminado.
 You have not sent the coins to the specified address.: Usted no ha enviado las monedas a la dirección especificada.
-$swap_changelly_to_ton_description1: Debe enviar %value% a esta dirección en la cadena de bloques %blockchain% dentro de %time%
+$swap_changelly_to_wallet_description1: Debe enviar %value% a esta dirección en la cadena de bloques %blockchain% dentro de %time%
 Exchange failed and coins were refunded to your wallet.: El intercambio falló y las monedas fueron reembolsadas a su billetera.
 $swap_changelly_kyc_security: "Comuníquese con **%email%** y proporcione **ID de transacción** para pasar el procedimiento KYC:"
 Swap Expired: Intercambio vencido
 Address for %blockchain% transfer: Dirección para transferencia %blockchain%
 Cross-chain exchange provided by Changelly: Proporcionado por Changelly
-$swap_changelly_agreement_message: Al continuar, usted acepta los %terms% y %policy% y comprende que la transacción puede desencadenar una verificación según el %kyc%.
 $swap_changelly_terms_of_use: términos de uso
 $swap_changelly_privacy_policy: política de privacidad
 Password must contain %length% digits.: La contraseña debe contener %length% dígitos.
 Deposit Link: Enlace de depósito
-$swap_changelly_from_ton_description: "Los tokens se enviarán pronto a su dirección en %blockchain% blockchain:"
+$swap_changelly_from_wallet_description: "Los tokens se enviarán pronto a su dirección en %blockchain% blockchain:"
 Please note that it may take up to a few hours for tokens to appear in your wallet.: Tenga en cuenta que pueden pasar hasta unas horas para que los tokens aparezcan en su billetera.
 Minimum amount: Mínimo %value%
 Maximum amount: Máximo %value%
@@ -416,19 +403,17 @@ Biometric Authentication: Autenticación biométrica
 If you turn off biometric protection, you will need to create a password.: Si desactiva la protección biométrica, deberá crear una contraseña.
 Enter your current password: Introduce tu contraseña actual
 Turn On Biometrics: Activar la biometría
-Please confirm transaction using biometrics: Confirme la transacción utilizando datos biométricos
 Enabling biometric confirmation will reset the password.: Al habilitar la confirmación biométrica se restablecerá la contraseña.
 Biometric Registration: Registro Biométrico
 Step 1 of 2. Registration: Paso 1 de 2. Registro
 Step 2 of 2. Verification: Paso 2 de 2. Verificación
 Download Logs: Descargar registros
 Copy Logs: Copiar registros
-Logs were copied!: ¡Registros copiados!
+Logs Copied: Registros copiados
 Biometric setup failed.: Error en la configuración biométrica.
 Biometric confirmation failed.: Error de confirmación biométrica.
 Failed to disable biometrics.: No se pudo desactivar la biometría.
 Biometric Confirmation: Confirmación biométrica
-Please verify the operation.: Verifique la operación.
 Create Password: Crear contraseña
 Complete: Completo
 Verification: Verificación
@@ -437,12 +422,12 @@ Use Password: Usar contraseña
 Biometrics Disabled: Biometría deshabilitada
 Biometrics Enabled: Biometría habilitada
 A request is already pending: Ya hay una solicitud pendiente
-Please confirm operation using biometrics: Confirme la operación mediante datos biométricos
+Please confirm action using biometrics: Por favor, confirma la acción usando biometría
 Scan QR Code: Escanear código QR
 Permission denied. Please grant camera permission to use the QR code scanner.: Permiso denegado. Otorgue permiso a la cámara para usar el escáner QR.
 This QR Code is not supported: Este código QR no es compatible
 An error on the server side. Please try again.: Un error en el lado del servidor. Inténtalo de nuevo.
-Address was saved!: ¡Dirección guardada!
+Address Saved: Dirección guardada
 US Dollar: Dólar estadounidense
 Euro: Euro
 Russian Ruble: Rublo ruso
@@ -457,7 +442,6 @@ Wallet is ready!: ¡La billetera está lista!
 Wallet is imported!: ¡La billetera es importada!
 Create a code to protect it: Crea un código para protegerlo.
 Enter your code again: Ingresa tu código nuevamente
-Codes don't match: Los códigos no coinciden
 Code set successfully: Código configurado correctamente
 Use Biometrics: Utilice la biometría
 Use Touch ID: Usar Touch ID
@@ -479,6 +463,7 @@ Scan your fingerprint: Escanea tu huella digital
 Incorrect code, please try again.: Codigo Incorrecto, por favor intenta de nuevo.
 Correct: Correcto
 Confirm Action: Confirmar acción
+$classic_confirm_actions: Confirmar acciones
 Confirm Swap: Confirmar intercambio
 Confirm Rewards Claim: Confirmar reclamo de recompensas
 "%amount% to %address%": "%amount% a %address%"
@@ -492,7 +477,7 @@ Are you sure you want to disable biometrics?: ¿Estás seguro de que quieres des
 "Yes": Sí
 Biometric confirmation failed: La confirmación biométrica ha fallado
 No Activity: Sin Actividad
-Add / Buy: Recargar
+Fund: Recargar
 Buy with Card: Comprar con Tarjeta
 Buy with Crypto: Comprar con Cripto
 Cannot load widget: No se puede cargar el widget
@@ -504,7 +489,7 @@ $all_balance: "Todo: %balance%"
 $unstaking_not_enough_balance: Necesitas tener %value% en tu saldo principal para proceder con el desbloqueo.
 $ledger_verify_address_on_device: Verifique la dirección en su Ledger.
 Wallet Versions: Versiones de Cartera
-$read_more_about_wallet_version: Lee más sobre los tipos de contratos de cartera en %ton_link%.
+$read_more_about_wallet_version: Lee más sobre los tipos de contratos de cartera en %link%.
 $current_wallet_version: La versión actual de tu cartera es %version%.
 You have tokens on other versions of your wallet. You can import them from here.: Tienes tokens en otras versiones de tu cartera. Puedes importarlos desde aquí.
 $wallet_switch_version_1: También puedes %action%.
@@ -515,7 +500,7 @@ $insufficient_fee: "Comisión insuficiente: %fee%"
 Required: Requerido
 Comment is too long.: El comentario es demasiado largo.
 Memo: Memo
-Memo was copied!: ¡El memo fue copiado!
+Memo Copied: El memo fue copiado
 $hide_tokens_no_cost_help: |
   Apague esto para mostrar tokens en su cuenta con un valor inferior a $%value%. Tenga en cuenta que tales tokens a menudo se usan para el spam y la estafa.
   También puede habilitar y deshabilitar selectivamente tokens particulares utilizando la lista a continuación en esta pantalla.
@@ -523,9 +508,7 @@ No internet connection. Please check your connection and try again.: Sin conexi�
 To use this feature, first enable Face ID in your phone settings.: Para utilizar esta función, primero habilite Face ID en la configuración de su teléfono.
 To use this feature, first enable biometrics in your phone settings.: Para utilizar esta función, primero habilite la biometría en la configuración de su teléfono.
 Open Settings: Configuración abierta
-$service_token_transfer_warning: Está a punto de transferir un token de servicio importante necesario para retirar su depósito o completar operaciones de servicio. Asegúrese de que esta es la acción que desea realizar.
 No Price: Sin precio
-$ledger_outdated: Esta operación no es compatible con su versión de Ledger %chain% App. Actualícela utilizando Ledger Live.
 $dapp_transfer_tokens_burn: Quemando %cantidad%
 $dapp_dns_set_wallet_payload: Cambiar la billetera vinculada del dominio %domain% a %address%
 $dapp_dns_delete_wallet_payload: Eliminando la billetera vinculada del dominio %domain%
@@ -535,35 +518,37 @@ $dapp_token_bridge_pay_swap_payload: Confirmación de intercambio a través de u
 $dapp_liquid_staking_deposit_payload: Depósito a apuesta líquida
 $dapp_liquid_staking_vote_payload: Votando "%vote%" por la propuesta %votingAddress%
 $dapp_single_nominator_change_validator_payload: Cambiar la dirección del validador de contratos de participación de SingleNominator a %address%
-$dapp_single_nominator_withdraw_payload: Retiro de %amount% TON del contrato de participación de SingleNominator
+$dapp_single_nominator_withdraw_payload: Retiro de %amount% del contrato de participación de SingleNominator
 $dapp_vesting_add_whitelist_payload: Agregar %address% a la lista blanca de billeteras con derechos de uso
 Connecting dapps is not yet supported by Ledger.: Ledger aún no admite la conexión de dapps.
 Time synchronization issue. Please ensure your device's time settings are correct.: Problema de sincronización horaria. Asegúrese de que la configuración de hora de su dispositivo sea correcta.
-Data was copied!: ¡Los datos fueron copiados!
+Data Copied: Los datos fueron copiados
+URL Copied: URL Copied
+Private Key Copied: Private Key Copied
+Contract Initialization Data Copied: Contract Initialization Data Copied
 Open NFT Collection: Abrir colección NFT
 Previous: Anterior
 Next: Siguiente
-Insufficient TON for fee.: TON insuficiente para la comisión.
+Insufficient %token% for fee.: "%token% insuficiente para la comisión."
 Send NFT: Enviar NFT
+Send Collectible: Enviar coleccionable
+Send Collectibles: Enviar coleccionables
 NFT has been sent!: NFT ha sido enviado!
 Cannot be sent: No se puede enviar
 NFT is for sale: NFT está a la venta
 More actions: Mas acciones
-Open on %ton_explorer_name%: Abrir en %ton_explorer_name%
+Open on %explorer_name%: Abrir en %explorer_name%
 Swap is not supported in Testnet.: El intercambio no es compatible con Testnet.
 Swap is not yet supported by Ledger.: Ledger aún no admite el intercambio.
 Buying with card is not supported in Testnet.: La compra con tarjeta no es compatible con Testnet.
 Staking is not supported in Testnet.: Testnet no admite apuestas.
 Get Support: Obtener apoyo
-$transfer_inactive_contract_error: |
-  Ingresó una dirección en el formato "EQ...", pero la dirección no está activa, por lo que la transacción no se completará.
-  Si definitivamente desea enviar a esta dirección, ingrese la dirección en el formato "UQ...".
 $transfer_link_expired: El enlace de transferencia ha expirado
 $transfer_text_and_bin_exclusive: No se pueden usar juntos los parámetros de texto y datos binarios
-$unsupported_deeplink_parameter: Este enlace profundo contiene parámetros no compatibles
+$unsupported_deeplink_parameter: Este enlace profundo contiene parámetros no compatibles.
+$unsupported_chain: Blockchain no compatible.
 Successfully: Exitosamente
 Unstake More: Retirar más
-WrongAddress: El dapp solicitó una transacción desde otra billetera.
 Are you sure you want to burn this NFT? It will be lost forever.: ¿Estás seguro de que quieres quemar este NFT? Se perderá para siempre.
 $multi_burn_nft_warning: Vas a quemar %amount% NFTs.
 $multi_send_nft_warning: El proceso puede tardar ~%duration% minutos. Por favor, no cierres la aplicación y no cambies de cuenta hasta que haya terminado.
@@ -580,7 +565,8 @@ Send All: Envia todo
 Burn All: Quemar todo
 Select All: Seleccionar todo
 Collection: Colección
-Transaction ID was copied!: ¡Se copió el ID de la transacción!
+Unnamed Collection: Colección sin nombre
+Transaction ID Copied: Se copió el ID de la transacción
 $swap_changelly_support: "Si hay algún problema, comuníquese con %livechat% o %email% y proporcione **ID de transacción**:"
 Changelly Live Chat: Chat en vivo de Changelly
 Your %blockchain% Address: Su dirección de %blockchain%
@@ -604,10 +590,12 @@ $fee_value_bold: "**Comisión:** %fee%"
 "%app_name% Features": Funciones de %app_name%
 Security: Seguridad
 To avoid entering the passcode every time, you can use biometrics.: Para evitar ingresar el código cada vez, puede usar biometría.
+To avoid entering the password every time, you can use biometrics.: Para evitar ingresar la contraseña cada vez, puede usar biometría.
 Change Passcode: Cambiar código
 Change Password: Cambiar contraseña
 Confirm Password: Confirmar contraseña
 The passcode will be changed for all your wallets.: El código será cambiado para todas tus billeteras.
+The password will be changed for all your wallets.: La contraseña será cambiada para todas tus billeteras.
 Password Changed!: ¡Contraseña cambiada!
 Passcode Changed!: ¡Código de acceso cambiado!
 New code set successfully: Nuevo código establecido con éxito
@@ -617,7 +605,6 @@ Re-enter your new code: Introduzca su nuevo código nuevamente
 Install on Desktop: Instalar en el escritorio
 Install on Mobile: Instalar en el móvil
 Install App: Instalar la aplicación
-WrongNetwork: El dapp solicitó una transacción de otra red.
 Hide: Ocultar
 Hidden NFTs: NFTs Ocultos
 Hidden By Me: Ocultado por Mí
@@ -641,7 +628,6 @@ Confirm Sending: Confirmar envío
 Confirm Burning: Confirmar quema
 Confirm Passcode: Confirmar contraseña
 Enter your code: Ingrese su código
-$hardware_payload_warning: "**Un servicio de terceros está solicitando acceso a su billetera.** Esto podría provocar la pérdida de fondos. Cancele la operación si no está seguro sobre la fiabilidad de este servicio."
 $hardware_blind_sign_not_enabled: Para continuar, habilite la opción "Firma Ciega" en la configuración de la aplicación %chain% en Ledger.
 Switch to W5: Cambiar a W5
 Not Scam: No es una estafa
@@ -650,7 +636,7 @@ Multichain: Multichain
 $swap_too_small_amount: Cantidad demasiado pequeña
 Not enough %symbol%: No hay suficiente %symbol%
 You have just created a new multichain wallet: Acabas de crear una nueva billetera multichain
-Now you can transfer tokens from your TON and TRON wallets.: Ahora puedes transferir tokens desde tus billeteras de TON y TRON.
+Now you can transfer tokens from your %chains% wallets.: Ahora puedes transferir tokens desde tus billeteras de %chains%.
 Enter Secret Words: Ingresar Palabras Secretas
 Turn this off so you can manually download updates and verify signatures.: Desactiva esto para poder descargar manualmente las actualizaciones y verificar las firmas.
 InvalidMnemonic: Tus palabras mnemónicas son inválidas
@@ -712,10 +698,8 @@ Request is sent!: ¡Solicitud enviada!
 Transaction ID: ID de transacción
 Help Center: Centro de ayuda
 MyTonWallet Tips: Consejos de MyTonWallet
-$auth_import_24_mnemonic_description: |
-  Puedes restaurar el acceso a tu monedero introduciendo las **24 palabras secretas** que anotaste al crear el monedero.
 Open %nft_marketplace%: Abrir %nft_marketplace%
-Link was copied!: ¡Enlace copiado!
+Link Copied: Enlace copiado
 Share Link: Compartir enlace
 $dapp_return_details: |
   %fee_amount% se debitará inmediatamente de tu billetera para pagar la tarifa.
@@ -791,19 +775,18 @@ Transferable: Transferible
 Easily send your upgraded card to any of your friends.: Envía fácilmente tu tarjeta mejorada a cualquiera de tus amigos.
 Tradable: Comercializable
 Sell or auction your card on third-party NFT marketplaces.: Vende o subasta tu tarjeta en mercados de NFT de terceros.
-Upgrade for %currency% %amount%: Actualización por %currency% %amount%
+Upgrade for %amount% %currency%: Actualización por %amount% %currency%
 "%amount% left": "%amount% restantes"
 "%amount% sold": "%amount% vendidos"
 This card has been sold out: Esta tarjeta está agotada
 Import Existing Wallet: Importar cartera existente
 View Any Address: Ver cualquier dirección
-12/24 Secret Words: 12/24 Palabras secretas
-24 Secret Words: 24 Palabras secretas
+"%counts% Secret Words": "%counts% Palabras secretas"
 Wallet Address or Domain: Dirección de cartera o dominio
-$import_view_account_note: Ingrese **cualquier dirección** en la red TON o TRON para abrirla en **Modo de visualización**.
+$import_view_account_note: Ingrese **cualquier dirección** en la red %chains% para abrirla en **Modo de visualización**.
 $view_mode: Ver
 Import Wallet: Importar monedero
-Please top up your TON balance.: Por favor, recargue su saldo TON.
+Please top up your %token% balance.: Por favor, recargue su saldo %token%.
 Remember Passcode: Recordar código
 Remember Password: Recordar contraseña
 Not available with biometrics.: No disponible con biometría.
@@ -812,8 +795,11 @@ Remember for %1$d minutes: Recordar durante %1$d minutos
 Preview: Vista previa
 $preview_not_guaranteed: El resultado de la vista previa **no está garantizado** y **puede ser falsificado** por el servicio.
 Unverified Source: Fuente no verificada
-$reopen_in_iab: Por su seguridad, por favor vuelva a abrir esta DApp en %browserButton%.
+$reopen_in_iab: Por favor, use MyTonWallet %mobileAppButton% o %browserExtensionButton% para evitar esta advertencia.
+$reopen_in_iab_explore: Use la sección %exploreTab% al navegar por aplicaciones para evitar esta advertencia.
 MyTonWallet Browser: Navegador MyTonWallet
+mobile app: aplicación móvil
+browser extension: extensión del navegador
 Exit all wallets: Cerrar todas las billeteras
 Can't confirm?: ¿No puedes acceder?
 $safe_staking_ethena_description1: El staking es completamente descentralizado y operado por **smart contracts oficiales** auditados de staking líquido de **Ethena**.
@@ -851,7 +837,7 @@ Change Linked Wallet: Cambiar monedero vinculado
 Domain has been renewed!: ¡El dominio ha sido renovado!
 Domains have been renewed!: ¡Los dominios han sido renovados!
 Linked Wallet: Monedero vinculado
-Domain has been linked!: ¡El dominio ha sido vinculado!
+Domain Linked: El dominio ha sido vinculado
 Link: Vincular
 Confirm Renewing: Confirmar renovación
 Confirm Linking: Confirmar vinculación
@@ -893,7 +879,7 @@ Attributes: Atributos
 Show All: Mostrar todo
 Description: Descripción
 No additional data.: No hay datos adicionales.
-Domain was copied!: ¡Dominio copiado!
+"%chain% Domain Copied": "Dominio %chain% copiado"
 $in_currency: en %currency%
 Rename Wallet: Renombrar monedero
 You can rename this wallet for easier identification.: Puedes renombrar este monedero para identificarlo más fácilmente.
@@ -906,7 +892,6 @@ Telegram Gifts: Regalos de Telegram
 Collectibles: Coleccionables
 Bluetooth unavailable: Bluetooth no disponible
 $bluetooth_enable_guide: Active Bluetooth en la configuración del dispositivo y permita que la aplicación acceda a Bluetooth.
-Another transaction was sent from this wallet simultaneously. Please try again.: Se envió otra transacción desde esta billetera simultáneamente. Por favor, inténtelo de nuevo.
 Canceled by the user: Cancelado por el usuario
 The proof for signing provided by the Dapp is too large: La prueba para firmar proporcionada por la Dapp es demasiado grande
 $domain_like_scam_warning: |
@@ -924,11 +909,11 @@ Multisig sending disabled: No se puede enviar multisig
 $try_new_air_version: Prueba la experiencia de la aplicación nativa — más ligera, más rápida y diseñada para tu dispositivo. Puedes volver en cualquier momento.
 $accept_terms_with_link: Acepto %link%
 use the wallet responsibly: usar la billetera responsablemente
-"%app_name% Resources": "Recursos de %app_name%"
+"%app_name% Resources": Recursos de %app_name%
 Watch Video about Features: Ver video sobre características
 Enjoy Monthly Updates in Blog: Disfruta actualizaciones mensuales en el blog
 Learn New Things in Help Center: Aprende cosas nuevas en el centro de ayuda
-Frequency Questions and Answers: Preguntas y respuestas frecuentes
+Frequent Questions & Answers: Preguntas y respuestas frecuentes
 Paste from Clipboard: Pegar desde el portapapeles
 Use biometric authentication or create a password to protect it.: Usa autenticación biométrica o crea una contraseña para protegerla.
 Go to Words: Ir a Palabras
@@ -939,14 +924,15 @@ Open Wallet: Abrir billetera
 All Set!: ¡Todo listo!
 $wallet_create_done: ¡Listo! Has creado una billetera.
 $wallet_import_done:
-  zeroValue: ¡Listo! Has importado una cartera.
-  oneValue: ¡Listo! Has importado una cartera.
-  otherValue: ¡Listo! Has importado %1$d carteras.
+  zeroValue: ¡Listo! Has importado una billetera.
+  oneValue: ¡Listo! Has importado una billetera.
+  otherValue: ¡Listo! Has importado %1$d billeteras.
 $wallet_done_description: Ahora puedes almacenar, recibir y enviar monedas y otros activos digitales de forma segura.
 Security Warning: Advertencia de seguridad
 Go back to Words: Volver a palabras
 I’m sure. Continue: Estoy seguro. Continuar
 $copy_mnemonic_warning: Almacenar palabras en un entorno digital, incluido el **portapapeles**, no es seguro. Asegúrate de tener tu frase de recuperación guardada de forma segura.
+$screenshot_mnemonic_warning: Almacenar palabras en un entorno digital, incluida la **captura de pantalla**, no es seguro. Asegúrate de tener tu frase de recuperación guardada de forma segura.
 Other apps will be able to read your recovery phrase!: ¡Otras aplicaciones podrán leer tu frase de recuperación!
 I’m sure. Copy anyway: Estoy seguro. Copiar de todos modos
 $auth_biometric_info: Puedes conectar tus datos biométricos para **mayor comodidad.**
@@ -958,4 +944,129 @@ $ledger_wrong_device: La cuenta actual está configurada con otra frase de recup
 Show More: Mostrar más
 Search app or enter address: Buscar aplicación o ingresar dirección
 Connected Apps: Aplicaciones conectadas
+Connected Sites: Aplicaciones conectadas
 Popular Apps: Aplicaciones populares
+Popular Sites: Aplicaciones populares
+$wallets_amount:
+  zeroValue: No hay billeteras
+  oneValue: "%1$d billetera"
+  otherValue: "%1$d billeteras"
+$total_balance: "%balance% en total"
+No wallets: No hay billeteras
+View as List: Ver como lista
+View as Cards: Ver como tarjetas
+Reorder: Reordenar
+Rename: Renombrar
+Customize: Personalizar
+i18n_dragToSort: Arrastrar para ordenar
+My: Mis
+All: Todos
+$view_accounts: Ver
+Add your first one to begin.: Agrega tu primera billetera para comenzar.
+You don’t have any wallets yet: Aún no tienes ninguna billetera
+Add Ledger Wallet: Agregar billetera Ledger
+Add View Wallet: Agregar billetera de visualización
+No Ledger wallets yet: Aún no hay billeteras Ledger
+No view wallets yet: Aún no hay billeteras de visualización
+Add the first one to track balances and activity for any address.: Agrega la primera para rastrear saldos y actividad de cualquier dirección.
+Customize Wallet: Personalizar billetera
+"Select the card stored in this wallet:": "Selecciona la tarjeta almacenada en esta billetera:"
+This card will be installed for this wallet and will be displayed on the home screen and in the wallets list.: Esta tarjeta se instalará para esta billetera y se mostrará en la pantalla principal y en la lista de billeteras.
+Get More Cards: Obtener más tarjetas
+Browse MyTonWallet Cards available for purchase.: Explora las tarjetas MyTonWallet disponibles para comprar.
+You don't have any cards to customize yet: Aún no tienes tarjetas para personalizar.
+MyTonWallet Cards can be installed for wallets and displayed on the home screen and in the wallet list.: Las tarjetas MyTonWallet pueden instalarse para las billeteras y mostrarse en la pantalla principal y en la lista de billeteras.
+Get First Card: Obtener primera tarjeta
+Palette and Card: Paleta y tarjeta
+Customize the wallet's home screen and color accents the way you like.: Personaliza la pantalla principal y los acentos de color de la billetera a tu gusto.
+Address doesn't exist: La dirección no existe
+The address is not a token minter address: La dirección no es una dirección minter de tokens
+$joining_comma: ", "
+$joining_and: " y "
+$joining_or: " o "
+View in App: Ver en la app
+Save Account: Guardar cuenta
+$invalid_address_format: Formato de dirección no válido
+$no_valid_view_addresses: No hay direcciones válidas para ver
+Account Saved: Cuenta guardada con éxito
+Share Wallet Link: Compartir enlace de la billetera
+Remove: Eliminar
+$missing_offramp_deposit_address: Falta la dirección de depósito para off-ramp.
+Buy: Comprar
+Sell: Vender
+Sell on Card: Vender con tarjeta
+Sell %symbol%: Vender %symbol%
+$connect_dapp_description: Las aplicaciones conectadas solo pueden ver la dirección de tu billetera y no podrán mover tus activos sin tu permiso.
+$connect_dapp_title: ¿Conectar con %name%?
+Choose Wallet: Elegir billetera
+Wallet to use on %host%: Billetera para %host%
+Selected Wallet: Billetera seleccionada
+Connect Wallet: Conectar billetera
+Insufficient Fee: Comisión insuficiente
+Waiting for a View deeplink to display a wallet address.: Esperando un enlace profundo de View para mostrar una dirección de billetera.
+Adding wallets is not available in explorer mode: Agregar billeteras no está disponible en modo explorador
+$explorer_mode_warning: "Modo explorador: esperando un enlace profundo de View para abrir una dirección"
+This command is not supported in explorer mode: Este comando no es compatible en modo explorador
+$saved_addresses_header: Guardado
+confirm an action in MyTonWallet: confirmar una acción en MyTonWallet
+Timed out waiting for account to be ready: Tiempo de espera agotado para la preparación de la cuenta
+$connected_apps:
+  otherValue: "%1$d conectadas"
+Night Mode, Palette, Card: Modo nocturno, Paleta, Tarjeta
+Back Up, Passcode, Auto-Lock: Copia de seguridad, Código, Bloqueo automático
+Back Up, Password, Auto-Lock: Copia de seguridad, Contraseña, Bloqueo automático
+Base Currency, Token Order, Hidden NFTs: Moneda base, Orden de tokens, NFTs ocultos
+Your assets on other contracts: Tus activos en otros contratos
+Wallets, Sounds: Billeteras, Sonidos
+Help: Ayuda
+About: Acerca de
+Wallets: Billeteras
+Open: Abrir
+Open in %app_name%: Abrir en %app_name%
+Blog: Blog
+Apps: Aplicaciones
+$nft_not_found: NFT no encontrado
+You will be able to save it again via Transfer Info with this address.: Podrás guardarlo nuevamente a través de la Información de Transferencia con esta dirección.
+Transfer Info: Información de Transferencia
+Transfer not found: Transferencia no encontrada
+Failed to fetch transfer: No se pudo obtener la transferencia
+Transfer in progress: Transferencia en progreso
+Transfer Sent!: ¡Transferencia Enviada!
+Please confirm transfer on your Ledger: Por favor, confirma la transferencia en tu Ledger
+Please confirm action on your Ledger: Por favor, confirma la acción en tu Ledger
+Not all transfers were sent successfully: No todas las transferencias se enviaron con éxito
+$swap_changelly_agreement_message: Al continuar, aceptas los %terms% y %policy% y comprendes que la transferencia puede activar una verificación según %kyc%.
+Please confirm transfer using biometrics: Por favor, confirma la transferencia usando biometría
+$transfer_inactive_contract_error: |
+  Ingresaste una dirección en formato "EQ...", pero la dirección no está activa, por lo que la transferencia no se completará.
+  Si definitivamente quieres enviar a esta dirección, entonces ingresa la dirección en formato "UQ...".
+$transaction_not_found: Transferencia no encontrada.
+$could_not_determine_address: No se pudo determinar la dirección de la billetera a partir de la transferencia
+WrongAddress: La dapp solicitó una acción desde otra billetera.
+WrongNetwork: La dapp solicitó una acción desde otra red.
+Another transfer was sent from this wallet simultaneously. Please try again.: Otra transferencia fue enviada desde esta billetera simultáneamente. Por favor, intenta de nuevo.
+Confirm action with your password: Confirma la acción con tu contraseña
+$dapps-description: Puedes iniciar sesión en dapps que soporten %app_name%. Pueden ver la dirección de la billetera, el saldo y solicitar acciones.
+Please verify the action.: Por favor, verifica la acción.
+$service_token_transfer_warning: Estás a punto de transferir un token de servicio importante necesario para retirar tu depósito o completar acciones de servicio. Por favor, asegúrate de que esta es la acción que deseas realizar.
+$ledger_outdated: Esta acción no es compatible con tu versión de la App Ledger %chain%. Por favor, actualízala usando Ledger Live.
+$hardware_payload_warning: "**Un servicio de terceros está solicitando acceso a tu billetera.** Esto podría llevar a la pérdida de fondos. Cancela la acción si no estás seguro de la confiabilidad de este servicio."
+Pin: Fijar
+Unpin: Desfijar
+My Assets: Mis Activos
+Owner: Propietario
+Show All Wallets: Mostrar todas las billeteras
+Ask a Question: Hacer una pregunta
+MyTonWallet Features: Características de MyTonWallet
+Notifications: Notificaciones
+Enter Passcode: Introducir código
+Wrong passcode, please try again: Código incorrecto, por favor inténtelo de nuevo.
+Use biometric authentication or create a passcode to protect it.: Use autenticación biométrica o cree un código de acceso para protegerlo.
+Use Passcode: Usar Código de Acceso
+Create Passcode: Crear Código de Acceso
+Create a passcode to protect it.: Cree un código de acceso para protegerlo.
+If you turn off biometric protection, you will need to create a passcode.: Si desactivas la protección biométrica, deberás crear un código de acceso.
+Enabling biometric confirmation will reset the passcode.: Habilitar la confirmación biométrica restablecerá el código de acceso.
+Confirm action with your passcode: Confirma la acción con tu contraseña
+No Image: Sin imagen
+Different blockchain. Cannot be selected: Blockchain diferente. No se puede seleccionar

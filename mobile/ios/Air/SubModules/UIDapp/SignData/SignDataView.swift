@@ -1,8 +1,6 @@
 
 import SwiftUI
 import UIKit
-import Ledger
-import UIPasscode
 import UIComponents
 import WalletCore
 import WalletContext
@@ -31,19 +29,19 @@ struct SignDataViewOrPlaceholder: View {
 struct SignDataView: View {
 
     var update: ApiUpdate.DappSignData
-    var account: MAccount
+    var accountContext: AccountContext
     var onConfirm: () -> ()
     var onCancel: () -> ()
-    var navigationBarInset: CGFloat
-    var onScroll: (CGFloat) -> ()
     
     @Namespace private var ns
 
     var body: some View {
         InsetList {
-            SignDataHeader(dapp: update.dapp, account: account)
-                .scrollPosition(ns: ns, offset: 8, callback: onScroll)
-                .padding(.bottom, 16)
+            DappHeaderView(
+                dapp: update.dapp,
+                accountContext: accountContext,
+            )
+            .padding(.bottom, 16)
             switch update.payloadToSign {
             case .text(let text):
                 makeText(payload: text)
@@ -55,7 +53,6 @@ struct SignDataView: View {
 
         }
         .coordinateSpace(name: ns)
-        .navigationBarInset(navigationBarInset)
         .safeAreaInset(edge: .bottom) {
             buttons
         }
@@ -110,7 +107,7 @@ struct SignDataView: View {
     var warningView: some View {
         WarningView(
             text: lang("The binary data content is unclear. Sign it only if you trust the service."),
-            color: .orange,
+            kind: .warning,
         )
         .padding(.horizontal, 16)
     }

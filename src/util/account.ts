@@ -6,8 +6,20 @@ import { shortenAddress } from './shortenAddress';
 
 export function parseAccountId(accountId: string): AccountIdParsed {
   const parts = accountId.split('-');
-  const [id, network = 'mainnet'] = (parts.length === 3 ? [parts[0], parts[2]] : parts) as [string, ApiNetwork];
-  return { id: Number(id), network };
+  const network: ApiNetwork = parts.includes('testnet') ? 'testnet' : 'mainnet';
+
+  const primaryId = Number(parts[0]);
+  if (Number.isFinite(primaryId)) {
+    return { id: primaryId, network };
+  }
+
+  const legacyIdPart = [...parts].reverse().find((part) => /^\d+$/.test(part));
+  const legacyId = legacyIdPart ? Number(legacyIdPart) : NaN;
+
+  return {
+    id: Number.isFinite(legacyId) ? legacyId : 0,
+    network,
+  };
 }
 
 export function buildAccountId(account: AccountIdParsed) {
@@ -39,17 +51,20 @@ export function generateAccountTitle(params: {
   }
 
   // Count wallets by type
-  const walletCounts = Object.values(accounts).reduce((acc, wallet) => {
-    if (wallet.type === 'view') acc.view++;
-    if (wallet.type === 'hardware') acc.hardware++;
-    if (wallet.type === 'mnemonic') acc.mnemonic++;
-    return acc;
-  }, { view: 0, hardware: 0, mnemonic: 0 });
+  const walletCounts = Object.values(accounts).reduce(
+    (acc, wallet) => {
+      if (wallet.type === 'view') acc.view++;
+      if (wallet.type === 'hardware') acc.hardware++;
+      if (wallet.type === 'mnemonic') acc.mnemonic++;
+      return acc;
+    },
+    { view: 0, hardware: 0, mnemonic: 0 },
+  );
 
   const walletTypeConfig: Record<AccountType, { prefix: string; count: string | number }> = {
-    view: { prefix: 'View Wallet', count: walletCounts.view + 1 },
+    view: { prefix: 'Wallet', count: walletCounts.view + 1 },
     hardware: { prefix: 'Ledger', count: `#${walletCounts.hardware + 1}` },
-    mnemonic: { prefix: 'Wallet', count: walletCounts.mnemonic + 1 },
+    mnemonic: { prefix: 'My Wallet', count: walletCounts.mnemonic + 1 },
   };
 
   const config = walletTypeConfig[accountType];

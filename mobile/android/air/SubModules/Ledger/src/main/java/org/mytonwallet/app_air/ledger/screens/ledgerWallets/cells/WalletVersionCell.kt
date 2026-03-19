@@ -9,12 +9,11 @@ import androidx.core.view.isGone
 import org.mytonwallet.app_air.ledger.screens.ledgerWallets.LedgerWalletsVC
 import org.mytonwallet.app_air.uicomponents.drawable.CheckboxDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.extensions.updateDotsTypeface
+import org.mytonwallet.app_air.uicomponents.extensions.styleDots
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
-import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
@@ -63,19 +62,13 @@ class LedgerWalletCell(
         lbl
     }
 
-    private val separator: WView by lazy {
-        val v = WView(context)
-        v
-    }
-
     init {
         layoutParams.apply {
-            height = 64.dp
+            height = 60.dp
         }
         addView(imageView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         addView(contentView)
         addView(rightLabel)
-        addView(separator, LayoutParams(0, 1))
         setConstraints {
             toStart(imageView, 25f)
             toCenterY(imageView)
@@ -83,9 +76,6 @@ class LedgerWalletCell(
             toStart(contentView, 72f)
             toCenterY(rightLabel)
             toEnd(rightLabel, 20f)
-            toBottom(separator)
-            toStart(separator, 72f)
-            toEnd(separator, 20f)
         }
 
         setOnClickListener {
@@ -108,7 +98,6 @@ class LedgerWalletCell(
         topLeftLabel.setTextColor(WColor.PrimaryText.color)
         bottomLeftLabel.setTextColor(WColor.SecondaryText.color)
         rightLabel.setTextColor(WColor.SecondaryText.color)
-        separator.setBackgroundColor(WColor.Separator.color)
         checkboxDrawable.checkedColor = WColor.Tint.color
         checkboxDrawable.uncheckedColor = WColor.SecondaryText.color
     }
@@ -130,13 +119,13 @@ class LedgerWalletCell(
             item.title ?: SpannableStringBuilder(
                 item.wallet.wallet.address.formatStartEndAddress()
             ).apply {
-                updateDotsTypeface()
+                styleDots()
             }
         bottomLeftLabel.text =
             if (item.title != null) SpannableStringBuilder(
                 item.wallet.wallet.address.formatStartEndAddress()
             ).apply {
-                updateDotsTypeface()
+                styleDots()
             } else null
         bottomLeftLabel.isGone = bottomLeftLabel.text.isNullOrEmpty()
         val toncoin = TokenStore.getToken(TONCOIN_SLUG)

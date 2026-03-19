@@ -5,13 +5,16 @@ import android.os.Looper
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.mytonwallet.app_air.uistake.earn.models.EarnItem
-import org.mytonwallet.app_air.uistake.util.getTonStakingFees
 import org.mytonwallet.app_air.uistake.util.toViewItem
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.utils.doubleAbsRepresentation
@@ -19,17 +22,11 @@ import org.mytonwallet.app_air.walletbasecontext.utils.smartDecimalsCount
 import org.mytonwallet.app_air.walletbasecontext.utils.toString
 import org.mytonwallet.app_air.walletcontext.utils.CoinUtils
 import org.mytonwallet.app_air.walletcore.JSWebViewBridge
-import org.mytonwallet.app_air.walletcore.MYCOIN_SLUG
-import org.mytonwallet.app_air.walletcore.STAKED_MYCOIN_SLUG
-import org.mytonwallet.app_air.walletcore.STAKED_USDE_SLUG
-import org.mytonwallet.app_air.walletcore.STAKE_SLUG
 import org.mytonwallet.app_air.walletcore.TONCOIN_SLUG
-import org.mytonwallet.app_air.walletcore.USDE_SLUG
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
-import org.mytonwallet.app_air.walletcore.api.fetchTokenActivitySlice
 import org.mytonwallet.app_air.walletcore.api.getStakingHistory
-import org.mytonwallet.app_air.walletcore.models.MBridgeError
+import org.mytonwallet.app_air.walletcore.tokenSlugToStakingSlug
 import org.mytonwallet.app_air.walletcore.models.MToken
 import org.mytonwallet.app_air.walletcore.moshi.MApiTransaction
 import org.mytonwallet.app_air.walletcore.moshi.MStakeHistoryItem
@@ -52,6 +49,7 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
         MutableSharedFlow(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val viewState = _viewState.asSharedFlow()
     private var historyItems: MutableList<EarnItem>? = null
+    private val historyItemsMutex = Mutex()
     var apy: Float? = null
     var amountToClaim: BigInteger? = null
     var token: MToken? = null
@@ -61,13 +59,7 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
             }
             return field
         }
-    private var stakedTokenSlug =
-        when (tokenSlug) {
-            TONCOIN_SLUG -> STAKE_SLUG
-            MYCOIN_SLUG -> STAKED_MYCOIN_SLUG
-            USDE_SLUG -> STAKED_USDE_SLUG
-            else -> ""
-        }
+    private val stakedTokenSlug = tokenSlugToStakingSlug(tokenSlug) ?: ""
 
     init {
         WalletCore.registerObserver(this)
@@ -133,14 +125,16 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
         apy = stakingState?.annualYield
         amountToClaim = stakingState?.amountToClaim
 
-        val stakingBalance = stakingState?.totalBalance?.toString(
+        val stakingBalanceValue = stakingState?.totalBalance
+        val stakingBalance = stakingBalanceValue?.toString(
             token!!.decimals,
             "",
-            stakingState.totalBalance.smartDecimalsCount(token!!.decimals),
+            stakingBalanceValue.smartDecimalsCount(token!!.decimals),
             showPositiveSign = false,
             forceCurrencyToRight = true,
             roundUp = false
         )
+        val stakingBalanceIsLarge = stakingBalanceValue?.doubleAbsRepresentation(token!!.decimals)?.let { it >= 10 } ?: false
 
         val totalProfitAmount = when {
             tokenSlug == TONCOIN_SLUG -> updateStaking.totalProfit
@@ -159,10 +153,11 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
         _viewState.tryEmit(
             viewStateValue().copy(
                 stakingBalance = stakingBalance,
+                stakingBalanceIsLarge = stakingBalanceIsLarge,
                 totalProfit = totalProfit,
-                showAddStakeButton = stakingState?.isUnstakeRequestAmountUnlocked != true,
-                showUnstakeButton =
-                    (stakingState?.balance ?: BigInteger.ZERO) > BigInteger.ZERO,
+                showAddStakeButton = true,
+                showUnstakeButton = stakingState?.shouldShowWithdrawButton ?: false,
+                showBiggerUnstakeButton = stakingState?.isUnstakeRequestAmountUnlocked != true,
                 enableAddStakeButton = getTokenBalance() > BigInteger.ZERO,
                 unclaimedReward = amountToClaim
             )
@@ -282,40 +277,43 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
         isCheckingLatestChanges: Boolean = false
     ) {
         if (isLoadingUnstakedActivityItems) return
-        val callback: ((ArrayList<MApiTransaction>?, MBridgeError?, String) -> Unit) =
-            callback@{ transactions, err, requestAccountId ->
-                if (requestAccountId != AccountStore.activeAccountId) return@callback
-                if (!transactions.isNullOrEmpty()) {
-                    if (!isCheckingLatestChanges) {
-                        hasLoadedAllUnstakedActivityItems = transactions.isEmpty()
-                        lastUnstakedActivityTimestamp = transactions.last().timestamp
-                    }
+        isLoadingUnstakedActivityItems = true
+        val activeAccountId = AccountStore.activeAccountId ?: return
+        WalletCore.call(
+            ApiMethod.WalletData.FetchPastActivities(
+                accountId = activeAccountId,
+                limit = 100,
+                slug = tokenSlug,
+                toTimestamp = fromTimestamp
+            )
+        ) { result, err ->
+            if (activeAccountId != AccountStore.activeAccountId) return@call
+            val transactions = result?.activities
+            val isHistoryEndReached = result?.hasMore == false
+            if (!transactions.isNullOrEmpty()) {
+                if (!isCheckingLatestChanges) {
+                    hasLoadedAllUnstakedActivityItems = isHistoryEndReached
+                    lastUnstakedActivityTimestamp = transactions.last().timestamp
+                }
+                viewModelScope.launch {
                     mergeTransaction(transactions)
-                } else if (err != null) {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        requestTokenActivitiesForUnstakedItems(
-                            fromTimestamp,
-                            isCheckingLatestChanges
-                        )
-                    }, 2000)
-                } else {
-                    hasLoadedAllUnstakedActivityItems = true
-                    if (historyItems.isNullOrEmpty()) {
-                        showNoItemView()
-                    }
+                    isLoadingUnstakedActivityItems = false
+                }
+            } else if (err != null) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    requestTokenActivitiesForUnstakedItems(
+                        fromTimestamp,
+                        isCheckingLatestChanges
+                    )
+                }, 2000)
+                isLoadingUnstakedActivityItems = false
+            } else {
+                hasLoadedAllUnstakedActivityItems = isHistoryEndReached
+                if (hasLoadedAllUnstakedActivityItems && historyItems.isNullOrEmpty()) {
+                    showNoItemView()
                 }
                 isLoadingUnstakedActivityItems = false
             }
-
-        isLoadingUnstakedActivityItems = true
-        AccountStore.activeAccountId?.let { activeAccountId ->
-            WalletCore.fetchTokenActivitySlice(
-                activeAccountId,
-                tokenSlug,
-                fromTimestamp,
-                limit = 100,
-                callback
-            )
         }
     }
 
@@ -350,29 +348,37 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
         }
         val activeAccountId = AccountStore.activeAccountId ?: return
         isLoadingStakedActivityItems = true
-        WalletCore.fetchTokenActivitySlice(
-            activeAccountId,
-            stakedTokenSlug,
-            fromTimestamp,
-            limit = 100
-        ) { transactions, err, _ ->
+        WalletCore.call(
+            ApiMethod.WalletData.FetchPastActivities(
+                accountId = activeAccountId,
+                limit = 100,
+                slug = stakedTokenSlug,
+                toTimestamp = fromTimestamp
+            )
+        ) { result, err ->
+            val transactions = result?.activities
+            val isHistoryEndReached = result?.hasMore == false
             if (!transactions.isNullOrEmpty()) {
                 if (!isCheckingLatestChanges) {
-                    hasLoadedAllStakedActivityItems = transactions.isEmpty()
+                    hasLoadedAllStakedActivityItems = isHistoryEndReached
                     lastStakedActivityTimestamp = transactions.last().timestamp
                 }
-                mergeTransaction(transactions)
+                viewModelScope.launch {
+                    mergeTransaction(transactions)
+                    isLoadingStakedActivityItems = false
+                }
             } else if (err != null) {
                 Handler(Looper.getMainLooper()).postDelayed({
                     requestTokenActivitiesForStakedItems(fromTimestamp, isCheckingLatestChanges)
                 }, 2000)
+                isLoadingStakedActivityItems = false
             } else {
-                hasLoadedAllStakedActivityItems = true
-                if (historyItems.isNullOrEmpty()) {
+                hasLoadedAllStakedActivityItems = isHistoryEndReached
+                if (hasLoadedAllStakedActivityItems && historyItems.isNullOrEmpty()) {
                     showNoItemView()
                 }
+                isLoadingStakedActivityItems = false
             }
-            isLoadingStakedActivityItems = false
         }
     }
 
@@ -380,25 +386,6 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
         if (hasLoadedAllStakedActivityItems) return
         val timeStamp = lastStakedActivityTimestamp ?: return
         requestTokenActivitiesForStakedItems(fromTimestamp = timeStamp)
-    }
-
-    fun requestClaimRewards(
-        passcode: String,
-        callback: (JSWebViewBridge.ApiError?) -> Unit
-    ) {
-        val activeAccountId = AccountStore.activeAccountId ?: return
-        AccountStore.stakingData?.stakingState(tokenSlug)?.let { stakingState ->
-            WalletCore.call(
-                ApiMethod.Staking.SubmitStakingClaimOrUnlock(
-                    activeAccountId,
-                    passcode,
-                    stakingState,
-                    getTonStakingFees(stakingState.stakingType)["claim"]!!.real
-                )
-            ) { _, err ->
-                callback(err)
-            }
-        }
     }
 
     //
@@ -409,90 +396,99 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
                 (lastStakedActivityTimestamp != null || hasLoadedAllStakedActivityItems))
         }
 
-    private fun mergeTransaction(newTransactions: List<MApiTransaction>) {
-        if (historyItems == null) {
-            historyItems = mutableListOf()
-        }
+    private suspend fun mergeTransaction(newTransactions: List<MApiTransaction>) =
+        historyItemsMutex.withLock {
+            val mergedItems = withContext(Dispatchers.Default) {
+                val currentItems = historyItems?.toMutableList() ?: mutableListOf()
 
-        newItemsLoop@ for (transaction in newTransactions.filterIsInstance<MApiTransaction.Transaction>()) {
-            val item =
-                transaction.toViewItem(tokenSlug, stakedTokenSlug).updateAmountInBaseCurrency()
-            if (item is EarnItem.None) {
-                continue
-            }
+                newItemsLoop@ for (transaction in newTransactions.filterIsInstance<MApiTransaction.Transaction>()) {
+                    val item =
+                        transaction.toViewItem(tokenSlug, stakedTokenSlug)
+                            .updateAmountInBaseCurrency()
+                    if (item is EarnItem.None) {
+                        continue
+                    }
 
-            var added = false
-            for ((i, historyItem) in (historyItems ?: emptyList()).withIndex()) {
-                if (
-                    historyItem.timestamp == transaction.timestamp
-                    && historyItem::class == item::class
-                    && historyItem.amount == item.amount
-                ) {
-                    // Is duplicate. This happens when checking for latest changes.
-                    continue@newItemsLoop
-                } else if (historyItem.timestamp < transaction.timestamp) {
-                    historyItems?.add(i, item)
-                    added = true
-                    break
+                    var added = false
+                    for ((i, historyItem) in currentItems.withIndex()) {
+                        if (
+                            historyItem.timestamp == transaction.timestamp
+                            && historyItem::class == item::class
+                            && historyItem.amount == item.amount
+                        ) {
+                            // Is duplicate. This happens when checking for latest changes.
+                            continue@newItemsLoop
+                        } else if (historyItem.timestamp < transaction.timestamp) {
+                            currentItems.add(i, item)
+                            added = true
+                            break
+                        }
+                    }
+                    if (!added) {
+                        currentItems.add(item)
+                    }
                 }
+                currentItems
             }
-            if (!added) {
-                historyItems?.add(item)
-            }
-        }
 
-        if (historyItems.isNullOrEmpty()) {
-            showNoItemView()
-        } else if (allLoadedOnce) {
-            val currentHistoryItems = historyItems ?: return
-            _viewState.tryEmit(
-                viewStateValue().updateHistoryItems(
-                    newHistoryItems = groupConsecutiveProfitItems(currentHistoryItems),
-                    replace = true
+            historyItems = mergedItems
+
+            if (historyItems.isNullOrEmpty()) {
+                showNoItemView()
+            } else if (allLoadedOnce) {
+                val currentHistoryItems = historyItems ?: return@withLock
+                _viewState.tryEmit(
+                    viewStateValue().updateHistoryItems(
+                        newHistoryItems = groupConsecutiveProfitItems(currentHistoryItems),
+                        replace = true
+                    )
                 )
-            )
+            }
+
         }
 
-    }
+    private suspend fun mergeHistory(newHistoryItems: List<MStakeHistoryItem>) =
+        historyItemsMutex.withLock {
+            val mergedItems = withContext(Dispatchers.Default) {
+                val currentItems = historyItems?.toMutableList() ?: mutableListOf()
 
-    private fun mergeHistory(newHistoryItems: List<MStakeHistoryItem>) {
-        if (historyItems == null) {
-            historyItems = mutableListOf()
-        }
+                newItemsLoop@ for (newHistoryItem in newHistoryItems) {
+                    val item = newHistoryItem.toViewItem().updateAmountInBaseCurrency()
 
-        newItemsLoop@ for (newHistoryItem in newHistoryItems) {
-            val item = newHistoryItem.toViewItem().updateAmountInBaseCurrency()
-
-            var added = false
-            for ((i, historyItem) in (historyItems ?: emptyList()).withIndex()) {
-                if (historyItem.timestamp == newHistoryItem.timestamp
-                    && historyItem::class == item::class
-                    && historyItem.amount == item.amount
-                ) {
-                    // Is duplicate. This happens when checking for latest changes.
-                    continue@newItemsLoop
-                } else if (historyItem.timestamp < newHistoryItem.timestamp) {
-                    historyItems?.add(i, item)
-                    added = true
-                    break
+                    var added = false
+                    for ((i, historyItem) in currentItems.withIndex()) {
+                        if (historyItem.timestamp == newHistoryItem.timestamp
+                            && historyItem::class == item::class
+                            && historyItem.amount == item.amount
+                        ) {
+                            // Is duplicate. This happens when checking for latest changes.
+                            continue@newItemsLoop
+                        } else if (historyItem.timestamp < newHistoryItem.timestamp) {
+                            currentItems.add(i, item)
+                            added = true
+                            break
+                        }
+                    }
+                    if (!added) {
+                        currentItems.add(item)
+                    }
                 }
+                currentItems
             }
-            if (!added) {
-                historyItems?.add(item)
-            }
-        }
 
-        if (allLoadedOnce) {
-            val currentHistoryItems = historyItems ?: return
-            _viewState.tryEmit(
-                viewStateValue().updateHistoryItems(
-                    newHistoryItems = groupConsecutiveProfitItems(currentHistoryItems),
-                    replace = true
+            historyItems = mergedItems
+
+            if (allLoadedOnce) {
+                val currentHistoryItems = historyItems ?: return@withLock
+                _viewState.tryEmit(
+                    viewStateValue().updateHistoryItems(
+                        newHistoryItems = groupConsecutiveProfitItems(currentHistoryItems),
+                        replace = true
+                    )
                 )
-            )
-        }
+            }
 
-    }
+        }
 
     //
     fun getHistoryItems(): List<EarnItem> {
@@ -598,7 +594,7 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
                 profitItems = mutableListOf<EarnItem.Profit>().apply {
                     addAll(consecutiveProfitList)
                 },
-                itemTitle = LocaleController.getString("Earned") + if (LocaleController.isRTL) " ${consecutiveProfitList.size}x" else "x${consecutiveProfitList.size}"
+                itemTitle = LocaleController.getString("Earned") + " ×${consecutiveProfitList.size}"
             ).apply { updateAmountInBaseCurrency() }
             result.add(newProfitGroup)
         }
@@ -631,16 +627,23 @@ class EarnViewModel(val tokenSlug: String) : ViewModel(), WalletCore.EventObserv
             WalletEvent.TokensChanged,
             WalletEvent.BaseCurrencyChanged -> {
                 token = TokenStore.getToken(tokenSlug)!!
-                historyItems?.forEach { earnItem ->
-                    earnItem.updateAmountInBaseCurrency()
-                }
-                if (!historyItems.isNullOrEmpty()) {
-                    _viewState.tryEmit(
-                        viewStateValue().updateHistoryItems(
-                            newHistoryItems = groupConsecutiveProfitItems(historyItems!!),
-                            replace = true
-                        )
-                    )
+                viewModelScope.launch {
+                    historyItemsMutex.withLock {
+                        val updatedItems = withContext(Dispatchers.Default) {
+                            historyItems?.map { earnItem ->
+                                earnItem.updateAmountInBaseCurrency()
+                            }?.toMutableList()
+                        }
+                        historyItems = updatedItems
+                        if (!historyItems.isNullOrEmpty()) {
+                            _viewState.tryEmit(
+                                viewStateValue().updateHistoryItems(
+                                    newHistoryItems = groupConsecutiveProfitItems(historyItems!!),
+                                    replace = true
+                                )
+                            )
+                        }
+                    }
                 }
             }
 

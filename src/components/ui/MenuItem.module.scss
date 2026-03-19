@@ -1,3 +1,5 @@
+@use "../../styles/mixins";
+
 .menuItem {
   cursor: var(--custom-cursor, pointer);
 
@@ -32,7 +34,7 @@
     &:focus-visible {
       color: var(--color-accent);
       text-decoration: none;
-      background-color: var(--color-interactive-popup-menu-hover);
+      background-color: var(--color-interactive-drop-down-menu-hover);
     }
   }
 
@@ -40,13 +42,16 @@
     &:active {
       color: var(--color-accent);
       text-decoration: none;
-      background-color: var(--color-interactive-popup-menu-hover);
+      background-color: var(--color-interactive-drop-down-menu-hover);
     }
   }
 
-  &:active {
-    // Optimization
-    transition: none;
+  @include mixins.active-transition-optimization();
+
+  &[aria-selected="true"] {
+    color: var(--color-accent);
+    text-decoration: none;
+    background-color: var(--color-interactive-drop-down-menu-hover);
   }
 
   :global(html.animation-level-0) & {

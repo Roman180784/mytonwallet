@@ -13,11 +13,11 @@ import {
   NFT_BATCH_SIZE,
   NOTCOIN_EXCHANGERS,
   STARS_SYMBOL,
-  TONCOIN,
 } from '../../config';
 import renderText from '../../global/helpers/renderText';
-import { selectNetworkAccounts } from '../../global/selectors';
+import { selectCurrentAccountId, selectNetworkAccounts } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
+import { getChainConfig, getChainTitle } from '../../util/chain';
 import { toDecimal } from '../../util/decimals';
 import { explainApiTransferFee } from '../../util/fee/transferFee';
 import { getLocalAddressName } from '../../util/getLocalAddressName';
@@ -76,6 +76,8 @@ function TransferConfirm({
     isGaslessWithStars,
     diesel,
     stateInit,
+    isOfframp,
+    isNftBurn,
   },
   token,
   currentAccountId,
@@ -91,7 +93,8 @@ function TransferConfirm({
 
   const isNftTransfer = Boolean(nfts?.length);
   if (isNftTransfer) {
-    tokenSlug = TONCOIN.slug;
+    const nftChain = nfts[0].chain;
+    tokenSlug = getChainConfig(nftChain).nativeToken.slug;
   }
 
   const chain = getChainBySlug(tokenSlug);
@@ -103,7 +106,7 @@ function TransferConfirm({
     savedAddresses,
   }), [accounts, chain, currentAccountId, savedAddresses, toAddress]);
   const addressName = localAddressName || toAddressName;
-  const isBurning = resolvedAddress === BURN_ADDRESS;
+  const isBurning = resolvedAddress === BURN_ADDRESS || isNftBurn;
   const isNotcoinBurning = resolvedAddress === NOTCOIN_EXCHANGERS[0];
   const explainedFee = explainApiTransferFee({
     fee,
@@ -169,7 +172,7 @@ function TransferConfirm({
               <div className={styles.label}>{lang('Signing Data')}</div>
               <InteractiveTextField
                 text={binPayload}
-                copyNotification={lang('Data was copied!')}
+                copyNotification={lang('Data Copied')}
                 className={styles.addressWidget}
               />
             </>
@@ -180,7 +183,7 @@ function TransferConfirm({
               <div className={styles.label}>{lang('Contract Initialization Data')}</div>
               <InteractiveTextField
                 text={stateInit}
-                copyNotification={lang('Data was copied!')}
+                copyNotification={lang('Data Copied')}
                 className={styles.addressWidget}
               />
             </>
@@ -211,14 +214,18 @@ function TransferConfirm({
     ? (Math.ceil(nfts.length / NFT_BATCH_SIZE) * BURN_CHUNK_DURATION_APPROX_SEC) / 60
     : undefined;
 
-  const submitBtnText = lang(
-    (isBurning || isNotcoinBurning)
-      ? (isNftTransfer ? 'Burn NFT' : 'Burn')
-      : isGaslessWithStars
-        ? 'Pay fee with %stars_symbol%'
-        : 'Confirm',
-    isGaslessWithStars ? { stars_symbol: STARS_SYMBOL } : undefined,
-  );
+  function getSubmitBtnText() {
+    if (isOfframp) {
+      return lang('Sell %symbol%', { symbol: token?.symbol ?? '' });
+    }
+    if (isBurning || isNotcoinBurning) {
+      return lang(isNftTransfer ? 'Burn NFT' : 'Burn');
+    }
+    if (isGaslessWithStars) {
+      return lang('Pay fee with %stars_symbol%', { stars_symbol: STARS_SYMBOL });
+    }
+    return lang('Confirm');
+  }
 
   return (
     <>
@@ -235,27 +242,31 @@ function TransferConfirm({
             previewUrl={ANIMATED_STICKERS_PATHS.billPreview}
           />
         )}
-        <div className={styles.label}>
-          {lang('Receiving Address')}
-          {' '}
-          {isToNewAddress && (
-            <IconWithTooltip
-              emoji="⚠️"
-              size="small"
-              message={lang('This address is new and never received transfers before.')}
-              tooltipClassName={styles.warningTooltipContainer}
+        {!isNftBurn && (
+          <>
+            <div className={styles.label}>
+              {lang('Receiving Address')}
+              {' '}
+              {isToNewAddress && (
+                <IconWithTooltip
+                  emoji="⚠️"
+                  size="small"
+                  message={lang('This address is new and never received transfers before.')}
+                  tooltipClassName={styles.warningTooltipContainer}
+                />
+              )}
+            </div>
+            <InteractiveTextField
+              chain={chain}
+              address={resolvedAddress}
+              addressName={addressName}
+              isScam={isScam}
+              copyNotification={lang('%chain% Address Copied', { chain: getChainTitle(chain) }) as string}
+              className={styles.addressWidget}
+              forceFullAddress
             />
-          )}
-        </div>
-        <InteractiveTextField
-          chain={chain}
-          address={resolvedAddress}
-          addressName={addressName}
-          isScam={isScam}
-          copyNotification={lang('Address was copied!')}
-          className={styles.addressWidget}
-        />
-
+          </>
+        )}
         {renderAmountWithFee()}
         {renderComment()}
 
@@ -274,9 +285,11 @@ function TransferConfirm({
         )}
 
         <div className={buildClassName(modalStyles.buttons, modalStyles.buttonsInsideContentWithScroll)}>
-          <Button className={modalStyles.button} onClick={promiseId ? onClose : onBack}>
-            {promiseId ? lang('Cancel') : lang('Edit')}
-          </Button>
+          {!isOfframp && (
+            <Button className={modalStyles.button} onClick={promiseId ? onClose : onBack}>
+              {promiseId ? lang('Cancel') : lang('Edit')}
+            </Button>
+          )}
           <Button
             isPrimary
             isLoading={isLoading}
@@ -284,7 +297,7 @@ function TransferConfirm({
             className={modalStyles.button}
             onClick={handleConfirm}
           >
-            {submitBtnText}
+            {getSubmitBtnText()}
           </Button>
         </div>
       </div>
@@ -294,7 +307,7 @@ function TransferConfirm({
 
 export default memo(withGlobal<OwnProps>((global): StateProps => {
   return {
-    currentAccountId: global.currentAccountId!,
+    currentAccountId: selectCurrentAccountId(global)!,
     currentTransfer: global.currentTransfer,
     accounts: selectNetworkAccounts(global),
   };

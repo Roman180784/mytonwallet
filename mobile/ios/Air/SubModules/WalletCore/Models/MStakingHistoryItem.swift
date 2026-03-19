@@ -8,9 +8,9 @@
 import UIKit
 import WalletContext
 
-public struct MStakingHistoryItem: Equatable, Hashable, Encodable, Identifiable {
+public struct MStakingHistoryItem: Equatable, Hashable, Encodable, Identifiable, Sendable {
 
-    public enum ItemType: Hashable, Encodable {
+    public enum ItemType: Hashable, Encodable, Sendable {
         case staked
         case unstaked
         case profit
@@ -25,7 +25,7 @@ public struct MStakingHistoryItem: Equatable, Hashable, Encodable, Identifiable 
             case .unstaked:
                 return lang("Unstaked")
             case .unstakeRequest:
-                return lang("Unstake Request")
+                return lang("Requested Unstake")
             }
         }
         

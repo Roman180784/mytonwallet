@@ -16,8 +16,10 @@ import org.mytonwallet.app_air.uicomponents.viewControllers.selector.TokenSelect
 import org.mytonwallet.app_air.uicomponents.widgets.WButton
 import org.mytonwallet.app_air.uicomponents.widgets.WEditableItemView
 import org.mytonwallet.app_air.uicomponents.widgets.WTokenSymbolIconView
+import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.widgets.lockView
 import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
+import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup.BackgroundStyle
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.uicomponents.widgets.unlockView
 import org.mytonwallet.app_air.uiwidgets.configurations.WidgetConfigurationVC
@@ -46,6 +48,9 @@ class PriceWidgetConfigurationVC(
     override val onResult: (ok: Boolean) -> Unit
 ) :
     WidgetConfigurationVC(context), WalletCore.EventObserver {
+    override val TAG = "PriceWidgetConfiguration"
+
+    private val periodViewRowRipple = WRippleDrawable.create(0f, 0f, ViewConstants.BLOCK_RADIUS.dp, ViewConstants.BLOCK_RADIUS.dp)
 
     override val shouldDisplayTopBar = false
 
@@ -115,7 +120,11 @@ class PriceWidgetConfigurationVC(
                         }
                     },
                     popupWidth = WRAP_CONTENT,
-                    aboveView = false
+                    positioning = WMenuPopup.Positioning.BELOW,
+                    windowBackgroundStyle = BackgroundStyle.Cutout.fromView(
+                        periodView,
+                        roundRadius = 16f.dp
+                    )
                 )
             }
         }
@@ -203,13 +212,14 @@ class PriceWidgetConfigurationVC(
         view.setBackgroundColor(WColor.SecondaryBackground.color)
         previewView.setBackgroundColor(
             WColor.Background.color,
-            ViewConstants.TOP_RADIUS.dp,
-            ViewConstants.BIG_RADIUS.dp
+            ViewConstants.TOOLBAR_RADIUS.dp,
+            ViewConstants.BLOCK_RADIUS.dp
         )
-        tokenRow.setTopRadius(ViewConstants.BIG_RADIUS.dp)
+        tokenRow.setTopRadius(ViewConstants.BLOCK_RADIUS.dp)
         tokenRow.setBackgroundColor(WColor.Background.color)
-        periodViewRow.setBackgroundColor(WColor.Background.color, 0f, ViewConstants.BIG_RADIUS.dp)
-        periodViewRow.addRippleEffect(WColor.SecondaryBackground.color)
+        periodViewRow.background = periodViewRowRipple
+        periodViewRowRipple.backgroundColor = WColor.Background.color
+        periodViewRowRipple.rippleColor = WColor.SecondaryBackground.color
     }
 
     override fun insetsUpdated() {
@@ -242,7 +252,8 @@ class PriceWidgetConfigurationVC(
                 context,
                 LocaleController.getString("Select Token"),
                 TokenStore.tokens.values.toList(),
-                showMyAssets = false
+                showMyAssets = false,
+                showChain = false
             ).apply {
                 setOnAssetSelectListener { asset ->
                     selectedToken = TokenStore.getToken(asset.slug)

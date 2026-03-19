@@ -2,7 +2,6 @@ package org.mytonwallet.app_air.uicomponents.commonViews.cells
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Color
 import android.view.View
 import org.mytonwallet.app_air.uicomponents.drawable.SeparatorBackgroundDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
@@ -10,6 +9,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WBaseView
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
@@ -29,7 +29,7 @@ class SkeletonCell(
     }
 
     private val circleSkeleton = WBaseView(context).apply {
-        layoutParams = LayoutParams(48.dp, 48.dp)
+        layoutParams = LayoutParams(44.dp, 44.dp)
     }
 
     private val titleSkeleton = WBaseView(context).apply {
@@ -41,36 +41,37 @@ class SkeletonCell(
     }
 
     private val backgroundDrawable = SeparatorBackgroundDrawable().apply {
-        backgroundColor = Color.TRANSPARENT
-        separatorWColor = WColor.SecondaryBackground
-        offsetStart = 76f.dp
-        offsetEnd = 20f.dp
+        backgroundWColor = WColor.Background
     }
 
     override fun setupViews() {
         super.setupViews()
 
-        layoutParams.height = 64.dp
+        layoutParams.height = 60.dp
 
         addView(circleSkeleton)
         addView(titleSkeleton)
         addView(subtitleSkeleton)
         setConstraints {
-            toTop(circleSkeleton, 8f)
+            toTop(circleSkeleton, 6f)
             toStart(circleSkeleton, 13f)
-            toTop(titleSkeleton, 14f)
-            toStart(titleSkeleton, 72f)
-            toTop(subtitleSkeleton, 36f)
-            toStart(subtitleSkeleton, 72f)
+            toTop(titleSkeleton, 12f)
+            toStart(titleSkeleton, 68f)
+            toTop(subtitleSkeleton, 34f)
+            toStart(subtitleSkeleton, 68f)
         }
 
         background = backgroundDrawable
-        updateTheme()
+        setOnClickListener { }
     }
 
+    private var item: Int = -1
     private var isFirst: Boolean = false
     private var isLast: Boolean = false
     fun configure(item: Int, isFirst: Boolean, isLast: Boolean) {
+        if (this.item == item && this.isFirst == isFirst && this.isLast == isLast)
+            return
+        this.item == item
         this.isFirst = isFirst
         this.isLast = isLast
         val titleLayoutParams = titleSkeleton.layoutParams
@@ -81,18 +82,21 @@ class SkeletonCell(
         subtitleSkeleton.layoutParams = subtitleLayoutParams
     }
 
+    private var _isDarkThemeApplied: Boolean? = null
     override fun updateTheme() {
-        setBackgroundColor(
-            WColor.Background.color,
-            if (isFirst) ViewConstants.BIG_RADIUS.dp else 0f.dp,
-            if (isLast) ViewConstants.BIG_RADIUS.dp else 0f.dp,
-        )
+        val darkModeChanged = ThemeManager.isDark != _isDarkThemeApplied
+        if (!darkModeChanged)
+            return
+        _isDarkThemeApplied = ThemeManager.isDark
+
         circleSkeleton.setBackgroundColor(WColor.SecondaryBackground.color, CIRCLE_SKELETON_RADIUS)
         titleSkeleton.setBackgroundColor(WColor.SecondaryBackground.color, TITLE_SKELETON_RADIUS)
         subtitleSkeleton.setBackgroundColor(
             WColor.SecondaryBackground.color,
             SUBTITLE_SKELETON_RADIUS
         )
+        backgroundDrawable.topRadius = if (isFirst) ViewConstants.BLOCK_RADIUS.dp else 0f.dp
+        backgroundDrawable.bottomRadius = if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f.dp
         backgroundDrawable.invalidateSelf()
     }
 

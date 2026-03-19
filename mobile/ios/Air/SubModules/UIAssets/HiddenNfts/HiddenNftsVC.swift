@@ -90,7 +90,7 @@ public class HiddenNftsVC: WViewController {
 
         let hiddenByUserRegistration = UICollectionView.CellRegistration<UICollectionViewCell, String> { [weak self] cell, indexPath, itemIdentifier in
             guard let self else { return }
-            let displayNft: DisplayNft? = displayNfts?[itemIdentifier] ?? NftStore.currentAccountNfts?[itemIdentifier]
+            let displayNft: DisplayNft? = displayNfts?[itemIdentifier] ?? NftStore.getNft(accountId: AccountStore.currentAccountId, nftId: itemIdentifier)
             cell.configurationUpdateHandler = { cell, state in
                 cell.contentConfiguration = UIHostingConfiguration {
                     if let displayNft {
@@ -107,7 +107,7 @@ public class HiddenNftsVC: WViewController {
         }
         let likelyScamRegistration = UICollectionView.CellRegistration<UICollectionViewCell, String> { [weak self] cell, indexPath, itemIdentifier in
             guard let self else { return }
-            let displayNft: DisplayNft? = displayNfts?[itemIdentifier] ?? NftStore.currentAccountNfts?[itemIdentifier]
+            let displayNft: DisplayNft? = displayNfts?[itemIdentifier] ?? NftStore.getNft(accountId: AccountStore.currentAccountId, nftId: itemIdentifier)
             cell.configurationUpdateHandler = { cell, state in
                 cell.contentConfiguration = UIHostingConfiguration {
                     if let displayNft {
@@ -164,8 +164,11 @@ public class HiddenNftsVC: WViewController {
         configuration.headerMode = .supplementary
         configuration.footerMode = .none
         configuration.separatorConfiguration.bottomSeparatorInsets.leading = 60
-        configuration.separatorConfiguration.color = WTheme.separator
-        configuration.backgroundColor = .clear 
+        if IOS_26_MODE_ENABLED, #available(iOS 26, iOSApplicationExtension 26, *) {
+        } else {
+            configuration.separatorConfiguration.color = WTheme.separator
+        }
+        configuration.backgroundColor = .clear
         let layout = UICollectionViewCompositionalLayout.list(using: configuration)
         return layout
     }
@@ -184,7 +187,7 @@ public class HiddenNftsVC: WViewController {
     }
     
     private func updateNfts() {
-        if let nfts = NftStore.currentAccountNfts {
+        if let nfts = NftStore.getAccountNfts(accountId: AccountStore.currentAccountId) {
             self.displayNfts = nfts
         } else {
             self.displayNfts = nil
@@ -233,7 +236,7 @@ extension HiddenNftsVC: UICollectionViewDelegate {
 
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         if let nftId = dataSource.itemIdentifier(for: indexPath)?.stringValue, let nft = displayNfts?[nftId]?.nft {
-            let assetVC = NftDetailsVC(nft: nft, listContext: .none)
+            let assetVC = NftDetailsVC(accountId: AccountStore.currentAccountId, nft: nft, listContext: .none)
             navigationController?.pushViewController(assetVC, animated: true)
         }
     }
@@ -252,13 +255,6 @@ extension HiddenNftsVC: WalletCoreData.EventsObserver {
     public nonisolated func walletCore(event: WalletCore.WalletCoreData.Event) {
         Task { @MainActor in
             switch event {
-//            case .nftsChanged(accountId: let accountId):
-//                if accountId == AccountStore.accountId {
-//                    updateNfts()
-//                }
-//            case .accountChanged:
-//                updateNfts()
-//                NftStore.forceLoad(for: AccountStore.accountId ?? "")
             default:
                 break
             }

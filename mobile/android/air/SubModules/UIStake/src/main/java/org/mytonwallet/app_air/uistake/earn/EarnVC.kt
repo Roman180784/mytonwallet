@@ -22,7 +22,6 @@ import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import org.mytonwallet.app_air.ledger.screens.ledgerConnect.LedgerConnectVC
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.R
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
@@ -49,27 +48,23 @@ import org.mytonwallet.app_air.uicomponents.widgets.fadeIn
 import org.mytonwallet.app_air.uicomponents.widgets.fadeOut
 import org.mytonwallet.app_air.uicomponents.widgets.sensitiveDataContainer.WSensitiveDataContainer
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
-import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeConfirmVC
-import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeViewState
-import org.mytonwallet.app_air.uistake.confirm.ConfirmStakingHeaderView
 import org.mytonwallet.app_air.uistake.earn.cells.EarnItemCell
 import org.mytonwallet.app_air.uistake.earn.cells.EarnSpaceCell
 import org.mytonwallet.app_air.uistake.earn.models.EarnItem
 import org.mytonwallet.app_air.uistake.earn.views.EarnHeaderView
+import org.mytonwallet.app_air.uistake.helpers.ClaimRewardsHelper
 import org.mytonwallet.app_air.uistake.helpers.StakingMessageHelpers
 import org.mytonwallet.app_air.uistake.staking.StakingVC
 import org.mytonwallet.app_air.uistake.staking.StakingViewModel
-import org.mytonwallet.app_air.uistake.util.getTonStakingFees
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.toString
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
-import org.mytonwallet.app_air.walletcontext.utils.WEquatable
 import org.mytonwallet.app_air.walletcontext.utils.colorWithAlpha
-import org.mytonwallet.app_air.walletcontext.utils.diff
 import org.mytonwallet.app_air.walletcore.MYCOIN_SLUG
 import org.mytonwallet.app_air.walletcore.TONCOIN_SLUG
 import org.mytonwallet.app_air.walletcore.USDE_SLUG
@@ -86,6 +81,10 @@ class EarnVC(
     val tokenSlug: String,
     private var onScroll: ((rv: RecyclerView) -> Unit)?
 ) : WViewControllerWithModelStore(context), WRecyclerViewDataSource {
+    override val TAG = "Earn"
+
+    override val displayedAccount =
+        DisplayedAccount(AccountStore.activeAccountId, AccountStore.isPushedTemporary)
 
     override val shouldDisplayTopBar = false
     override val shouldDisplayBottomBar = true
@@ -218,10 +217,6 @@ class EarnVC(
         wView.visibility = View.GONE
         wView.apply {
             addView(
-                noItemSeparator,
-                ConstraintLayout.LayoutParams(MATCH_CONSTRAINT, 12.dp)
-            )
-            addView(
                 animationView,
                 ConstraintLayout.LayoutParams(124.dp, 124.dp)
             )
@@ -235,8 +230,6 @@ class EarnVC(
             )
 
             setConstraints {
-                toTop(noItemSeparator)
-                toCenterX(noItemSeparator)
                 toCenterX(animationView)
                 topToBottom(noItemLabel, animationView, 12f)
                 toCenterX(noItemLabel, 40f)
@@ -256,8 +249,6 @@ class EarnVC(
         }
         wView
     }
-
-    private val noItemSeparator = WView(context)
 
     private val animationView: WAnimationView by lazy {
         val v = WAnimationView(context)
@@ -376,34 +367,15 @@ class EarnVC(
             return 298.dp + (navigationController?.getSystemBars()?.top ?: 0)
         }
 
-    private val confirmHeaderView: View
-        get() {
-            return ConfirmStakingHeaderView(context).apply {
-                config(
-                    token = TokenStore.getToken(tokenSlug)!!,
-                    amountInCrypto = earnViewModel.amountToClaim ?: BigInteger.ZERO,
-                    showPositiveSignForAmount = true,
-                    messageString = LocaleController.getString(
-                        if (AccountStore.stakingData?.stakingState(
-                                tokenSlug
-                            ) is StakingState.Ethena
-                        ) "Confirm Unstaking"
-                        else
-                            "Confirm Rewards Claim"
-                    )
-                )
-            }
-        }
-
     private val rewardLabel: WSensitiveDataContainer<WCounterLabel> by lazy {
         WSensitiveDataContainer(
             WCounterLabel(context).apply {
                 id = View.generateViewId()
                 setStyle(16f)
                 setGradientColor(
-                    intArrayOf(
-                        WColor.EarnGradientLeft.color,
-                        WColor.EarnGradientRight.color
+                    arrayOf(
+                        WColor.EarnGradientLeft,
+                        WColor.EarnGradientRight
                     )
                 )
             },
@@ -422,6 +394,7 @@ class EarnVC(
         }
         isGone = AccountStore.activeAccount?.accountType == MAccount.AccountType.VIEW
         setTextColor(WColor.Tint)
+        isTinted = true
         setPadding(12.dp, 0, 12.dp, 0)
         gravity = Gravity.CENTER
     }
@@ -430,7 +403,7 @@ class EarnVC(
             elevation = 4f.dp
             val titleLabel = WLabel(context).apply {
                 text =
-                    LocaleController.getString("\$accumulated_rewards")
+                    LocaleController.getString("Accumulated Rewards")
                 setStyle(16f, WFont.Medium)
                 setTextColor(WColor.PrimaryText)
                 setSingleLine()
@@ -511,11 +484,16 @@ class EarnVC(
     }
 
     private var lastListState: HistoryListState? = null
-    private var previousHistoryItems: List<WEquatable<*>> = emptyList()
+    private var previousHistoryItems: List<EarnItem> = emptyList()
     private fun updateItems(newItems: List<EarnItem>) {
-        val changes = previousHistoryItems.diff(newItems, section = 1)
-        rvAdapter.applyChanges(changes)
-        previousHistoryItems = newItems.toList()
+        val previousHistoryItems = previousHistoryItems
+        this.previousHistoryItems = newItems.toList()
+        rvAdapter.applyChanges(
+            previousHistoryItems,
+            newItems,
+            1,
+            true
+        )
     }
 
     private fun updateView(viewState: EarnViewState) {
@@ -524,6 +502,7 @@ class EarnVC(
             setStakingBalance(
                 viewState.stakingBalance ?: "0",
                 earnViewModel.token?.symbol ?: "",
+                viewState.stakingBalanceIsLarge,
             )
             setSubtitle(AccountStore.stakingData?.stakingState(tokenSlug))
             changeAddStakeButtonEnable(viewState.enableAddStakeButton)
@@ -538,7 +517,8 @@ class EarnVC(
                 } else {
                     headerView.showInnerViews(
                         viewState.showAddStakeButton,
-                        viewState.showUnstakeButton
+                        viewState.showUnstakeButton,
+                        viewState.showBiggerUnstakeButton
                     )
                 }
                 recyclerView.overScrollMode = RecyclerView.OVER_SCROLL_NEVER
@@ -549,7 +529,10 @@ class EarnVC(
             }
 
             is HistoryListState.NoItem -> {
-                headerView.showInnerViews(viewState.showAddStakeButton, viewState.showUnstakeButton)
+                headerView.showInnerViews(
+                    viewState.showAddStakeButton,
+                    viewState.showUnstakeButton, viewState.showBiggerUnstakeButton
+                )
                 recyclerView.overScrollMode = RecyclerView.OVER_SCROLL_NEVER
                 noItemView.visibility = View.VISIBLE
                 updateSkeletonState()
@@ -570,7 +553,11 @@ class EarnVC(
             }
 
             is HistoryListState.HasItem -> {
-                headerView.showInnerViews(viewState.showAddStakeButton, viewState.showUnstakeButton)
+                headerView.showInnerViews(
+                    viewState.showAddStakeButton,
+                    viewState.showUnstakeButton,
+                    viewState.showBiggerUnstakeButton
+                )
                 recyclerView.overScrollMode = RecyclerView.OVER_SCROLL_ALWAYS
                 noItemView.visibility = View.GONE
                 updateSkeletonState()
@@ -629,16 +616,16 @@ class EarnVC(
     override fun updateTheme() {
         super.updateTheme()
 
-        noItemView.setBackgroundColor(WColor.Background.color, ViewConstants.BIG_RADIUS.dp, 0f)
-        noItemSeparator.isVisible = !ThemeManager.uiMode.hasRoundedCorners
-        noItemSeparator.setBackgroundColor(WColor.SecondaryBackground.color)
+        recyclerView.setBackgroundColor(WColor.SecondaryBackground.color)
+
+        noItemView.setBackgroundColor(WColor.Background.color, ViewConstants.BLOCK_RADIUS.dp, 0f)
         noItemLabel.setTextColor(WColor.PrimaryText.color)
 
         rvAdapter.reloadData()
 
         claimRewardView.setBackgroundColor(
             WColor.Background.color,
-            ViewConstants.STANDARD_ROUNDS.dp
+            ViewConstants.BLOCK_RADIUS.dp
         )
         claimButton.setBackgroundColor(WColor.Tint.color.colorWithAlpha(25), 15f.dp)
     }
@@ -753,9 +740,7 @@ class EarnVC(
         val cellLayoutParams = RecyclerView.LayoutParams(MATCH_PARENT, 0)
         (cellHolder.cell as EarnSpaceCell).updateTheme()
 
-        val newHeight =
-            (if (!ThemeManager.uiMode.hasRoundedCorners) ViewConstants.GAP.dp else 0) +
-                headerHeight
+        val newHeight = headerHeight
         cellLayoutParams.height = newHeight
         cellHolder.cell.layoutParams = cellLayoutParams
     }
@@ -902,59 +887,22 @@ class EarnVC(
     }
 
     private fun claimRewardsPressed() {
-        if (AccountStore.activeAccount?.isHardware == true) {
-            claimRewardsHardware()
-        } else {
-            claimWithPasscode()
-        }
-    }
-
-    private fun claimRewardsHardware() {
-        AccountStore.stakingData?.stakingState(tokenSlug)?.let { stakingState ->
-            val nav = WNavigationController(window!!)
-            val account = AccountStore.activeAccount!!
-            val ledgerConnectVC = LedgerConnectVC(
-                context, LedgerConnectVC.Mode.ConnectToSubmitTransfer(
-                    account.tonAddress!!,
-                    LedgerConnectVC.SignData.ClaimRewards(
-                        accountId = account.accountId,
-                        stakingState = stakingState,
-                        realFee = getTonStakingFees(stakingState.stakingType)["claim"]!!.real
-                    ),
-                ) {
-                }, headerView = confirmHeaderView
-            )
-            nav.setRoot(ledgerConnectVC)
-            window?.present(nav)
-        }
-    }
-
-    private fun claimWithPasscode() {
-        val nav = WNavigationController(window!!)
-        val passcodeConfirmVC = PasscodeConfirmVC(
-            context = context,
-            passcodeViewState = PasscodeViewState.CustomHeader(
-                headerView = confirmHeaderView,
-                navbarTitle = LocaleController.getString("Confirm")
-            ),
-            task = { passcode ->
-                earnViewModel.requestClaimRewards(passcode) { err ->
-                    if (AccountStore.stakingData?.stakingState(tokenSlug) is StakingState.Ethena) {
-                        window?.dismissLastNav {
-                            window?.dismissLastNav()
-                        }
-                        return@requestClaimRewards
-                    }
-                    window?.dismissLastNav()
-                    err?.let {
-                        showError(err.parsed)
-                    } ?: run {
-                        claimRewardView.visibility = View.GONE
-                    }
+        Logger.d(Logger.LogTag.STAKING, "claimRewardsPressed: tokenSlug=$tokenSlug")
+        val stakingState = AccountStore.stakingData?.stakingState(tokenSlug) ?: return
+        val isEthena = stakingState is StakingState.Ethena
+        ClaimRewardsHelper.presentClaimRewards(
+            viewController = this,
+            tokenSlug = tokenSlug,
+            stakingState = stakingState,
+            amountToClaim = earnViewModel.amountToClaim ?: stakingState.amountToClaim,
+            onClaimed = {
+                if (!isEthena) {
+                    claimRewardView.visibility = View.GONE
                 }
+            },
+            onError = { error ->
+                showError(error)
             }
         )
-        nav.setRoot(passcodeConfirmVC)
-        window?.present(nav)
     }
 }

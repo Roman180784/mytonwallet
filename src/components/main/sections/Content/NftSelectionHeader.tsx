@@ -3,7 +3,7 @@ import React, {
 } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
-import type { ApiNft } from '../../../../api/types';
+import type { ApiNft, ApiNftCollection } from '../../../../api/types';
 import { type IAnchorPosition } from '../../../../global/types';
 
 import { IS_CORE_WALLET } from '../../../../config';
@@ -14,7 +14,7 @@ import {
 import buildClassName from '../../../../util/buildClassName';
 import captureEscKeyListener from '../../../../util/captureEscKeyListener';
 import { getCountDaysToDate } from '../../../../util/dateFormat';
-import { getDomainsExpirationDate, isTonDnsNft } from '../../../../util/dns';
+import { getDomainsExpirationDate, isRenewableDnsNft } from '../../../../util/dns';
 import { compact } from '../../../../util/iteratees';
 
 import { getIsPortrait } from '../../../../hooks/useDeviceScreen';
@@ -34,32 +34,32 @@ interface StateProps {
   isViewMode: boolean;
   byAddress?: Record<string, ApiNft>;
   dnsExpiration?: Record<string, number>;
-  selectedAddresses?: string[];
-  currentCollectionAddress?: string;
+  selectedNfts?: ApiNft[];
+  currentCollection?: ApiNftCollection;
 }
 
 function NftSelectionHeader({
-  isViewMode, selectedAddresses, byAddress, dnsExpiration, currentCollectionAddress,
+  isViewMode, selectedNfts, byAddress, dnsExpiration, currentCollection,
 }: StateProps) {
   const {
     selectAllNfts, clearNftsSelection, startTransfer, burnNfts, openHideNftModal, openDomainRenewalModal,
   } = getActions();
 
   const lang = useLang();
-  const amount = selectedAddresses?.length ?? 1;
-  const isActive = Boolean(selectedAddresses?.length);
-  const allSelectedIsTonDnsNft = useMemo(() => {
-    return selectedAddresses?.length
-      ? selectedAddresses.every((address) => isTonDnsNft(byAddress?.[address]))
+  const amount = selectedNfts?.length ?? 1;
+  const isActive = Boolean(selectedNfts?.length);
+  const areAllSelectedRenewableDns = useMemo(() => {
+    return selectedNfts?.length
+      ? selectedNfts.every((nft) => isRenewableDnsNft(byAddress?.[nft.address]))
       : false;
-  }, [byAddress, selectedAddresses]);
+  }, [byAddress, selectedNfts]);
   const dnsExpireInDays = useMemo(() => {
-    if (!allSelectedIsTonDnsNft) return undefined;
-    const date = getDomainsExpirationDate(selectedAddresses ?? [], byAddress, dnsExpiration);
+    if (!areAllSelectedRenewableDns) return undefined;
+    const date = getDomainsExpirationDate(selectedNfts ?? [], byAddress, dnsExpiration);
 
     return date ? getCountDaysToDate(date) : undefined;
-  }, [allSelectedIsTonDnsNft, dnsExpiration, selectedAddresses, byAddress]);
-  const tonDnsMultiSelected = (selectedAddresses?.length ?? 0) > 1;
+  }, [areAllSelectedRenewableDns, dnsExpiration, selectedNfts, byAddress]);
+  const tonDnsMultiSelected = (selectedNfts?.length ?? 0) > 1;
 
   useHistoryBack({
     isActive,
@@ -74,14 +74,14 @@ function NftSelectionHeader({
         name: 'Send',
         value: 'send',
       },
-      !isViewMode && allSelectedIsTonDnsNft && {
+      !isViewMode && areAllSelectedRenewableDns && {
         name: tonDnsMultiSelected ? 'Renew All' : 'Renew',
         value: 'renew',
         description: dnsExpireInDays && dnsExpireInDays < 0
           ? (tonDnsMultiSelected ? '$expired_many' : 'Expired')
           : lang('$expires_in %days%', {
             days: lang('$in_days', dnsExpireInDays),
-          }, undefined, selectedAddresses?.length ?? 1) as string,
+          }, undefined, selectedNfts?.length ?? 1) as string,
       } satisfies DropdownItem<MenuHandler>,
       !IS_CORE_WALLET && {
         name: 'Hide',
@@ -97,10 +97,10 @@ function NftSelectionHeader({
         withDelimiter: true,
       },
     ]);
-  }, [allSelectedIsTonDnsNft, dnsExpireInDays, isViewMode, lang, selectedAddresses?.length, tonDnsMultiSelected]);
+  }, [areAllSelectedRenewableDns, dnsExpireInDays, isViewMode, lang, selectedNfts?.length, tonDnsMultiSelected]);
 
   const handleSendClick = useLastCallback(() => {
-    const nfts = selectedAddresses!.map((address) => byAddress![address]) ?? [];
+    const nfts = selectedNfts!.map((nft) => byAddress![nft.address]) ?? [];
 
     clearNftsSelection();
 
@@ -111,7 +111,7 @@ function NftSelectionHeader({
   });
 
   const handleBurnClick = useLastCallback(() => {
-    const nfts = selectedAddresses!.map((address) => byAddress![address]) ?? [];
+    const nfts = selectedNfts!.map((nft) => byAddress![nft.address]) ?? [];
 
     clearNftsSelection();
 
@@ -121,7 +121,7 @@ function NftSelectionHeader({
   const handleHideClick = useLastCallback(() => {
     clearNftsSelection();
 
-    openHideNftModal({ addresses: selectedAddresses!, isCollection: false });
+    openHideNftModal({ addresses: selectedNfts!.map((e) => e.address), isCollection: false });
   });
 
   const [menuAnchor, setMenuAnchor] = useState<IAnchorPosition>();
@@ -155,11 +155,11 @@ function NftSelectionHeader({
         break;
       }
       case 'select-all': {
-        selectAllNfts({ collectionAddress: currentCollectionAddress });
+        selectAllNfts({ collectionAddress: currentCollection?.address });
         break;
       }
       case 'renew': {
-        openDomainRenewalModal({ addresses: selectedAddresses! });
+        openDomainRenewalModal({ addresses: selectedNfts!.map((e) => e.address) });
         break;
       }
     }
@@ -210,13 +210,13 @@ function NftSelectionHeader({
 
 export default memo(withGlobal((global): StateProps => {
   const {
-    selectedAddresses, byAddress, currentCollectionAddress, dnsExpiration,
+    selectedNfts, byAddress, currentCollection, dnsExpiration,
   } = selectCurrentAccountState(global)?.nfts || {};
 
   return {
-    selectedAddresses,
+    selectedNfts,
     byAddress,
-    currentCollectionAddress,
+    currentCollection,
     dnsExpiration,
     isViewMode: selectIsCurrentAccountViewMode(global),
   };

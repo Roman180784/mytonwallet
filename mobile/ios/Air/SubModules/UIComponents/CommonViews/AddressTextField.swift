@@ -1,9 +1,7 @@
 
-
 import Foundation
 import SwiftUI
 import WalletContext
-import WalletCore
 
 public struct AddressTextField: UIViewRepresentable {
     
@@ -79,6 +77,7 @@ public struct AddressTextField: UIViewRepresentable {
         view.textContainerInset = .zero
         view.textContainer.lineBreakMode = .byCharWrapping
         view.textContainer.lineFragmentPadding = 0
+        view.textContainer.maximumNumberOfLines = 1
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byCharWrapping
         view.typingAttributes = [

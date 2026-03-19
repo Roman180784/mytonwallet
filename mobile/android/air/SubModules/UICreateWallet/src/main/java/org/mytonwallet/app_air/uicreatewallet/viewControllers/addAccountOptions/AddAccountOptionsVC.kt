@@ -27,18 +27,20 @@ import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.Passco
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.cells.SettingsItemCell
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.models.SettingsItem
 import org.mytonwallet.app_air.uisettings.viewControllers.walletVersions.WalletVersionsVC
-import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.coloredSubstring
+import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiMethod
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 
-class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
+class AddAccountOptionsVC(context: Context, val network: MBlockchainNetwork, val isOnIntro: Boolean) :
     WViewController(context) {
+    override val TAG = "AddAccountOptions"
 
     private val showCreateButton = !isOnIntro
 
@@ -48,7 +50,7 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
         AccountStore.walletVersionsData?.versions?.isNotEmpty() == true
 
     private val createWalletRow: SettingsItemCell by lazy {
-        SettingsItemCell(context).apply {
+        SettingsItemCell(context, 64f, SettingsItemCell.SIMPLE_ROW_HEIGHT).apply {
             configure(
                 item = SettingsItem(
                     SettingsItem.Identifier.NONE,
@@ -57,7 +59,7 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                     value = null,
                     hasTintColor = false
                 ),
-                value = null,
+                subtitle = null,
                 isFirst = true,
                 isLast = true,
                 onTap = {
@@ -76,7 +78,6 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                     }
                 }
             )
-            setSeparator(toEnd = 0f)
         }
     }
 
@@ -95,32 +96,23 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
             setConstraints {
                 toTop(createWalletRow)
                 toCenterX(createWalletRow, ViewConstants.HORIZONTAL_PADDINGS.toFloat())
-                topToBottom(orImportTitleView, createWalletRow)
+                topToBottom(orImportTitleView, createWalletRow, 2f)
                 toCenterX(orImportTitleView)
                 toBottom(orImportTitleView)
             }
         }
     }
 
-    private val importTitleLabel: WLabel by lazy {
-        WLabel(context).apply {
-            text = LocaleController.getString("\$import_hint")
-            gravity = Gravity.CENTER
-            setStyle(16f)
-            setTextColor(WColor.PrimaryText)
-        }
-    }
-
-    private val secretWordsRow = SettingsItemCell(context).apply {
+    private val secretWordsRow = SettingsItemCell(context, 64f, SettingsItemCell.SIMPLE_ROW_HEIGHT).apply {
         configure(
             item = SettingsItem(
                 SettingsItem.Identifier.NONE,
                 org.mytonwallet.app_air.uicreatewallet.R.drawable.ic_add_secret,
-                LocaleController.getString("12/24 Secret Words"),
+                LocaleController.getPluralOrFormat("%1\$d Secret Words", 12, "12/24"),
                 value = null,
                 hasTintColor = false
             ),
-            value = null,
+            subtitle = null,
             isFirst = true,
             isLast = false,
             onTap = {
@@ -128,6 +120,7 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                     handlePush(
                         ImportWalletVC(
                             context,
+                            network = network,
                             passedPasscode = null
                         )
                     )
@@ -143,7 +136,7 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                             startWithBiometrics = true
                         ),
                         task = { passcode ->
-                            val vc = ImportWalletVC(context, passcode)
+                            val vc = ImportWalletVC(context, network, passcode)
                             passcodeConfirmVC.push(
                                 vc,
                                 onCompletion = {
@@ -155,10 +148,9 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                 }
             }
         )
-        setSeparator(toEnd = 0f)
     }
 
-    private val ledgerRow = SettingsItemCell(context).apply {
+    private val ledgerRow = SettingsItemCell(context, 64f, SettingsItemCell.SIMPLE_ROW_HEIGHT).apply {
         configure(
             item = SettingsItem(
                 SettingsItem.Identifier.NONE,
@@ -167,16 +159,16 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                 value = null,
                 hasTintColor = false
             ),
-            value = null,
+            subtitle = null,
             isFirst = false,
             isLast = true,
             onTap = {
-                handlePush(LedgerConnectVC(context, LedgerConnectVC.Mode.AddAccount))
+                handlePush(LedgerConnectVC(context, LedgerConnectVC.Mode.AddAccount(network)))
             }
         )
     }
 
-    private val viewRow = SettingsItemCell(context).apply {
+    private val viewRow = SettingsItemCell(context, 64f, SettingsItemCell.SIMPLE_ROW_HEIGHT).apply {
         configure(
             item = SettingsItem(
                 SettingsItem.Identifier.NONE,
@@ -185,11 +177,11 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                 value = null,
                 hasTintColor = false
             ),
-            value = null,
+            subtitle = null,
             isFirst = true,
             isLast = true,
             onTap = {
-                push(ImportViewWalletVC(context, isOnIntro))
+                push(ImportViewWalletVC(context, network, isOnIntro))
             }
         )
     }
@@ -223,14 +215,14 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
 
             setConstraints {
                 if (showCreateButton) {
-                    toTop(createNewWalletView, 84f)
+                    toTop(createNewWalletView, 78f)
                     toCenterX(createNewWalletView)
-                    topToBottom(secretWordsRow, createNewWalletView)
+                    topToBottom(secretWordsRow, createNewWalletView, 1f)
                 } else {
                     // toTop(importTitleLabel, 84f)
                     // toCenterX(importTitleLabel, 32f)
                     // topToBottom(secretWordsRow, importTitleLabel, 32f)
-                    toTop(secretWordsRow, 84f)
+                    toTop(secretWordsRow, 78f)
                 }
                 toCenterX(secretWordsRow, ViewConstants.HORIZONTAL_PADDINGS.toFloat())
                 topToBottom(ledgerRow, secretWordsRow)
@@ -264,7 +256,7 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
     override fun setupViews() {
         super.setupViews()
 
-        setNavTitle(LocaleController.getString(if (showCreateButton) "Add Wallet" else "Import Wallet"))
+        setNavTitle(LocaleController.getString(if (showCreateButton) "Add Wallet" else "Import Wallet") + network.localizedIdentifier)
         setupNavBar(true)
 
         navigationBar?.addCloseButton()
@@ -283,17 +275,18 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
         updateTheme()
     }
 
+    override val isTinted = true
     override fun updateTheme() {
         super.updateTheme()
 
         view.setBackgroundColor(
             WColor.SecondaryBackground.color,
-            ViewConstants.BIG_RADIUS.dp,
+            ViewConstants.BLOCK_RADIUS.dp,
             0f
         )
         switchToOtherWalletVersionsButton.addRippleEffect(
             WColor.BackgroundRipple.color,
-            ViewConstants.BIG_RADIUS.dp
+            ViewConstants.BLOCK_RADIUS.dp
         )
         updateSwitchWalletVersionText()
     }
@@ -326,6 +319,7 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
             handlePush(
                 WordDisplayVC(
                     context,
+                    network = network,
                     words = words,
                     isFirstWalletToAdd = false,
                     isFirstPasscodeProtectedWallet = true,
@@ -346,6 +340,7 @@ class AddAccountOptionsVC(context: Context, val isOnIntro: Boolean) :
                 task = { passcode ->
                     val vc = WordDisplayVC(
                         context,
+                        network = network,
                         words = words,
                         isFirstWalletToAdd = false,
                         isFirstPasscodeProtectedWallet = false,

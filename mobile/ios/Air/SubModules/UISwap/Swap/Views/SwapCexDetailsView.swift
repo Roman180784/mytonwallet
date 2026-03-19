@@ -1,28 +1,19 @@
-//
-//  SwapDetailsView.swift
-//  UISwap
-//
-//  Created by Sina on 5/10/24.
-//
-
 import SwiftUI
-import UIKit
 import UIComponents
 import WalletCore
 import WalletContext
-import Combine
-
-private let log = Log("SwapCexDetailsView")
+import Perception
 
 struct SwapCexDetailsView: View {
 
-    @ObservedObject var swapVM: SwapVM
-    @ObservedObject var selectorsVM: SwapSelectorsVM
+    var inputModel: SwapInputModel
+    var crosschainModel: CrosschainSwapModel
+    var swapType: SwapType
     
-    var sellingToken: ApiToken { selectorsVM.sellingToken }
-    var buyingToken: ApiToken { selectorsVM.buyingToken }
+    var sellingToken: ApiToken { inputModel.sellingToken }
+    var buyingToken: ApiToken { inputModel.buyingToken }
     var exchangeRate: SwapRate? { displayExchangeRate }
-    var swapEstimate: ApiSwapCexEstimateResponse? { swapVM.cexEstimate }
+    var swapEstimate: ApiSwapCexEstimateResponse? { crosschainModel.cexEstimate }
     var displayEstimate: ApiSwapCexEstimateResponse? { swapEstimate }
 
     var displayExchangeRate: SwapRate? {
@@ -37,43 +28,41 @@ struct SwapCexDetailsView: View {
         return nil
     }
 
-    @State private var fee: TransferHelpers.ExplainedTransferFee?
     @State private var isExpanded = false
-    
-    var body: some View {
-        
-        InsetSection(horizontalPadding: 0) {
-            header
-                
-            if isExpanded {
-                pricePerCoinRow
-                blockchainFeeRow
-            }
+
+    var feeDetails: ExplainedTransferFee? {
+        guard let swapEstimate,
+              let nativeToken = TokenStore.tokens[sellingToken.nativeTokenSlug] else {
+            return nil
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxHeight: isExpanded ? nil : 44, alignment: .top)
-        .clipShape(.rect(cornerRadius: 12))
-        .frame(height: 400, alignment: .top)
-        .tint(Color(WTheme.tint))
-        .animation(.spring(duration: isExpanded ? 0.45 : 0.3), value: isExpanded)
-        .task(id: selectorsVM.sellingTokenAmount) {
-            await fetchEstimate()
-        }
+        let explainedFee = explainSwapFee(.init(
+            swapType: swapType,
+            tokenIn: sellingToken,
+            networkFee: swapEstimate.networkFee,
+            realNetworkFee: swapEstimate.realNetworkFee,
+            ourFee: nil,
+            dieselStatus: nil,
+            dieselFee: nil,
+            nativeTokenInBalance: inputModel.$account.balances[nativeToken.slug]
+        ))
+        return explainedFee.networkFeeDetails
     }
     
-    func fetchEstimate() async {
-        do {
-            if let amnt = selectorsVM.sellingTokenAmount, let account = AccountStore.account, let tokenAddress = amnt.token.tokenAddress {
-                let token = amnt.token
-                let chain = token.chainValue
-                let dieselEstimate = try await Api.fetchEstimateDiesel(accountId: account.id, chain: token.chainValue, tokenAddress: tokenAddress)
-                if let dieselEstimate {
-                    let fee = TransferHelpers.explainDieselEstimate(chain: chain.rawValue, isNativeToken: token.isNative, dieselEstimate: dieselEstimate)
-                    self.fee = fee
+    var body: some View {
+        WithPerceptionTracking {
+            InsetSection(horizontalPadding: 0) {
+                header
+                    
+                if isExpanded {
+                    pricePerCoinRow
+                    blockchainFeeRow
                 }
             }
-        } catch {
-            log.error("\(error)")
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxHeight: isExpanded ? nil : 44, alignment: .top)
+            .frame(height: 400, alignment: .top)
+            .tint(Color(WTheme.tint))
+            .animation(.spring(duration: isExpanded ? 0.45 : 0.3), value: isExpanded)
         }
     }
     
@@ -105,10 +94,11 @@ struct SwapCexDetailsView: View {
             InsetCell {
                 VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: 0) {
-                        Text(lang("Price per") + " 1 " + exchangeRate.toToken.symbol)
+                        Text(lang("Exchange Rate"))
                             .foregroundStyle(Color(WTheme.secondaryLabel))
                         Spacer(minLength: 4)
-                        Text("~\(formatAmountText(amount: exchangeRate.price, decimalsCount: min(6, sellingToken.decimals))) \(exchangeRate.fromToken.symbol)")
+                        let priceAmount = DecimalAmount.fromDouble(exchangeRate.price, exchangeRate.fromToken)
+                        Text("\(exchangeRate.toToken.symbol) ≈ \(priceAmount.formatted(.none, maxDecimals: min(6, sellingToken.decimals)))")
                     }
                 }
             }
@@ -117,31 +107,22 @@ struct SwapCexDetailsView: View {
     
     @ViewBuilder
     var blockchainFeeRow: some View {
-        if let amnt = selectorsVM.sellingTokenAmount, let fee = self.fee, let nativeToken = TokenStore.tokens[amnt.token.chainValue.tokenSlug] {
+        let sellingToken = inputModel.sellingToken
+        if let feeDetails, let nativeToken = TokenStore.tokens[sellingToken.nativeTokenSlug] {
             InsetDetailCell {
                 Text(lang("Blockchain Fee"))
                     .foregroundStyle(Color(WTheme.secondaryLabel))
             } value: {
                 FeeView(
-                    token: amnt.type,
+                    token: sellingToken,
                     nativeToken: nativeToken,
-                    fee: fee.realFee,
-                    explainedTransferFee: nil,
+                    fee: feeDetails.realFee ?? feeDetails.fullFee,
+                    explainedTransferFee: feeDetails,
                     includeLabel: false
                 )
             }
         }
         
         // TODO: Swap fee
-//        if let displayEstimate {
-//            InsetDetailCell {
-//                Text(lang("Blockchain Fee"))
-//                    .foregroundStyle(Color(WTheme.secondaryLabel))
-//            } value: {
-//                let fee = displayEstimate.swapFee
-//                let token = sellingToken.chain == "ton" ?  "TON" : "TRX"
-//                Text("~\(formatAmountText(amount: fee, currency: token, decimalsCount: 6))")
-//            }
-//        }
     }
 }

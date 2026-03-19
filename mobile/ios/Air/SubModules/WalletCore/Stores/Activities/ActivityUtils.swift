@@ -52,7 +52,7 @@ func _getNewestActivitiesBySlug(
         // The `idsBySlug` arrays must be sorted from the newest to the oldest
         let ids = idsBySlug[tokenSlug] ?? [];
         let newestActivityId = ids.first { id in
-            getIsIdSuitableForFetchingTimestamp(id) && byId[id] != nil
+            getIsIdSuitableForFetchingTimestamp(activity: byId[id])
         }
         if let newestActivityId {
             newestActivitiesBySlug[tokenSlug] = byId[newestActivityId]
@@ -64,8 +64,9 @@ func _getNewestActivitiesBySlug(
     return newestActivitiesBySlug;
 }
 
-func getIsIdSuitableForFetchingTimestamp(_ id: String) -> Bool {
-    !getIsIdLocal(id) && !getIsBackendSwapId(id)
+func getIsIdSuitableForFetchingTimestamp(activity: ApiActivity?) -> Bool {
+    guard let activity else { return false }
+    return !getIsIdLocal(activity.id) && !getIsBackendSwapId(activity.id) && activity.isCompleted
 }
 
 public func getIsActivityPending(_ activity: ApiActivity) -> Bool {
@@ -215,31 +216,6 @@ public func doesLocalActivityMatch(localActivity: ApiActivity, chainActivity: Ap
     }
     
     return localActivity.parsedTxId.hash == chainActivity.parsedTxId.hash
-}
-
-/**
- * Finds the ids of the local activities that match any of the new blockchain activities (those are to be replaced).
- * Also finds the ids of the blockchain activities that have no matching local activities (those are to be notified about).
- */
-func splitReplacedAndNewActivities(localActivities: [ApiActivity], incomingActivities: [ApiActivity]) -> (replacedLocalIds: [String: String], newActivities: [ApiActivity]) {
-    
-    var replacedLocalIds: [String: String] = [:]
-    var newActivities: [ApiActivity] = []
-    
-    for  incomingActivity in incomingActivities {
-        var hasLocalMatch = false
-        
-        for localActivity in localActivities where doesLocalActivityMatch(localActivity: localActivity, chainActivity: incomingActivity) {
-            replacedLocalIds[localActivity.id] = incomingActivity.id
-            hasLocalMatch = true
-        }
-        
-        if !hasLocalMatch {
-            newActivities.append(incomingActivity)
-        }
-    }
-    
-    return (replacedLocalIds, newActivities)
 }
 
 func buildActivityIdsBySlug(_ activities: [ApiActivity]) -> [String: [String]] {

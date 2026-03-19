@@ -8,7 +8,7 @@ private let PRINT_NOTHING = false
 private let MAX_BUFFER = 1_000_000
 private let MAX_LOG_FILE = 3_000_000
 
-public var appStart = Date()
+public let appStart = Date()
 
 
 public actor LogStore {
@@ -21,7 +21,7 @@ public actor LogStore {
     private init() {
         _ = appStart
         NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
-            Task { await self?.syncronize() }
+            Task { self?.syncronize() }
         }
     }
     
@@ -135,7 +135,7 @@ public struct Log: Sendable {
 }
 
 
-public struct LogMessage: ExpressibleByStringInterpolation {
+public struct LogMessage: ExpressibleByStringInterpolation, Sendable {
     
     public struct StringInterpolation: StringInterpolationProtocol {
         
@@ -187,7 +187,7 @@ public struct LogMessage: ExpressibleByStringInterpolation {
 }
 
 
-fileprivate struct LogEntry {
+fileprivate struct LogEntry: Sendable {
     var category: String
     var level: LogLevel
     var message: LogMessage

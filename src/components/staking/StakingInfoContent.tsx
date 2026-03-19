@@ -19,6 +19,7 @@ import {
   selectAccountStakingState,
   selectAccountStakingStates,
   selectAccountStakingTotalProfit,
+  selectCurrentAccountId,
   selectCurrentAccountState,
   selectCurrentAccountTokens,
   selectIsCurrentAccountViewMode,
@@ -110,6 +111,7 @@ function StakingInfoContent({
     unstakeRequestAmount,
     type: stakingType,
   } = stakingState ?? {};
+  const isEthenaBoostAvailable = stakingState?.type === 'ethena' && stakingState.isBoostAvailable;
 
   const unstakeTime = getUnstakeTime(stakingState);
   const canBeClaimed = stakingState ? getStakingStateStatus(stakingState) === 'readyToClaim' : undefined;
@@ -411,7 +413,7 @@ function StakingInfoContent({
                     )}
                   </div>
                 )}
-                {!isViewMode && stakingType === 'ethena' && (
+                {!isViewMode && isEthenaBoostAvailable && (
                   <Button isText className={styles.checkEligibilityButton} onClick={handleCheckEligibility}>
                     {lang('Check eligibility for max APY')}
                   </Button>
@@ -443,7 +445,7 @@ function StakingInfoContent({
 }
 
 export default memo(withGlobal<OwnProps>((global): StateProps => {
-  const accountId = global.currentAccountId;
+  const accountId = selectCurrentAccountId(global);
   const {
     settings: { theme, isSensitiveDataHidden },
     tokenInfo: { bySlug: tokenBySlug },

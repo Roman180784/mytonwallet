@@ -61,6 +61,9 @@ public struct _WThemeType {
     /// Light gray/black. Used for background of grouped lists such as Home and Settings.
     public var groupedBackground: UIColor
     
+    /// Sidebar background in iPad split layout.
+    public var sidebarBackground: UIColor
+    
     ///  Light gray/dark gray. Used for sheets background.
     public var sheetBackground: UIColor
     
@@ -92,29 +95,32 @@ public struct _WThemeType {
 }
 
 // MARK: - Theme and Theme generator
-nonisolated(unsafe) public var WTheme: _WThemeType = generateTheme()
+nonisolated(unsafe) public var WTheme: _WThemeType = generateTheme(accentColor: getAccentColorByIndex(nil))
 
-// This method changes WTheme to a new theme with customized colors
-public func changeThemeColors(to index: Int?) {
-    let accentColor: UIColor = if let index, index < ACCENT_COLORS.count {
+public func getAccentColorByIndex(_ index: Int?) -> UIColor {
+    if let index, index < ACCENT_COLORS.count {
         ACCENT_COLORS[index]
     } else {
         UIColor.airBundle("TC1_PrimaryColor")
     }
-    WColors = _WColorsType(primary: accentColor)
-    WTheme = generateTheme()
+}
+
+// This method changes WTheme to a new theme with customized colors
+public func changeThemeColors(to index: Int?) {
+    let accentColor = getAccentColorByIndex(index)
+    WTheme = generateTheme(accentColor: accentColor)
 }
 
 // Generate active theme using WColors
-fileprivate func generateTheme() -> _WThemeType {
+fileprivate func generateTheme(accentColor: UIColor) -> _WThemeType {
     return _WThemeType(
-        primaryButton: WThemePrimaryButton(background: WColors.primary,
+        primaryButton: WThemePrimaryButton(background: accentColor,
                                            tint: .white,
-                                           disabledBackground: WColors.primary.withAlphaComponent(0.5),
+                                           disabledBackground: accentColor.withAlphaComponent(0.5),
                                            disabledTint: .white),
         accentButton: WThemeAccentButton(background: WColors.groupedItem,
-                                         tint: WColors.primary),
-        unlockScreen: WThemeUnlockScreen(background: WColors.primary,
+                                         tint: accentColor),
+        unlockScreen: WThemeUnlockScreen(background: accentColor,
                                          tint: .white),
         setPasscodeInput: WThemePasscodeInput(border: .separator,
                                               empty: WColors.background,
@@ -124,23 +130,24 @@ fileprivate func generateTheme() -> _WThemeType {
                                                  fill: .white),
         unlockTaskPasscodeInput: WThemePasscodeInput(border: WColors.secondaryLabel,
                                                      empty: .clear,
-                                                     fill: WColors.primary,
+                                                     fill: accentColor,
                                                      fillBorder: .clear),
         wordInput: WThemeWordInput(background: WColors.sheetBackground),
         balanceHeaderView: WThemeBackgroundHeaderView(background: WColors.headerBackground,
-                                                      headIcons: WColors.primary,
+                                                      headIcons: accentColor,
                                                       balance: .label,
                                                       balanceDecimals: WColors.secondaryLabel,
                                                       secondary: WColors.headerSecondaryLabel,
                                                       skeleton: WColors.headerSkeleton),
         background: WColors.background,
         groupedBackground: WColors.groupedBackground,
+        sidebarBackground: WColors.sidebarBackground,
         sheetBackground: WColors.sheetBackground,
         groupedItem: WColors.groupedItem,
         modularBackground: WColors.modularBackground,
         backgroundReverse: WColors.backgroundReverse,
         thumbBackground: WColors.thumbBackground,
-        tint: WColors.primary,
+        tint: accentColor,
         primaryLabel: .label,
         secondaryLabel: WColors.secondaryLabel,
         secondaryFill: WColors.secondaryFill,
@@ -157,71 +164,6 @@ fileprivate func generateTheme() -> _WThemeType {
         error: .airBundle("TextRed")
     )
 }
-
-// MARK: - Available customized themes
-public struct WAppearanceThemeColorsType {
-    public let id: Int
-    public let primary: UIColor
-}
-
-public var WAppearanceThemeColors: [WAppearanceThemeColorsType] = [
-    WAppearanceThemeColorsType(
-        id: 1,
-        primary: UIColor(named: "TC1_PrimaryColor", in: AirBundle, compatibleWith: nil)!
-    ),
-    WAppearanceThemeColorsType(
-        id: 2,
-        primary: UIColor(named: "TC2_PrimaryColor", in: AirBundle, compatibleWith: nil)!
-    ),
-    WAppearanceThemeColorsType(
-        id: 3,
-        primary: UIColor(named: "TC3_PrimaryColor", in: AirBundle, compatibleWith: nil)!
-    ),
-    WAppearanceThemeColorsType(
-        id: 4,
-        primary: UIColor(named: "TC4_PrimaryColor", in: AirBundle, compatibleWith: nil)!
-    ),
-    WAppearanceThemeColorsType(
-        id: 5,
-        primary: UIColor(named: "TC5_PrimaryColor", in: AirBundle, compatibleWith: nil)!
-    ),
-    WAppearanceThemeColorsType(
-        id: 6,
-        primary: UIColor(named: "TC6_PrimaryColor", in: AirBundle, compatibleWith: nil)!
-    ),
-    WAppearanceThemeColorsType(
-        id: 7,
-        primary: UIColor(named: "TC7_PrimaryColor", in: AirBundle, compatibleWith: nil)!
-    ),
-    WAppearanceThemeColorsType(
-        id: 8,
-        primary: UIColor(red: 1, green: 0.69, blue: 0.48, alpha: 1)
-    ),
-    WAppearanceThemeColorsType(
-        id: 9,
-        primary: UIColor(red: 0.72, green: 0.43, blue: 0.47, alpha: 1)
-    ),
-    WAppearanceThemeColorsType(
-        id: 10,
-        primary: UIColor(red: 0.59, green: 0.54, blue: 0.82, alpha: 1)
-    ),
-    WAppearanceThemeColorsType(
-        id: 11,
-        primary: UIColor(red: 0.9, green: 0.45, blue: 0.8, alpha: 1)
-    ),
-    WAppearanceThemeColorsType(
-        id: 12,
-        primary: UIColor(red: 0.42, green: 0.63, blue: 0.48, alpha: 1)
-    ),
-    WAppearanceThemeColorsType(
-        id: 13,
-        primary: UIColor(red: 0.2, green: 0.56, blue: 0.8, alpha: 1)
-    ),
-    WAppearanceThemeColorsType(
-        id: 14,
-        primary: .label
-    )
-]
 
 // MARK: - Themed views
 public protocol WThemedView: AnyObject {

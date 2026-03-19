@@ -153,6 +153,13 @@
   margin-inline-end: 0.25rem;
 }
 
+.accountAddress {
+  overflow: hidden;
+  display: inline-flex;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .accountCheckMark {
   position: absolute;
   top: 0.3125rem;

@@ -6,7 +6,7 @@ import { getActions, withGlobal } from '../../global';
 import type { ApiChain, ApiLedgerWalletInfo } from '../../api/types';
 import type { Account } from '../../global/types';
 
-import { TOKEN_FONT_ICONS } from '../../config';
+import { TOKEN_CUSTOM_STYLES } from '../../config';
 import { selectNetworkAccounts } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import { getChainConfig } from '../../util/chain';
@@ -30,6 +30,7 @@ import styles from './LedgerModal.module.scss';
 type OwnProps = {
   isActive?: boolean;
   isStatic?: boolean;
+  withCloseButton?: boolean;
   onBackButtonClick?: NoneToVoidFunction;
   onCancel?: NoneToVoidFunction;
   onClose: NoneToVoidFunction;
@@ -52,6 +53,7 @@ function LedgerSelectWallets({
   hardwareWallets,
   accounts,
   isLoading,
+  withCloseButton,
   onBackButtonClick,
   onCancel,
   onClose,
@@ -62,7 +64,7 @@ function LedgerSelectWallets({
   } = getActions();
   const lang = useLang();
   const balanceToken = getChainConfig(chain).nativeToken;
-  const balanceTokenFontIcon = (TOKEN_FONT_ICONS as Record<string, string | undefined>)[balanceToken.slug];
+  const balanceTokenFontIcon = TOKEN_CUSTOM_STYLES[balanceToken.slug]?.fontIcon;
 
   const { renderedValue: renderedWallets, vtnStyle } = useViewTransitionedState(
     hardwareWallets,
@@ -197,7 +199,7 @@ function LedgerSelectWallets({
         <ModalHeader
           title={title}
           onBackButtonClick={onBackButtonClick}
-          onClose={!onBackButtonClick ? onClose : undefined}
+          onClose={!onBackButtonClick || withCloseButton ? onClose : undefined}
         />
       ) : (
         <div className={settingsStyles.header}>
@@ -216,6 +218,7 @@ function LedgerSelectWallets({
         <div className={buildClassName(
           styles.actionBlock,
           shouldUseVerticalButtons ? styles.actionBlockVertical : styles.actionBlockHorizontal,
+          isStatic && styles.actionBlockStatic,
         )}
         >
           <Button

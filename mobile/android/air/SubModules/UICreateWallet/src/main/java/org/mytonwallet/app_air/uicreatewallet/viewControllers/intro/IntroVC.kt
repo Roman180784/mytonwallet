@@ -37,9 +37,9 @@ import org.mytonwallet.app_air.uicomponents.widgets.particles.ParticleView
 import org.mytonwallet.app_air.uicomponents.widgets.pulseView
 import org.mytonwallet.app_air.uicomponents.widgets.shakeView
 import org.mytonwallet.app_air.uicreatewallet.viewControllers.addAccountOptions.AddAccountOptionsVC
-import org.mytonwallet.app_air.uicreatewallet.viewControllers.appInfo.AppInfoVC
+import org.mytonwallet.app_air.uisettings.viewControllers.appInfo.AppInfoVC
 import org.mytonwallet.app_air.uicreatewallet.viewControllers.backup.BackupVC
-import org.mytonwallet.app_air.uicreatewallet.viewControllers.userResponsibility.UserResponsibilityVC
+import org.mytonwallet.app_air.uisettings.viewControllers.userResponsibility.UserResponsibilityVC
 import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeConfirmVC
 import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.PasscodeViewState
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
@@ -48,12 +48,16 @@ import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.toProcessedSpannableStringBuilder
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcontext.utils.VerticalImageSpan
 
 @SuppressLint("ViewConstructor")
 class IntroVC(
     context: Context,
+    private val network: MBlockchainNetwork,
 ) : WViewController(context), IntroVM.Delegate {
+    override val TAG = "Intro"
+
     private val introVM by lazy {
         IntroVM(this)
     }
@@ -100,10 +104,10 @@ class IntroVC(
 
     val subtitleLabel = WLabel(view.context).apply {
         text = LocaleController.getString("\$auth_intro")
-            .replace("\n", "")
+            .replace("\n", " ")
             .toProcessedSpannableStringBuilder()
         gravity = Gravity.CENTER
-        setStyle(17f, WFont.SemiBold)
+        setStyle(17f, WFont.Regular)
         setTextColor(WColor.PrimaryText)
     }
 
@@ -159,7 +163,7 @@ class IntroVC(
                     aboveKeyboard = true
                 )
             )
-            nav.setRoot(AddAccountOptionsVC(context, isOnIntro = true))
+            nav.setRoot(AddAccountOptionsVC(context, network = network, isOnIntro = true))
             window?.present(nav)
         }
         btn
@@ -227,12 +231,13 @@ class IntroVC(
         updateTheme()
     }
 
+    override val isTinted = true
     override fun updateTheme() {
         super.updateTheme()
         val backgroundColor = WColor.Background.color
         view.setBackgroundColor(backgroundColor)
         tonParticlesView.setParticleBackgroundColor(backgroundColor)
-        moreInfoButton.addRippleEffect(WColor.BackgroundRipple.color, ViewConstants.BIG_RADIUS.dp)
+        moreInfoButton.addRippleEffect(WColor.BackgroundRipple.color, ViewConstants.BLOCK_RADIUS.dp)
         checkboxDrawable.checkedColor = WColor.Tint.color
         checkboxDrawable.uncheckedColor = WColor.SecondaryText.color
         termsView.addRippleEffect(WColor.BackgroundRipple.color, 16f.dp)
@@ -247,12 +252,12 @@ class IntroVC(
             particlesCleaner = tonParticlesView.addParticleSystem(particleParams)
             tonParticlesView.isGone = false
         }
-        tonParticlesView.fadeIn { }
+        tonParticlesView.fadeIn()
     }
 
     override fun viewWillDisappear() {
         super.viewWillDisappear()
-        tonParticlesView.fadeOut { }
+        tonParticlesView.fadeOut()
     }
 
     override fun onDestroy() {
@@ -382,7 +387,7 @@ class IntroVC(
     override fun mnemonicGenerated(words: Array<String>) {
         createNewWalletButton.isLoading = false
         if (!WGlobalStorage.isPasscodeSet()) {
-            push(BackupVC(context, words = words, true, null), onCompletion = {
+            push(BackupVC(context, network = network, words = words, true, null), onCompletion = {
                 view.unlockView()
             })
         } else {
@@ -398,7 +403,7 @@ class IntroVC(
                 ),
                 task = { passcode ->
                     navigationController?.push(
-                        BackupVC(context, words = words, false, passcode),
+                        BackupVC(context, network = network, words = words, false, passcode),
                         onCompletion = {
                             navigationController?.removePrevViewControllerOnly()
                         })

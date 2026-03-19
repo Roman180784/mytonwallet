@@ -2,11 +2,10 @@
 import argparse
 import json
 import os
-from glob import glob
+import re
+from pathlib import Path
 
 import yaml  # pip install pyyaml
-
-import re
 
 PLURAL_KEYS = {
     "zeroValue": "zero",
@@ -17,23 +16,36 @@ PLURAL_KEYS = {
     "otherValue": "other",
 }
 
-def load_yaml(path: str):
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+
+def resolve_relative_to_script(path: str) -> Path:
+    path_obj = Path(path)
+    if path_obj.is_absolute():
+        return path_obj
+    return (SCRIPT_DIR / path_obj).resolve()
+
+
+def load_yaml(path: str | Path):
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return data or {}
 
-def load_json(path: str):
+
+def load_json(path: str | Path):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return data or {}
 
-def load_file(path: str):
-    if path.endswith(".yaml") or path.endswith(".yml"):
-        return load_yaml(path)
-    elif path.endswith(".json"):
-        return load_json(path)
-    else:
-        raise ValueError(f"Unsupported file extension: {os.path.splitext(path)[1]}. Only .json, .yaml, and .yml are supported.")
+
+def load_file(path: str | Path):
+    path_obj = Path(path)
+    suffix = path_obj.suffix.lower()
+    if suffix in (".yaml", ".yml"):
+        return load_yaml(path_obj)
+    if suffix == ".json":
+        return load_json(path_obj)
+    raise ValueError(f"Unsupported file extension: {path_obj.suffix}. Only .json, .yaml, and .yml are supported.")
 
 def detect_locales(inputs, source_locale="en"):
     locales = []
@@ -108,10 +120,6 @@ def build_plural_unit(key: str, forms: dict):
     if not variations:
         return {"stringUnit": {"state": "translated", "value": ""}}
 
-    if "other" not in variations:
-        flat = " ".join(f"[{k}] {vv['stringUnit']['value']}" for k, vv in variations.items())
-        return {"stringUnit": {"state": "translated", "value": flat}}
-
     return {
         "stringUnit": {
             "state": "translated",
@@ -134,24 +142,74 @@ def normalize_locale_name(filename: str) -> str:
         name = name[4:]  # Remove 'air_' prefix
     return name
 
+
+def build_strings_map(per_locale: dict, source_locale: str, locales: list[str], key_predicate=None) -> dict:
+    source_locale_lower = source_locale.lower()
+    src_map = per_locale.get(source_locale_lower, {})
+    strings = {}
+
+    ordered_locales = [source_locale_lower] + sorted(
+        [l for l in locales if l != source_locale_lower],
+        key=lambda x: str(x).lower()
+    )
+
+    for key in (src_map or {}).keys():
+        if key_predicate is not None and not key_predicate(key):
+            continue
+
+        bucket = {}
+        for loc in ordered_locales:
+            loc_map = per_locale.get(loc, {})
+            if key not in loc_map:
+                continue
+            v = loc_map[key]
+            unit = build_plural_unit(key, v) if is_plural_block(v) else build_nonplural_unit(key, v)
+            merge_localization_bucket(bucket, loc, unit)
+
+        if "localizations" in bucket:
+            strings[key] = bucket
+
+    return dict(sorted(strings.items(), key=lambda x: str(x[0])))
+
+
+def write_catalog(output_path: Path, source_locale: str, strings: dict):
+    catalog = {
+        "sourceLanguage": source_locale,
+        "version": "1.0",
+        "strings": strings,
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(catalog, f, ensure_ascii=False, indent=2)
+
 def main():
     ap = argparse.ArgumentParser(description="Build .xcstrings from JSON or YAML locale files.")
-    ap.add_argument("--input-dir", default="../../../src/i18n", help="Directory with *.json, *.yaml, or *.yml files")
+    ap.add_argument("--input-dir", default="../../../../../src/i18n", help="Directory with *.json, *.yaml, or *.yml files")
     ap.add_argument("--source-locale", default="en", help="Source language code")
-    ap.add_argument("--output", default="./SubModules/WalletContext/Resources/Strings/Localizable.xcstrings", help="Output .xcstrings path")
+    ap.add_argument("--output", default="../../SubModules/WalletContext/Resources/Strings/Localizable.xcstrings", help="Output .xcstrings path")
+    ap.add_argument("--push-output", default="../../../App/App/Resources/Localizable.xcstrings", help="Output .xcstrings path for push* keys in main app bundle")
+    ap.add_argument("--push-prefix", default="push_", help="Localization key prefix for push catalog")
     args = ap.parse_args()
 
+    input_dir = resolve_relative_to_script(args.input_dir)
+    output_path = resolve_relative_to_script(args.output)
+    push_output_path = resolve_relative_to_script(args.push_output)
+
+    if not input_dir.exists():
+        raise SystemExit(f"Input directory '{input_dir}' does not exist.")
+
     # Look for both JSON and YAML files
-    json_files = glob(os.path.join(args.input_dir, "*.json"))
-    yaml_files = glob(os.path.join(args.input_dir, "*.yaml"))
-    yml_files = glob(os.path.join(args.input_dir, "*.yml"))
+    json_files = list(input_dir.glob("*.json"))
+    yaml_files = list(input_dir.glob("*.yaml"))
+    yml_files = list(input_dir.glob("*.yml"))
 
     # Also look in the air subdirectory
-    air_dir = os.path.join(args.input_dir, "air")
-    if os.path.exists(air_dir):
-        air_json_files = glob(os.path.join(air_dir, "*.json"))
-        air_yaml_files = glob(os.path.join(air_dir, "*.yaml"))
-        air_yml_files = glob(os.path.join(air_dir, "*.yml"))
+    air_dir = input_dir / "air"
+    if air_dir.exists():
+        air_json_files = list(air_dir.glob("*.json"))
+        air_yaml_files = list(air_dir.glob("*.yaml"))
+        air_yml_files = list(air_dir.glob("*.yml"))
         json_files.extend(air_json_files)
         yaml_files.extend(air_yaml_files)
         yml_files.extend(air_yml_files)
@@ -162,9 +220,9 @@ def main():
         raise SystemExit("No JSON or YAML files found.")
     
     # Group files by normalized locale name (e.g., 'en' from 'en.yaml' and 'air_en.json')
-    locale_files = {}
+    locale_files: dict[str, list[Path]] = {}
     for file_path in all_files:
-        filename = os.path.basename(file_path)
+        filename = file_path.name
         normalized_locale = normalize_locale_name(filename)
         if normalized_locale in locale_files:
             locale_files[normalized_locale].append(file_path)
@@ -189,7 +247,7 @@ def main():
             try:
                 file_data = load_file(file_path)
                 merged_data.update(file_data)
-                print(f"Loaded {len(file_data)} keys from {os.path.basename(file_path)} for locale '{locale_name}'")
+                print(f"Loaded {len(file_data)} keys from {file_path.name} for locale '{locale_name}'")
             except Exception as e:
                 print(f"Warning: Failed to load {file_path}: {e}")
                 continue
@@ -207,33 +265,25 @@ def main():
         locales.remove(args.source_locale.lower())
         locales.insert(0, args.source_locale.lower())
 
-    strings = {}
+    strings = build_strings_map(
+        per_locale=per_locale,
+        source_locale=args.source_locale,
+        locales=locales,
+    )
+    write_catalog(output_path=output_path, source_locale=args.source_locale, strings=strings)
 
-    for key, src_val in (src_map or {}).items():
-        bucket = {}
-        # Ensure source locale is first, then other language entries in deterministic alphabetical order for stable diffs
-        for loc in [args.source_locale.lower()] + sorted([l for l in locales if l != args.source_locale.lower()], key=lambda x: str(x).lower()):
-            loc_map = per_locale.get(loc, {})
-            if key not in loc_map:
-                continue
-            v = loc_map[key]
-            unit = build_plural_unit(key, v) if is_plural_block(v) else build_nonplural_unit(key, v)
-            merge_localization_bucket(bucket, loc, unit)
+    push_strings = build_strings_map(
+        per_locale=per_locale,
+        source_locale=args.source_locale,
+        locales=locales,
+        key_predicate=lambda key: str(key).startswith(args.push_prefix),
+    )
+    write_catalog(output_path=push_output_path, source_locale=args.source_locale, strings=push_strings)
 
-        if "localizations" in bucket:
-            strings[key] = bucket
-
-    catalog = {
-        "sourceLanguage": args.source_locale,
-        "version": "1.0",
-        "strings": dict(sorted(strings.items(), key=lambda x: str(x[0]))),
-    }
-
-    with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(catalog, f, ensure_ascii=False, indent=2)
-
-    print(f"Wrote {args.output} with {len(strings)} entries across {len(locales)} locales.")
+    print(f"Wrote {output_path} with {len(strings)} entries across {len(locales)} locales.")
+    print(f"Wrote {push_output_path} with {len(push_strings)} push entries across {len(locales)} locales.")
     print(f"Source locale '{args.source_locale}' had {len(source_locale_files)} input files.")
+    print()
 
 if __name__ == "__main__":
     main()

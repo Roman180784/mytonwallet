@@ -4,6 +4,7 @@ import android.content.Context
 import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+import androidx.recyclerview.widget.RecyclerView
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
@@ -14,6 +15,8 @@ import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcore.MYCOIN_SLUG
+import org.mytonwallet.app_air.walletcore.STAKED_MYCOIN_SLUG
+import org.mytonwallet.app_air.walletcore.STAKED_USDE_SLUG
 import org.mytonwallet.app_air.walletcore.TONCOIN_SLUG
 import org.mytonwallet.app_air.walletcore.USDE_SLUG
 import org.mytonwallet.app_air.walletcore.WalletCore
@@ -24,25 +27,51 @@ import kotlin.math.max
 
 class EarnRootVC(context: Context, private val tokenSlug: String = TONCOIN_SLUG) :
     WViewController(context), WalletCore.EventObserver {
+    override val TAG = "EarnRoot"
+
+    override val displayedAccount =
+        DisplayedAccount(AccountStore.activeAccountId, AccountStore.isPushedTemporary)
 
     override val shouldDisplayTopBar = false
 
-    private val tonVC = EarnVC(context, TONCOIN_SLUG, onScroll = { recyclerView ->
+    private val onScrollListener = { recyclerView: RecyclerView ->
         updateBlurViews(recyclerView)
         segmentView.updateBlurViews(recyclerView)
-    })
+    }
+
+    private val tonVC = EarnVC(
+        context = context,
+        tokenSlug = TONCOIN_SLUG,
+        onScroll = onScrollListener
+    )
+
     private val mycoinVC =
-        if (BalanceStore.getBalances(AccountStore.activeAccountId)?.get(MYCOIN_SLUG) != null)
-            EarnVC(context, MYCOIN_SLUG, onScroll = { recyclerView ->
-                updateBlurViews(recyclerView)
-                segmentView.updateBlurViews(recyclerView)
-            }) else null
+        if (BalanceStore.hasTokenInBalances(
+                AccountStore.activeAccountId,
+                MYCOIN_SLUG,
+                STAKED_MYCOIN_SLUG
+            )
+        ) {
+            EarnVC(
+                context = context,
+                tokenSlug = MYCOIN_SLUG,
+                onScroll = onScrollListener
+            )
+        } else null
+
     private val usdeVC =
-        if (BalanceStore.getBalances(AccountStore.activeAccountId)?.get(USDE_SLUG) != null)
-            EarnVC(context, USDE_SLUG, onScroll = { recyclerView ->
-                updateBlurViews(recyclerView)
-                segmentView.updateBlurViews(recyclerView)
-            }) else null
+        if (BalanceStore.hasTokenInBalances(
+                AccountStore.activeAccountId,
+                USDE_SLUG,
+                STAKED_USDE_SLUG
+            )
+        ) {
+            EarnVC(
+                context = context,
+                tokenSlug = USDE_SLUG,
+                onScroll = onScrollListener
+            )
+        } else null
 
     private val segmentView: WSegmentedController by lazy {
         val viewControllers = mutableListOf(WSegmentedControllerItem(tonVC, null)).apply {
@@ -66,7 +95,7 @@ class EarnRootVC(context: Context, private val tokenSlug: String = TONCOIN_SLUG)
 
     val titleLabel: WLabel by lazy {
         val lbl = WLabel(context)
-        lbl.setStyle(22F, WFont.Medium)
+        lbl.setStyle(22F, WFont.SemiBold)
         lbl.gravity = Gravity.START
         lbl.text =
             LocaleController.getString("Earn")
@@ -77,7 +106,7 @@ class EarnRootVC(context: Context, private val tokenSlug: String = TONCOIN_SLUG)
         super.setupViews()
 
         view.addView(segmentView, LayoutParams(0, 0))
-        if (mycoinVC == null) view.addView(
+        if (mycoinVC == null && usdeVC == null) view.addView(
             titleLabel,
             LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
         )
@@ -94,7 +123,6 @@ class EarnRootVC(context: Context, private val tokenSlug: String = TONCOIN_SLUG)
 
     override fun updateTheme() {
         super.updateTheme()
-        view.setBackgroundColor(WColor.SecondaryBackground.color)
         titleLabel.setTextColor(WColor.PrimaryText.color)
     }
 

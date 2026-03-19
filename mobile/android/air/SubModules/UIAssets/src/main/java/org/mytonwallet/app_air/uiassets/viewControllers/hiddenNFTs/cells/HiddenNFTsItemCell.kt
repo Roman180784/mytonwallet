@@ -6,16 +6,14 @@ import android.text.TextUtils
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.extensions.updateDotsTypeface
+import org.mytonwallet.app_air.uicomponents.extensions.styleDots
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
-import org.mytonwallet.app_air.uicomponents.image.Content
-import org.mytonwallet.app_air.uicomponents.image.WCustomImageView
-import org.mytonwallet.app_air.uicomponents.widgets.WBaseView
+import org.mytonwallet.app_air.uicomponents.image.WNftImageView
 import org.mytonwallet.app_air.uicomponents.widgets.WButton
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
+import org.mytonwallet.app_air.uicomponents.widgets.WFrameLayout
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WSwitch
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
@@ -32,19 +30,13 @@ import org.mytonwallet.app_air.walletcore.stores.NftStore
 class HiddenNFTsItemCell(
     recyclerView: RecyclerView,
     private val onSelect: ((nft: ApiNft) -> Unit)
-) : WCell(recyclerView.context, LayoutParams(MATCH_PARENT, 64.dp)),
+) : WCell(recyclerView.context, LayoutParams(MATCH_PARENT, 60.dp)),
     WThemedView {
 
     private lateinit var nft: ApiNft
 
-    private val separatorView: WBaseView by lazy {
-        val sw = WBaseView(context)
-        sw
-    }
-
-    private val imageView: WCustomImageView by lazy {
-        val img = WCustomImageView(context)
-        img
+    private val imageView: WNftImageView by lazy {
+        WNftImageView(context, 48.dp, 4.dp, 12f.dp)
     }
 
     private val titleLabel: WLabel by lazy {
@@ -78,30 +70,24 @@ class HiddenNFTsItemCell(
         }
         btn
     }
-    private val rightView = FrameLayout(context).apply {
-        id = generateViewId()
-    }
+    private val rightView = WFrameLayout(context)
 
     override fun setupViews() {
         super.setupViews()
 
-        addView(separatorView, LayoutParams(0, 1))
         addView(imageView, ViewGroup.LayoutParams(48.dp, 48.dp))
         addView(titleLabel, LayoutParams(0, WRAP_CONTENT))
         addView(subtitleLabel, LayoutParams(0, WRAP_CONTENT))
         addView(rightView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         setConstraints {
-            toBottom(separatorView)
-            toEnd(separatorView, 16f)
-            toStart(separatorView, 76f)
             toCenterY(imageView)
             toStart(imageView, 16f)
             toCenterY(rightView)
             toEnd(rightView, 20f)
-            toTop(titleLabel, 10f)
+            toTop(titleLabel, 8f)
             toStart(titleLabel, 76f)
             endToStart(titleLabel, rightView, 8f)
-            toBottom(subtitleLabel, 10f)
+            toBottom(subtitleLabel, 8f)
             toStart(subtitleLabel, 76f)
             endToStart(subtitleLabel, rightView, 8f)
         }
@@ -117,18 +103,18 @@ class HiddenNFTsItemCell(
         setBackgroundColor(
             WColor.Background.color,
             0f,
-            if (isLast) ViewConstants.BIG_RADIUS.dp else 0f
+            if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f
         )
         if (nft.isHidden == true) {
             addRippleEffect(
                 WColor.SecondaryBackground.color,
                 0f,
-                if (isLast) ViewConstants.BIG_RADIUS.dp else 0f
+                if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f
             )
         }
+        imageView.updateTheme()
         titleLabel.setTextColor(WColor.PrimaryText.color)
         subtitleLabel.setTextColor(WColor.SecondaryText.color)
-        separatorView.setBackgroundColor(WColor.Separator.color)
     }
 
     private var isLast = false
@@ -139,17 +125,13 @@ class HiddenNFTsItemCell(
     ) {
         this.nft = nft
         this.isLast = isLast
-        nft.thumbnail?.let {
-            imageView.set(Content.ofUrl(it))
-        } ?: run {
-            imageView.setImageDrawable(null)
-        }
+        imageView.setNftImage(nft.thumbnail)
         nft.name?.let {
             titleLabel.text = it
         } ?: run {
             titleLabel.text =
                 SpannableStringBuilder(nft.address.formatStartEndAddress()).apply {
-                    updateDotsTypeface()
+                    styleDots()
                 }
         }
         subtitleLabel.text =
@@ -167,7 +149,6 @@ class HiddenNFTsItemCell(
             }
             updateHideButtonText()
         }
-        separatorView.visibility = if (showSeparator) VISIBLE else INVISIBLE
 
         updateTheme()
     }

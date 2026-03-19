@@ -3,6 +3,7 @@ import React, { memo, useMemo } from '../../lib/teact/teact';
 import type { ApiTokenWithPrice } from '../../api/types';
 
 import getChainNetworkIcon from '../../util/swap/getChainNetworkIcon';
+import { getIsNativeToken } from '../../util/tokens';
 import { ASSET_LOGO_PATHS } from './helpers/assetLogos';
 
 import useLang from '../../hooks/useLang';
@@ -23,9 +24,10 @@ export type TokenWithId = Pick<ApiTokenWithPrice, 'slug' | 'symbol' | 'image' | 
 interface OwnProps<T extends TokenWithId> {
   selectedToken?: T | string;
   allTokens?: T[];
-  isMultichainAccount?: boolean;
+  withChainIcon?: boolean;
   theme?: 'purple';
   isInMode?: boolean;
+  isDisabled?: boolean;
   /** `id` is the token slug, unless an `id` property is specified explicitly in the `allTokens` items */
   onChange?: (id: string, token: T) => void;
 }
@@ -35,9 +37,10 @@ const EMPTY_TOKEN_LIST: never[] = [];
 function TokenDropdown<T extends TokenWithId>({
   selectedToken,
   allTokens = EMPTY_TOKEN_LIST,
-  isMultichainAccount,
+  withChainIcon,
   theme,
   isInMode,
+  isDisabled,
   onChange,
 }: OwnProps<T>) {
   const lang = useLang();
@@ -55,8 +58,8 @@ function TokenDropdown<T extends TokenWithId>({
   );
 
   const items = useMemo(
-    () => allTokens.map((token) => tokenToDropdownItem(token, isMultichainAccount)),
-    [allTokens, isMultichainAccount],
+    () => allTokens.map((token) => tokenToDropdownItem(token, withChainIcon)),
+    [allTokens, withChainIcon],
   );
 
   const tokenById = useMemo(
@@ -87,6 +90,7 @@ function TokenDropdown<T extends TokenWithId>({
       buttonPrefix={buttonPrefix}
       className={styles.dropdown}
       menuClassName={theme && styles[theme]}
+      disabled={isDisabled}
       onChange={handleChange}
     />
   );
@@ -103,7 +107,7 @@ export function tokenToDropdownItem(token: TokenWithId, isMultichainAccount?: bo
     value: getTokenId(token),
     icon: ASSET_LOGO_PATHS[token.symbol.toLowerCase() as keyof typeof ASSET_LOGO_PATHS]
       || token.image,
-    overlayIcon: isMultichainAccount ? getChainNetworkIcon(token.chain) : undefined,
+    overlayIcon: isMultichainAccount && !getIsNativeToken(token.slug) ? getChainNetworkIcon(token.chain) : undefined,
     name: token.symbol,
   };
 }

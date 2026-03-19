@@ -38,7 +38,7 @@ class ConnectedAppsCell(context: Context) :
         private const val MAIN_VIEW_RADIUS = 18f
     }
 
-    private val lastItemRadius = (ViewConstants.BIG_RADIUS - 1.5f).dp
+    private val lastItemRadius = (ViewConstants.BLOCK_RADIUS - 1.5f).dp
 
     private val redRipple = WRippleDrawable.create(0f).apply {
         backgroundColor = WColor.Red.color
@@ -48,8 +48,8 @@ class ConnectedAppsCell(context: Context) :
     private fun getRedRippleForLastItem() = WRippleDrawable.create(
         0f,
         0f,
-        ViewConstants.BIG_RADIUS.dp,
-        ViewConstants.BIG_RADIUS.dp
+        ViewConstants.BLOCK_RADIUS.dp,
+        ViewConstants.BLOCK_RADIUS.dp
     ).apply {
         backgroundColor = WColor.Red.color
         rippleColor = WColor.BackgroundRipple.color
@@ -80,14 +80,11 @@ class ConnectedAppsCell(context: Context) :
         maxLines = 1
     }
 
-    private val separatorView = WBaseView(context)
-
     val mainView = WView(context, LayoutParams(MATCH_PARENT, WRAP_CONTENT)).apply {
 
         addView(imageView)
         addView(titleLabel, LayoutParams(0, WRAP_CONTENT))
         addView(subtitleLabel, LayoutParams(0, 22.dp))
-        addView(separatorView, LayoutParams(0, 1))
         setConstraints {
             toCenterY(imageView, 12f)
             toStart(imageView, 16f)
@@ -97,9 +94,6 @@ class ConnectedAppsCell(context: Context) :
             bottomToBottom(subtitleLabel, imageView, -2f)
             startToEnd(subtitleLabel, imageView, 12f)
             toEnd(subtitleLabel, 24f)
-            toStart(separatorView, 68f)
-            toEnd(separatorView)
-            toBottom(separatorView)
         }
     }
 
@@ -228,7 +222,7 @@ class ConnectedAppsCell(context: Context) :
             swipeRevealLayout.setBackgroundColor(
                 WColor.Red.color,
                 0f,
-                ViewConstants.BIG_RADIUS.dp
+                ViewConstants.BLOCK_RADIUS.dp
             )
         } else {
             redRipple.backgroundColor = WColor.Red.color
@@ -240,7 +234,6 @@ class ConnectedAppsCell(context: Context) :
         titleLabel.setTextColor(WColor.PrimaryText.color)
         subtitleLabel.setTextColor(WColor.SecondaryText.color)
         disconnectLabel.setTextColor(WColor.TextOnTint.color)
-        separatorView.setBackgroundColor(WColor.Separator.color)
     }
 
     private var isLast = false
@@ -262,7 +255,6 @@ class ConnectedAppsCell(context: Context) :
         titleLabel.text = exploreSite.name
         subtitleLabel.text = exploreSite.url?.toUri()?.host
         subtitleLabel.gravity = Gravity.CENTER_VERTICAL
-        separatorView.isGone = isLast
 
         if (exploreSite.isUrlEnsured != true) {
             val warningIcon = ContextCompat.getDrawable(

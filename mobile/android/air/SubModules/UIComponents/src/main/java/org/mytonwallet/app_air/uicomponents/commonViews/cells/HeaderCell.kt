@@ -3,43 +3,73 @@ package org.mytonwallet.app_air.uicomponents.commonViews.cells
 import android.annotation.SuppressLint
 import android.content.Context
 import android.text.TextUtils
+import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import org.mytonwallet.app_air.uicomponents.adapter.BaseListHolder
+import org.mytonwallet.app_air.uicomponents.adapter.implementation.Item
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 
 @SuppressLint("ViewConstructor")
 class HeaderCell(
     context: Context,
-    startMargin: Float = 20f,
+    private val startMargin: Float = 20f,
 ) : WCell(context), WThemedView {
 
-    private var titleColor: Int = WColor.PrimaryText.color
-    private var topRounding: Float = 0f
+    enum class TopRounding {
+        FIRST_ITEM,
+        NORMAL,
+        ZERO
+    }
+
+    private var topRounding = TopRounding.ZERO
+    private val topRoundingValue: Float
+        get() {
+            return when (topRounding) {
+                TopRounding.FIRST_ITEM -> {
+                    ViewConstants.TOOLBAR_RADIUS.dp
+                }
+
+                TopRounding.NORMAL -> {
+                    ViewConstants.BLOCK_RADIUS.dp
+                }
+
+                TopRounding.ZERO -> {
+                    0f
+                }
+            }
+        }
 
     val titleLabel: WLabel by lazy {
         WLabel(context).apply {
-            setStyle(16f, WFont.Medium)
+            setStyle(14f, WFont.DemiBold)
             setSingleLine()
             ellipsize = TextUtils.TruncateAt.END
             isSelected = true
         }
     }
 
-    init {
+    override fun setupViews() {
+        super.setupViews()
+
         layoutParams.apply {
-            height = 48.dp
+            height = 40.dp
         }
-        addView(titleLabel, LayoutParams(0, WRAP_CONTENT))
+        addView(titleLabel, LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+            constrainedWidth = true
+        })
         setConstraints {
             setHorizontalBias(titleLabel.id, 0f)
             toCenterX(titleLabel, startMargin)
-            toTop(titleLabel, 17f)
+            toTop(titleLabel, 16f)
         }
 
         updateTheme()
@@ -48,20 +78,52 @@ class HeaderCell(
     override fun updateTheme() {
         setBackgroundColor(
             WColor.Background.color,
-            topRounding,
+            topRoundingValue,
             0f
         )
-        titleLabel.setTextColor(titleColor)
+        titleLabel.updateTheme()
     }
 
-    fun configure(title: String, titleColor: Int? = null, topRounding: Float = 0f) {
+    fun configure(
+        title: CharSequence,
+        titleColor: WColor? = null,
+        topRounding: TopRounding = TopRounding.ZERO
+    ) {
         this.topRounding = topRounding
         titleLabel.text = title
         if (titleColor != null) {
-            this.titleColor = titleColor
             titleLabel.setTextColor(titleColor)
+            titleLabel.isTinted = titleColor == WColor.Tint
         }
         updateTheme()
     }
 
+    fun setTitleColor(color: Int) {
+        titleLabel.setTextColor(color = null)
+        titleLabel.setTextColor(color)
+    }
+
+    fun setTitle(title: CharSequence) {
+        titleLabel.text = title
+    }
+
+    // Used in recycler-views not using custom rvAdapter
+    class Holder(context: Context) :
+        BaseListHolder<Item.ListTitle>(
+            HeaderCell(context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    MATCH_PARENT,
+                    WRAP_CONTENT
+                )
+            }) {
+        private val view: HeaderCell = itemView as HeaderCell
+        override fun onBind(item: Item.ListTitle) {
+            view.configure(
+                item.title, item.titleColor, item.topRounding,
+            )
+            view.setConstraints {
+                toCenterX(view.titleLabel, item.startMargin)
+            }
+        }
+    }
 }

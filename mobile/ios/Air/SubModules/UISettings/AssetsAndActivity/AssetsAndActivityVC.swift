@@ -6,98 +6,145 @@
 //
 
 import Foundation
-import SwiftUI
-import UIKit
-import UIComponents
-import WalletCore
-import WalletContext
 import OrderedCollections
-
+import SwiftUI
+import UIComponents
+import UIKit
+import WalletContext
+import WalletCore
 
 public class AssetsAndActivityVC: WViewController {
-    
-    enum Section {
-        case baseCurrency
-        case hiddenNfts
-        case hideNoCost
-        case tokens
+    @AccountContext(source: .current)
+    private var account: MAccount
+    private var assetsAndActivityData: MAssetsAndActivityData {
+        AccountStore.assetsAndActivityData(forAccountID: account.id) ?? .empty
     }
-    enum Item: Equatable, Hashable {
-        case baseCurrency
-        case hiddenNfts
-        case hideNoCost
-        case addToken
-        case token(String)
+    private var baseCurrency: MBaseCurrency { TokenStore.baseCurrency }
+
+    private let tableView: UITableView = UITableView(frame: .zero, style: .insetGrouped)
+    private lazy var dataSource: UITableViewDiffableDataSource<Section, Item> = makeDataSource()
+    
+    private let tokensHeaderLabel: UILabel = configured(object: UILabel()) {
+        $0.translatesAutoresizingMaskIntoConstraints = false
+        $0.font = .systemFont(ofSize: 13)
+        $0.text = lang("My Tokens")
+    }
+
+    private let addTokenIcon: UIImageView = configured(object: UIImageView(image: UIImage(systemName: "plus"))) {
+        $0.translatesAutoresizingMaskIntoConstraints = false
+        $0.contentMode = .center
+    }
+
+    private let addTokenLabel: UILabel = configured(object: UILabel()) {
+        $0.translatesAutoresizingMaskIntoConstraints = false
+        $0.font = .systemFont(ofSize: 17)
+        $0.text = lang("Add Token")
+    }
+
+    private let addTokenSeparator: UIView = configured(object: UIView()) {
+        $0.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([$0.heightAnchor.constraint(equalToConstant: 0.33)])
     }
     
-    // MARK: - Load and SetupView Functions
+    private lazy var addTokenView: WHighlightView = {
+        let v = WHighlightView()
+        v.addSubview(addTokenIcon)
+        v.addSubview(addTokenLabel)
+        v.addSubview(addTokenSeparator)
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.layer.cornerRadius = S.insetSectionCornerRadius
+        v.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        NSLayoutConstraint.activate([
+            addTokenIcon.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 24),
+            addTokenIcon.widthAnchor.constraint(equalToConstant: 24),
+            addTokenIcon.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            addTokenLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            addTokenLabel.leadingAnchor.constraint(equalTo: addTokenIcon.trailingAnchor, constant: 20),
+            addTokenSeparator.bottomAnchor.constraint(equalTo: v.bottomAnchor),
+            addTokenSeparator.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            addTokenSeparator.leadingAnchor.constraint(equalTo: addTokenLabel.leadingAnchor),
+            v.heightAnchor.constraint(equalToConstant: S.sectionItemHeight),
+        ])
+        v.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(addTokenPressed)))
+        return v
+    }()
+
+    private lazy var tokensHeaderView: UIView = {
+        let v = UIView()
+        v.addSubview(tokensHeaderLabel)
+        NSLayoutConstraint.activate([
+            tokensHeaderLabel.topAnchor.constraint(equalTo: v.topAnchor, constant: 21),
+            tokensHeaderLabel.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 16),
+            tokensHeaderLabel.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: 16),
+            tokensHeaderLabel.bottomAnchor.constraint(equalTo: v.bottomAnchor),
+        ])
+        return v
+    }()
+
     private lazy var isModal = navigationController?.viewControllers.count ?? 1 == 1
     private let queue = DispatchQueue(label: "org.mytonwallet.app.assetsAndActivity_vc_background")
     private let processorQueue = DispatchQueue(label: "org.mytonwallet.app.assetsAndActivity_vc_background_processor")
-    private var tableView: UITableView!
-    private var dataSource: UITableViewDiffableDataSource<Section, Item>!
 
     public override func loadView() {
         super.loadView()
         setupViews()
     }
-    
-    public override var hideNavigationBar: Bool { true }
-    
+
     public override func viewDidLoad() {
         super.viewDidLoad()
         WalletCoreData.add(eventObserver: self)
     }
-
-    var tokensToDisplay: [String] {
-        var tokens: OrderedSet<String> = []
+    
+    private var tokensToDisplay: OrderedDictionary<TokenID, ApiToken> {
+        let account = account
+        let balances = $account.balances
         
-        if let walletTokens = BalanceStore.currentAccountBalanceData?.walletTokens.map(\.tokenSlug) {
-            tokens.formUnion(walletTokens)
-        }
-
-        let balanceTokens = BalanceStore.currentAccountBalances.keys    
-        tokens.formUnion(balanceTokens)
-
-        tokens.formUnion(DEFAULT_SLUGS)
-
-        if let account = AccountStore.account {
-            tokens = tokens.filter { slug in
-                if let chain = TokenStore.tokens[slug]?.chain {
-                    return account.supports(chain: chain)
-                }
-                return false
+        let tokenIDs = mutate(value: Set<TokenID>()) { ids in
+            let balanceIDs = balances.keys.lazy.map { TokenID(slug: $0, isStaking: false) }
+            ids.formUnion(balanceIDs)
+            
+            if let walletTokenIDs = $account.balanceData?.walletTokens.map({ TokenID(slug: $0.tokenSlug, isStaking: false) }) {
+                ids.formUnion(walletTokenIDs)
+            }
+            
+            let stakings = StakingStore.stakingData(forAccountID: account.id)?.stateById.values.lazy
+                .filter { stakingState in getFullStakingBalance(state: stakingState) > 0 }
+                .map { stakingState in  stakingState.tokenSlug }
+            
+            if let stakings {
+                let walletTokenBalanceIDs = stakings.map { TokenID(slug: $0, isStaking: true) }
+                ids.formUnion(walletTokenBalanceIDs)
+            }
+            
+            assetsAndActivityData.importedSlugs.forEach {
+                ids.insert(TokenID(slug: $0, isStaking: false))
             }
         }
         
-        tokens.sort(by: { slug1, slug2 in
-            if let token1 = TokenStore.tokens[slug1], let token2 = TokenStore.tokens[slug2] {
-                if token1.priority != token2.priority {
-                    return token1.priority < token2.priority
-                }
-                let balance1 = Double(BalanceStore.currentAccountBalances[slug1] ?? 0) * (token1.price ?? 0)
-                let balance2 = Double(BalanceStore.currentAccountBalances[slug2] ?? 0) * (token2.price ?? 0)
-                if balance1 != balance2 {
-                    return balance1 > balance2
-                }
-                return token1.name < token2.name
+        let tokenStoreTokens = TokenStore.tokens
+        var apiTokens = tokenIDs.compactMap { tokenID -> (TokenID, ApiToken)? in
+            if let apiToken = tokenStoreTokens[tokenID.slug] {
+                return account.supports(chain: apiToken.chain) ? (tokenID, apiToken) : nil
+            } else {
+                Log.shared.fault("Token with id \(tokenID) not found in TokenStore")
+                return nil
             }
-            return slug1 < slug2
-        })
+        }
         
-        return Array(tokens)
+        MTokenBalance.sortForUI(apiTokens: &apiTokens,
+                                balances: balances,
+                                defaultTokenSlugs: ApiToken.defaultSlugs(forNetwork: account.network),
+                                importedTokenSlugs: assetsAndActivityData.importedSlugs)
+        let dict = OrderedDictionary<TokenID, ApiToken>(uniqueKeysWithValues: apiTokens)
+        return dict
     }
-    
-    private var baseCurrency: MBaseCurrency { TokenStore.baseCurrency ?? .USD }
-    
+
     private func setupViews() {
         title = lang("Assets & Activity")
-        
-        tableView = UITableView(frame: .zero, style: .insetGrouped)
+
         let tableViewBackgroundView = UIView()
         tableViewBackgroundView.backgroundColor = .clear
         tableView.backgroundView = tableViewBackgroundView
-        tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.backgroundColor = .clear
         tableView.separatorColor = WTheme.separator
         tableView.register(AssetsAndActivityBaseCurrencyCell.self, forCellReuseIdentifier: "baseCurrencyCell")
@@ -105,38 +152,32 @@ public class AssetsAndActivityVC: WViewController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         tableView.register(AssetsAndActivityTokenCell.self, forCellReuseIdentifier: "tokenCell")
         tableView.delegate = self
-        
-        self.dataSource = makeDataSource()
+
         tableView.dataSource = dataSource
-        
         tableView.delaysContentTouches = false
-        view.addSubview(tableView)
-        NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
-            tableView.leftAnchor.constraint(equalTo: view.leftAnchor),
-            tableView.rightAnchor.constraint(equalTo: view.rightAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -4)
-        ])
-        
+
+        view.addStretchedToBounds(subview: tableView, insets: UIEdgeInsets(top: 0, left: 0, bottom: 4, right: 0))
+
         addNavigationBar(navHeight: isModal ? 56 : 40,
                          topOffset: isModal ? 0 : -5,
                          title: title,
-                         closeIcon: isModal, addBackButton: isModal ? nil : { [weak self] in
-            guard let self else {return}
-            navigationController?.popViewController(animated: true)
-        })
+                         closeIcon: isModal,
+                         addBackButton: isModal ? nil : { [weak self] in
+                             guard let self else { return }
+                             navigationController?.popViewController(animated: true)
+                         })
         tableView.contentInset.top = navigationBarHeight
         tableView.verticalScrollIndicatorInsets.top = navigationBarHeight
         tableView.contentOffset = .init(x: 0, y: -navigationBarHeight)
-        
+
         applySnapshot(makeSnapshot(), animated: false)
-        
+
         updateTheme()
     }
-    
-    func makeDataSource() -> UITableViewDiffableDataSource<Section, Item> {
+
+    private func makeDataSource() -> UITableViewDiffableDataSource<Section, Item> {
         let dataSource = UITableViewDiffableDataSource<Section, Item>(tableView: tableView) { [unowned self] tableView, indexPath, item in
-            
+            let accountId = self.account.id
             switch item {
             case .baseCurrency:
                 // Base currency and tiny tokens
@@ -147,7 +188,7 @@ public class AssetsAndActivityVC: WViewController {
                     navigationController?.pushViewController(BaseCurrencyVC(isModal: isModal), animated: true)
                 })
                 return cell
-                
+
             case .hiddenNfts:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
                 cell.configurationUpdateHandler = { cell, state in
@@ -155,7 +196,7 @@ public class AssetsAndActivityVC: WViewController {
                         HStack(spacing: 0) {
                             Text(lang("Hidden NFTs"))
                             Spacer()
-                            Text("\(NftStore.currentAccountHiddenNftsCount)")
+                            Text("\(NftStore.getAccountHiddenNftsCount(accountId: accountId))")
                                 .padding(.horizontal, 8)
                                 .foregroundStyle(Color(WTheme.secondaryLabel))
                             Image.airBundle("RightArrowIcon")
@@ -173,19 +214,13 @@ public class AssetsAndActivityVC: WViewController {
                     }
                 }
                 return cell
-                
+
             case .hideNoCost:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "hideNoCostTokensCell",
                                                          for: indexPath) as! AssetsAndActivityHideNoCostCell
-                cell.configure(isInModal: isModal) { [weak self] hideNoCost in
-                    guard let self else { return }
-                    processorQueue.async(flags: .barrier) {
-                        guard let data = AccountStore.currentAccountAssetsAndActivityData else {return}
-                        AccountStore.setAssetsAndActivityData(accountId: AccountStore.accountId!, value: data)
-                    }
-                }
+                cell.configure(isInModal: isModal) { _ in }
                 return cell
-                
+
             case .addToken:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
                 cell.configurationUpdateHandler = { cell, state in
@@ -211,25 +246,20 @@ public class AssetsAndActivityVC: WViewController {
                 }
                 cell.separatorInset.left = 68
                 return cell
-                
-            case .token(let tokenSlug):
-                let token = TokenStore.tokens[tokenSlug]
+
+            case let .token(tokenID, token):
+                let token = token.wrappedValue
                 let cell = tableView.dequeueReusableCell(withIdentifier: "tokenCell",
                                                          for: indexPath) as! AssetsAndActivityTokenCell
-                if let token {
-                    cell.configure(with: token,
-                                   balance: BalanceStore.currentAccountBalances[token.slug] ?? 0,
-                                   importedSlug: AccountStore.currentAccountAssetsAndActivityData?.importedSlugs.contains(tokenSlug) == true) { tokenSlug, visibility in
-                        guard var data = AccountStore.currentAccountAssetsAndActivityData else {return}
-                        if visibility {
-                            data.alwaysHiddenSlugs.remove(tokenSlug)
-                            data.alwaysShownSlugs.insert(tokenSlug)
-                        } else {
-                            data.alwaysShownSlugs.remove(tokenSlug)
-                            data.alwaysHiddenSlugs.insert(tokenSlug)
-                        }
-                        AccountStore.setAssetsAndActivityData(accountId: AccountStore.accountId!, value: data)
-                    }
+                let isHidden = assetsAndActivityData.isTokenHidden(slug: tokenID.slug, isStaking: tokenID.isStaking)
+                cell.configure(with: token,
+                               isStaking: tokenID.isStaking,
+                               balance: $account.balances[token.slug] ?? 0,
+                               importedSlug: assetsAndActivityData.importedSlugs.contains(token.slug),
+                               isHidden: isHidden) { tokenSlug, isVisible in
+                    AccountStore.updateAssetsAndActivityData(forAccountID: accountId, update: { settings in
+                        settings.saveTokenHidden(slug: tokenSlug, isStaking: tokenID.isStaking, isHidden: !isVisible)
+                    })
                 }
                 cell.separatorInset.left = 68
                 return cell
@@ -237,12 +267,12 @@ public class AssetsAndActivityVC: WViewController {
         }
         return dataSource
     }
-    
-    func makeSnapshot() -> NSDiffableDataSourceSnapshot<Section, Item> {
+
+    private func makeSnapshot() -> NSDiffableDataSourceSnapshot<Section, Item> {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections([.baseCurrency])
         snapshot.appendItems([.baseCurrency])
-        if NftStore.currentAccountHasHiddenNfts {
+        if NftStore.getAccountHasHiddenNfts(accountId: account.id) {
             snapshot.appendSections([.hiddenNfts])
             snapshot.appendItems([.hiddenNfts])
         }
@@ -250,16 +280,16 @@ public class AssetsAndActivityVC: WViewController {
         snapshot.appendItems([.hideNoCost])
         snapshot.appendSections([.tokens])
         snapshot.appendItems([.addToken])
-        let tokens = tokensToDisplay.map { Item.token($0) }
+        let tokens = tokensToDisplay.map { Item.token(tokenID: $0, token: HashableExcluded($1)) }
         snapshot.appendItems(tokens)
         snapshot.reconfigureItems(tokens)
         return snapshot
     }
-    
-    func applySnapshot(_ snapshot: NSDiffableDataSourceSnapshot<Section, Item>, animated: Bool) {
+
+    private func applySnapshot(_ snapshot: NSDiffableDataSourceSnapshot<Section, Item>, animated: Bool) {
         dataSource.apply(snapshot, animatingDifferences: animated)
     }
-    
+
     public override func updateTheme() {
         let backgroundColor = isModal ? WTheme.sheetBackground : WTheme.groupedBackground
         view.backgroundColor = backgroundColor
@@ -270,125 +300,63 @@ public class AssetsAndActivityVC: WViewController {
         addTokenView.highlightBackgroundColor = WTheme.highlight
         addTokenView.backgroundColor = WTheme.groupedItem
     }
-    
-    public override func scrollToTop(animated: Bool) {
-        tableView?.setContentOffset(CGPoint(x: 0, y: -tableView.adjustedContentInset.top), animated: animated)
+
+    public override func viewWillLayoutSubviews() {
+        // prevent unwanted animation on iOS 26
+        UIView.performWithoutAnimation {
+            tableView.frame = view.bounds
+        }
+        super.viewWillLayoutSubviews()
     }
-    
-    private var tokensHeaderLabel: UILabel = {
-        let lbl = UILabel()
-        lbl.translatesAutoresizingMaskIntoConstraints = false
-        lbl.font = .systemFont(ofSize: 13)
-        lbl.text = lang("My Tokens")
-        return lbl
-    }()
-    
-    private var addTokenIcon: UIImageView = {
-        let img = UIImageView(image: UIImage(systemName: "plus"))
-        img.translatesAutoresizingMaskIntoConstraints = false
-        img.contentMode = .center
-        return img
-    }()
-    
-    private var addTokenLabel: UILabel = {
-        let lbl = UILabel()
-        lbl.translatesAutoresizingMaskIntoConstraints = false
-        lbl.font = .systemFont(ofSize: 17)
-        lbl.text = lang("Add Token")
-        return lbl
-    }()
-    
-    private var addTokenSeparator: UIView = {
-        let v = UIView()
-        v.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            v.heightAnchor.constraint(equalToConstant: 0.33)
-        ])
-        return v
-    }()
-    
-    private lazy var addTokenView: WHighlightView = {
-        let v = WHighlightView()
-        v.addSubview(addTokenIcon)
-        v.addSubview(addTokenLabel)
-        v.addSubview(addTokenSeparator)
-        v.translatesAutoresizingMaskIntoConstraints = false
-        v.layer.cornerRadius = 10
-        v.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        NSLayoutConstraint.activate([
-            addTokenIcon.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 24),
-            addTokenIcon.widthAnchor.constraint(equalToConstant: 24),
-            addTokenIcon.centerYAnchor.constraint(equalTo: v.centerYAnchor),
-            addTokenLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
-            addTokenLabel.leadingAnchor.constraint(equalTo: addTokenIcon.trailingAnchor, constant: 20),
-            addTokenSeparator.bottomAnchor.constraint(equalTo: v.bottomAnchor),
-            addTokenSeparator.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            addTokenSeparator.leadingAnchor.constraint(equalTo: addTokenLabel.leadingAnchor),
-            v.heightAnchor.constraint(equalToConstant: 44)
-        ])
-        v.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(addTokenPressed)))
-        return v
-    }()
-    
-    private lazy var tokensHeaderView: UIView = {
-        let v = UIView()
-        v.addSubview(tokensHeaderLabel)
-        NSLayoutConstraint.activate([
-            tokensHeaderLabel.topAnchor.constraint(equalTo: v.topAnchor, constant: 21),
-            tokensHeaderLabel.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 16),
-            tokensHeaderLabel.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: 16),
-            tokensHeaderLabel.bottomAnchor.constraint(equalTo: v.bottomAnchor),
-        ])
-        return v
-    }()
-    
-    @objc func addTokenPressed() {
-        let tokenSelectionVC = TokenSelectionVC(
-            showMyAssets: false,
-            title: lang("Add Token"),
-            delegate: self,
-            isModal: isModal,
-            onlyTonChain: true
-        )
+
+    public override func scrollToTop(animated: Bool) {
+        tableView.setContentOffset(CGPoint(x: 0, y: -tableView.adjustedContentInset.top), animated: animated)
+    }
+
+    @objc private func addTokenPressed() {
+        let tokenSelectionVC = TokenSelectionVC(showMyAssets: false,
+                                                title: lang("Add Token"),
+                                                delegate: self,
+                                                isModal: isModal,
+                                                onlySupportedChains: true)
         navigationController?.pushViewController(tokenSelectionVC, animated: true)
     }
-    
-    func importedTokenRemoved(tokenSlug: String) {
-        guard var data = AccountStore.currentAccountAssetsAndActivityData else { return }
-        data.importedSlugs.remove(tokenSlug)
-        AccountStore.setAssetsAndActivityData(accountId: AccountStore.accountId!, value: data)
+
+    private func removeImportedToken(tokenSlug: String) {
+        AccountStore.updateAssetsAndActivityData(forAccountID: account.id, update: { settings in
+            settings.removeImportedToken(slug: tokenSlug)
+        })
         applySnapshot(makeSnapshot(), animated: true)
     }
 }
 
 extension AssetsAndActivityVC: UITableViewDelegate {
-    public func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    public func tableView(_: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         switch section {
-        case 2:
-            return tokensHeaderView
-        default:
-            let v = UIView()
-            v.backgroundColor = .clear
-            return v
+        case 2: tokensHeaderView
+        default: configured(object: UIView()) { $0.backgroundColor = .clear }
         }
     }
-    public func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+
+    public func tableView(_: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         let id = dataSource.sectionIdentifier(for: section)
-        switch id {
-        case .baseCurrency:
-            return 16
-        case .hiddenNfts:
-            return 16
-        case .hideNoCost:
-            return 0
-        case .tokens:
-            return 16
-        case nil:
-            fatalError()
+        return switch id {
+        case .baseCurrency: 16
+        case .hiddenNfts: 16
+        case .hideNoCost: 0
+        case .tokens: 16
+        case nil: 0
         }
     }
-    
-    public func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+
+    public func tableView(_: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        switch dataSource.itemIdentifier(for: indexPath) {
+        case .hiddenNfts: S.sectionItemHeight
+        default: UITableView.automaticDimension
+        }
+    }
+
+    public func tableView(_: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
         switch dataSource.itemIdentifier(for: indexPath) {
         case .addToken, .hiddenNfts:
             return indexPath
@@ -396,36 +364,36 @@ extension AssetsAndActivityVC: UITableViewDelegate {
             return nil
         }
     }
-    
+
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         if let identifier = dataSource.itemIdentifier(for: indexPath) {
             switch identifier {
             case .baseCurrency, .hideNoCost, .token:
                 break
             case .hiddenNfts:
-                AppActions.showHiddenNfts()
+                AppActions.showHiddenNfts(accountSource: .current)
             case .addToken:
                 addTokenPressed()
             }
         }
         tableView.deselectRow(at: indexPath, animated: true)
     }
-    
+
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         navigationBar?.showSeparator = scrollView.contentOffset.y + scrollView.contentInset.top + view.safeAreaInsets.top > 0
     }
-    
-    public func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-        guard case .token(let tokenSlug) = dataSource.itemIdentifier(for: indexPath) else { return nil }
-        if let prefs = AccountStore.currentAccountAssetsAndActivityData, prefs.importedSlugs.contains(tokenSlug) {
+
+    public func tableView(_: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard case let .token(_, wrappedToken) = dataSource.itemIdentifier(for: indexPath) else { return nil }
+        let token = wrappedToken.wrappedValue
+        
+        if assetsAndActivityData.importedSlugs.contains(token.slug), ($account.balances[token.slug] ?? .zero) == 0 {
             let deleteAction = UIContextualAction(style: .destructive, title: lang("Remove")) { [weak self] _, _, callback in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    callback(true)
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { callback(true) }
                 if let cell = self?.tableView.cellForRow(at: indexPath) as? AssetsAndActivityTokenCell {
-                    cell.ignoreFutureUpdatesForSlug(tokenSlug)
+                    cell.ignoreFutureUpdatesForSlug(token.slug)
                 }
-                self?.importedTokenRemoved(tokenSlug: tokenSlug)
+                self?.removeImportedToken(tokenSlug: token.slug)
             }
             let actions = UISwipeActionsConfiguration(actions: [deleteAction])
             actions.performsFirstActionWithFullSwipe = true
@@ -451,7 +419,7 @@ extension AssetsAndActivityVC: WalletCoreData.EventsObserver {
                 applySnapshot(snapshot, animated: true)
             }
         case .nftsChanged(let accountId):
-            if accountId == AccountStore.accountId {
+            if accountId == account.id {
                 applySnapshot(makeSnapshot(), animated: true)
             }
         default:
@@ -461,19 +429,26 @@ extension AssetsAndActivityVC: WalletCoreData.EventsObserver {
 }
 
 extension AssetsAndActivityVC: TokenSelectionVCDelegate {
-    public func didSelect(token: WalletCore.MTokenBalance) {
-    }
-    
-    public func didSelect(token: WalletCore.ApiToken) {
-        guard var data = AccountStore.currentAccountAssetsAndActivityData else {return}
-        data.deletedSlugs = data.deletedSlugs.filter({ it in
-            it != token.slug
-        })
-        if !tokensToDisplay.contains(token.slug) {
-            // Token is not in the list, even after removing it from deleted tokens, so add it to manually added ones.
-            data.importedSlugs.insert(token.slug)
-        }
-        AccountStore.setAssetsAndActivityData(accountId: AccountStore.accountId!, value: data)
+    public func didSelect(token _: WalletCore.MTokenBalance) {}
+
+    public func didSelect(token selectedToken: WalletCore.ApiToken) {
         applySnapshot(makeSnapshot(), animated: true)
+    }
+}
+
+extension AssetsAndActivityVC {
+    enum Section: Sendable {
+        case baseCurrency
+        case hiddenNfts
+        case hideNoCost
+        case tokens
+    }
+
+    enum Item: Equatable, Hashable, Sendable {
+        case baseCurrency
+        case hiddenNfts
+        case hideNoCost
+        case addToken
+        case token(tokenID: TokenID, token: HashableExcluded<ApiToken>)
     }
 }

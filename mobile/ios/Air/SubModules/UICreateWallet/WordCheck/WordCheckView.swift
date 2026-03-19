@@ -7,76 +7,71 @@
 
 import SwiftUI
 import WalletContext
-import WalletCore
 import UIComponents
 import Flow
+import Perception
 
 struct WordCheckView: View {
     
     var introModel: IntroModel
-    @ObservedObject var model: WordCheckModel
-    var navigationBarInset: CGFloat
-    var onScroll: (CGFloat) -> ()
-
-    @Namespace private var ns
+    var model: WordCheckModel
     
     @State private var isLoading = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 40) {
-                VStack(spacing: 20) {
-                    WUIAnimatedSticker("animation_bill", size: 124, loop: false)
-                        .frame(width: 124, height: 124)
-                        .padding(.top, -8)
-                        .scrollPosition(ns: ns, offset: navigationBarInset, callback: onScroll)
+        WithPerceptionTracking {
+            ScrollView {
+                VStack(spacing: 40) {
                     VStack(spacing: 20) {
-                        title
-                        description
+                        WUIAnimatedSticker("animation_bill", size: 124, loop: false)
+                            .frame(width: 124, height: 124)
+                            .padding(.top, -8)
+                        VStack(spacing: 20) {
+                            title
+                            description
+                        }
+                    }
+                    grid
+                        .opacity(model.hideAll ? 0 : 1)
+                    if !isLoading {
+                        error
+                            .opacity(model.hideAll ? 0 : 1)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)).animation(.default))
+                    } else {
+                        Button(lang("Continue"), action: {})
+                            .environment(\.isLoading, true)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)).animation(.default.delay(0.3)))
+                            .buttonStyle(.airClearBackground)
                     }
                 }
-                grid
-                    .opacity(model.hideAll ? 0 : 1)
-                if !isLoading {
-                    error
-                        .opacity(model.hideAll ? 0 : 1)
-                        .transition(.opacity.combined(with: .scale(scale: 0.8)).animation(.default))
-                } else {
-                    Button(lang("Continue"), action: {})
-                        .environment(\.isLoading, true)
-                        .transition(.opacity.combined(with: .scale(scale: 0.8)).animation(.default.delay(0.3)))
-                        .buttonStyle(.airClearBackground)
-                }
             }
-        }
-        .navigationBarInset(navigationBarInset)
-        .scrollIndicators(.hidden)
-        .backportScrollBounceBehaviorBasedOnSize()
-        .backportScrollClipDisabled()
-        .padding(.horizontal, 32)
-        .padding(.bottom, 8)
-        .allowsHitTesting(!model.intractionDisabled)
-        .coordinateSpace(name: ns)
-        .onChange(of: model.allSelected) { allSelected in
-            if allSelected {
-                if !model.revealCorrect {
-                    Task { @MainActor in
-                        model.intractionDisabled = true
-                        try? await Task.sleep(for: .seconds(0.5))
-                        model.revealCorrect = true
-                        try? await Task.sleep(for: .seconds(0.5))
-                        model.intractionDisabled = false
-                        if model.allCorrect {
-                            isLoading = true
-                            introModel.onCheckPassed()
-                        } else {
-                            withAnimation(.smooth(duration: 0.2)) {
-                                model.hideAll = true
-                            }
-                            try? await Task.sleep(for: .seconds(0.25))
-                            model.resetKeepingIncorrect()
-                            withAnimation(.smooth(duration: 1.50)) {
-                                model.hideAll = false
+            .scrollIndicators(.hidden)
+            .backportScrollBounceBehaviorBasedOnSize()
+            .backportScrollClipDisabled()
+            .padding(.horizontal, 32)
+            .padding(.bottom, 8)
+            .allowsHitTesting(!model.interactionDisabled)
+            .onChange(of: model.allSelected) { allSelected in
+                if allSelected {
+                    if !model.revealCorrect {
+                        Task { @MainActor in
+                            model.interactionDisabled = true
+                            try? await Task.sleep(for: .seconds(0.5))
+                            model.revealCorrect = true
+                            try? await Task.sleep(for: .seconds(0.5))
+                            model.interactionDisabled = false
+                            if model.allCorrect {
+                                isLoading = true
+                                introModel.onCheckPassed()
+                            } else {
+                                withAnimation(.smooth(duration: 0.2)) {
+                                    model.hideAll = true
+                                }
+                                try? await Task.sleep(for: .seconds(0.25))
+                                model.resetKeepingIncorrect()
+                                withAnimation(.smooth(duration: 1.50)) {
+                                    model.hideAll = false
+                                }
                             }
                         }
                     }
@@ -95,7 +90,7 @@ struct WordCheckView: View {
     var description: some View {
         let ids = model.tests.map { String($0.id + 1) }
         let line1 = lang("$check_words_description").replacingOccurrences(of: "\n", with: " ")
-        let line2 = lang("Please choose the correct words **%1$@**, **%2$@**, **%3$@**:", arg1: ids[0], arg2: ids[1], arg3: ids[2])
+        let line2 = lang("$mnemonic_check_words_list", arg1: ids.joined(separator: ", "))
         Text(LocalizedStringKey(line1 + "\n\n" + line2))
             .multilineTextAlignment(.center)
             .contentTransition(.numericText())
@@ -104,6 +99,7 @@ struct WordCheckView: View {
     
     @ViewBuilder
     var grid: some View {
+        @Perception.Bindable var model = model
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 24) {
             ForEach($model.tests) { $test in
                 GridRow {
@@ -131,7 +127,7 @@ struct WordCheckView: View {
     @ViewBuilder
     var error: some View {
         if model.showTryAgain {
-            Text(lang("Words don’t match, please try again."))
+            Text(lang("$mnemonic_check_error"))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.red)
                 .font(.system(size: 16, weight: .medium))

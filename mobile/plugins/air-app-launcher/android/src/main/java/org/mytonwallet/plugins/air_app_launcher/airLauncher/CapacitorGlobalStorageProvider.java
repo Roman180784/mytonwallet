@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.ViewGroup;
 import android.webkit.ValueCallback;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -81,10 +82,10 @@ public class CapacitorGlobalStorageProvider implements IGlobalStorageProvider {
 
       isPersisting = true;
 
-      String jsonString = globalStorageJsonDict.toString();
+      String jsonString = JSONObject.quote(globalStorageJsonDict.toString());
       String script = "(function() { " +
         "try {" +
-        "localStorage.setItem('" + GLOBAL_STATE_KEY + "', JSON.stringify(" + jsonString + "));" +
+        "localStorage.setItem('" + GLOBAL_STATE_KEY + "', " + jsonString + ");" +
         "return true;" +
         "} catch (e) {" +
         "console.log('ERROR SAVING', e);" +
@@ -119,13 +120,13 @@ public class CapacitorGlobalStorageProvider implements IGlobalStorageProvider {
 
   private void clearCache() {
     doNotSynchronize.incrementAndGet();
-    for (String accountId : Objects.requireNonNullElse(WGlobalStorage.INSTANCE.accountIds(), new String[]{})) {
-      set("byAccountId." + accountId + ".activities.idsMain", new JSONArray(), PERSIST_NO);
+    for (String accountId : Objects.requireNonNullElse(WGlobalStorage.INSTANCE.accountIds(null), new String[]{})) {
+      remove("byAccountId." + accountId + ".activities.idsMain", PERSIST_NO);
       set("byAccountId." + accountId + ".activities.isMainHistoryEndReached", false, PERSIST_NO);
       setEmptyObject("byAccountId." + accountId + ".activities.idsBySlug", PERSIST_NO);
       setEmptyObject("byAccountId." + accountId + ".activities.isHistoryEndReachedBySlug", PERSIST_NO);
       setEmptyObject("byAccountId." + accountId + ".activities.byId", PERSIST_NO);
-      setEmptyObject("byAccountId." + accountId + ".activities.newestTxTimestamps", PERSIST_NO);
+      setEmptyObject("byAccountId." + accountId + ".activities.newestActivitiesBySlug", PERSIST_NO);
       setEmptyObject("tokenPriceHistory.bySlug", PERSIST_NO);
     }
     doNotSynchronize.decrementAndGet();
@@ -188,6 +189,11 @@ public class CapacitorGlobalStorageProvider implements IGlobalStorageProvider {
     doNotSynchronize.set(i);
     if (i == 0)
       persistChanges(PERSIST_NORMAL);
+  }
+
+  @Override
+  public boolean contains(@NonNull String key) {
+    return getValue(key) != null;
   }
 
   @Nullable
@@ -304,5 +310,11 @@ public class CapacitorGlobalStorageProvider implements IGlobalStorageProvider {
 
   public interface OnReadyCallback {
     void onReady(boolean success);
+  }
+
+  void onDestroy() {
+    if (webView.getParent() != null)
+      ((ViewGroup) webView.getParent()).removeView(webView);
+    webView = null;
   }
 }

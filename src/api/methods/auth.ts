@@ -1,4 +1,3 @@
-import type { GlobalState } from '../../global/types';
 import type { ApiTonWalletVersion } from '../chains/ton/types';
 import type {
   ApiAccountAny,
@@ -6,29 +5,30 @@ import type {
   ApiAccountWithMnemonic,
   ApiActivityTimestamps,
   ApiAnyDisplayError,
+  ApiAuthImportViewAccountResult,
+  ApiBip39Account,
   ApiChain,
   ApiImportAddressByChain,
   ApiLedgerAccount,
   ApiLedgerAccountInfo,
-  ApiLedgerDriver,
   ApiLedgerWalletInfo,
   ApiNetwork,
-  ApiTonAccount,
   ApiTonWallet,
   ApiViewAccount,
-  ApiWalletByChain,
+  OnApiUpdate,
 } from '../types';
 import { ApiCommonError } from '../types';
 
-import { DEFAULT_WALLET_VERSION, IS_BIP39_MNEMONIC_ENABLED, IS_CORE_WALLET } from '../../config';
+import { IS_TON_MNEMONIC_ONLY } from '../../config';
 import { parseAccountId } from '../../util/account';
 import isMnemonicPrivateKey from '../../util/isMnemonicPrivateKey';
 import { range } from '../../util/iteratees';
+import { logDebugError } from '../../util/logs';
 import { createTaskQueue } from '../../util/schedulers';
 import chains from '../chains';
 import * as ton from '../chains/ton';
-import { toBase64Address } from '../chains/ton/util/tonCore';
 import {
+  fetchStoredAccount,
   fetchStoredAccounts,
   fetchStoredChainAccount,
   getAccountChains,
@@ -42,6 +42,7 @@ import {
   decryptMnemonic,
   encryptMnemonic,
   generateBip39Mnemonic,
+  getMnemonic,
   validateBip39Mnemonic,
 } from '../common/mnemonic';
 import { tokenRepository } from '../db';
@@ -57,40 +58,123 @@ import {
   removePollingAccount,
 } from './polling';
 
+let onUpdate: OnApiUpdate;
+
+export function initAuth(_onUpdate: OnApiUpdate) {
+  onUpdate = _onUpdate;
+}
+
 export function generateMnemonic(isBip39: boolean) {
   if (isBip39) return generateBip39Mnemonic();
   return ton.generateMnemonic();
 }
 
-export function createWallet(
-  network: ApiNetwork,
-  mnemonic: string[],
-  password: string,
-  version?: ApiTonWalletVersion,
-) {
-  if (!version) version = DEFAULT_WALLET_VERSION;
+export async function validateMnemonic(mnemonic: string[]) {
+  if (!IS_TON_MNEMONIC_ONLY && validateBip39Mnemonic(mnemonic)) {
+    return true;
+  }
 
-  return importMnemonic(network, mnemonic, password, version);
-}
-
-export function validateMnemonic(mnemonic: string[]) {
-  return (validateBip39Mnemonic(mnemonic) && IS_BIP39_MNEMONIC_ENABLED) || ton.validateMnemonic(mnemonic);
+  return await ton.validateMnemonic(mnemonic);
 }
 
 export async function importMnemonic(
-  network: ApiNetwork,
+  networks: ApiNetwork[],
   mnemonic: string[],
   password: string,
   version?: ApiTonWalletVersion,
 ) {
-  const isPrivateKey = isMnemonicPrivateKey(mnemonic);
-  let isBip39Mnemonic = validateBip39Mnemonic(mnemonic);
+  const isBip39Mnemonic = !IS_TON_MNEMONIC_ONLY && validateBip39Mnemonic(mnemonic);
   const isTonMnemonic = await ton.validateMnemonic(mnemonic);
 
-  if (!isPrivateKey && !isTonMnemonic && (!isBip39Mnemonic || !IS_BIP39_MNEMONIC_ENABLED)) {
+  if (!isBip39Mnemonic && !isTonMnemonic) {
     throw new Error('Invalid mnemonic');
   }
 
+  const mnemonicEncrypted = await getEncryptedMnemonic(mnemonic, password);
+  if (typeof mnemonicEncrypted !== 'string') {
+    return mnemonicEncrypted;
+  }
+
+  try {
+    return await Promise.all(networks.map(async (network) => {
+      let account: ApiAccountWithMnemonic;
+      let tonWallet: ApiTonWallet & { lastTxId?: string } | undefined;
+      let shouldForceTonMnemonic = false;
+
+      if (isBip39Mnemonic && isTonMnemonic) {
+        tonWallet = await ton.getWalletFromMnemonic(network, mnemonic, version);
+        if (tonWallet.lastTxId) {
+          shouldForceTonMnemonic = true;
+        }
+      }
+
+      if (isBip39Mnemonic && !shouldForceTonMnemonic) {
+        account = {
+          type: 'bip39',
+          mnemonicEncrypted,
+          byChain: {},
+        };
+
+        await Promise.all((Object.keys(chains) as (keyof typeof chains)[]).map(async (_chain) => {
+          // TypeScript emits false notices, because it doesn't see relations between the key and value types in record
+          // mapping. We lock the key type to one of the possible values to resolve the TS notices and have at least
+          // some type checking.
+          const chain = _chain as 'ton';
+          account.byChain[chain] = await chains[chain].getWalletFromBip39Mnemonic(network, mnemonic);
+        }));
+      } else {
+        tonWallet ||= await ton.getWalletFromMnemonic(network, mnemonic, version);
+        account = {
+          type: 'ton',
+          mnemonicEncrypted,
+          byChain: {
+            ton: tonWallet,
+          },
+        };
+      }
+
+      const accountId = await addAccount(network, account);
+      void activateAccount(accountId);
+
+      return {
+        accountId,
+        byChain: getAccountChains(account),
+      };
+    }));
+  } catch (err) {
+    return handleServerError(err);
+  }
+}
+
+export async function importPrivateKey(
+  chain: ApiChain,
+  networks: ApiNetwork[],
+  privateKey: string,
+  password: string,
+) {
+  const privateKeyEncrypted = await getEncryptedMnemonic([privateKey], password);
+  if (typeof privateKeyEncrypted !== 'string') {
+    return privateKeyEncrypted;
+  }
+
+  return Promise.all(networks.map(async (network) => {
+    const wallet = await chains[chain].getWalletFromPrivateKey(network, privateKey);
+    const account: ApiBip39Account = {
+      type: 'bip39',
+      mnemonicEncrypted: privateKeyEncrypted,
+      byChain: { [chain]: wallet },
+    };
+    const accountId = await addAccount(network, account);
+    void activateAccount(accountId);
+
+    return {
+      accountId,
+      byChain: getAccountChains(account),
+    };
+  }));
+}
+
+async function getEncryptedMnemonic(mnemonic: string[], password: string) {
   const mnemonicEncrypted = await encryptMnemonic(mnemonic, password);
 
   // This is a defensive approach against potential corrupted encryption reported by some users
@@ -101,88 +185,7 @@ export async function importMnemonic(
     return { error: ApiCommonError.DebugError };
   }
 
-  let account: ApiAccountAny;
-  let tonWallet: ApiTonWallet & { lastTxId?: string } | undefined;
-
-  try {
-    if (isBip39Mnemonic && isTonMnemonic) {
-      tonWallet = await ton.getWalletFromMnemonic(mnemonic, network, version);
-      if (tonWallet.lastTxId) {
-        isBip39Mnemonic = false;
-      }
-    }
-
-    if (isBip39Mnemonic) {
-      account = {
-        type: 'bip39',
-        mnemonicEncrypted,
-        byChain: {},
-      };
-
-      await Promise.all((Object.keys(chains) as (keyof typeof chains)[]).map(async (chain) => {
-        const wallet = await chains[chain].getWalletFromBip39Mnemonic(network, mnemonic);
-        account.byChain[chain as 'ton'] = wallet as ApiWalletByChain['ton'];
-      }));
-    } else {
-      if (!tonWallet) {
-        tonWallet = isPrivateKey
-          ? await ton.getWalletFromPrivateKey(mnemonic[0], network, version)
-          : await ton.getWalletFromMnemonic(mnemonic, network, version);
-      }
-      account = {
-        type: 'ton',
-        mnemonicEncrypted,
-        byChain: {
-          ton: tonWallet,
-        },
-      };
-    }
-
-    const accountId = await addAccount(network, account);
-    const secondNetworkAccount = IS_CORE_WALLET ? await createAccountWithSecondNetwork({
-      accountId, network, mnemonic, mnemonicEncrypted, version,
-    }) : undefined;
-    void activateAccount(accountId);
-
-    return {
-      accountId,
-      byChain: getAccountChains(account),
-      secondNetworkAccount,
-    };
-  } catch (err) {
-    return handleServerError(err);
-  }
-}
-
-export async function createAccountWithSecondNetwork(options: {
-  accountId: string;
-  network: ApiNetwork;
-  mnemonic: string[];
-  mnemonicEncrypted: string;
-  version?: ApiTonWalletVersion;
-}): Promise<GlobalState['auth']['secondNetworkAccount']> {
-  const {
-    mnemonic, version, mnemonicEncrypted,
-  } = options;
-  const { network, accountId } = options;
-  const tonWallet = await ton.getWalletFromMnemonic(mnemonic, network, version);
-
-  const secondNetwork = network === 'testnet' ? 'mainnet' : 'testnet';
-  tonWallet.address = toBase64Address(tonWallet.address, false, secondNetwork);
-  const account: ApiTonAccount = {
-    type: 'ton',
-    mnemonicEncrypted,
-    byChain: {
-      ton: tonWallet,
-    },
-  };
-  const secondAccountId = await addAccount(secondNetwork, account, parseAccountId(accountId).id);
-
-  return {
-    accountId: secondAccountId,
-    byChain: getAccountChains(account),
-    network: secondNetwork,
-  };
+  return mnemonicEncrypted;
 }
 
 export async function importLedgerAccount(network: ApiNetwork, accountInfo: ApiLedgerAccountInfo) {
@@ -263,7 +266,7 @@ export async function resetAccounts() {
 
 export async function removeAccount(
   accountId: string,
-  nextAccountId: string,
+  nextAccountId: string | undefined,
   newestActivityTimestamps?: ApiActivityTimestamps,
 ) {
   removePollingAccount(accountId);
@@ -273,7 +276,9 @@ export async function removeAccount(
     getEnvironment().isDappSupported && removeAccountDapps(accountId),
   ]);
 
-  await activateAccount(nextAccountId, newestActivityTimestamps);
+  if (nextAccountId !== undefined) {
+    await activateAccount(nextAccountId, newestActivityTimestamps);
+  }
 }
 
 export async function changePassword(oldPassword: string, password: string) {
@@ -289,28 +294,94 @@ export async function changePassword(oldPassword: string, password: string) {
   }
 }
 
-export async function importViewAccount(network: ApiNetwork, addressByChain: ApiImportAddressByChain) {
+export async function upgradeMultichainAccounts(password: string) {
+  const accountsToUpgrade = Object.entries(await fetchStoredAccounts())
+    .filter(([, account]) => account.type === 'bip39' && !account.byChain.solana) as [string, ApiBip39Account][];
+
+  const updates: {
+    accountId: string;
+    address: string;
+  }[] = [];
+
+  for (const [accountId, account] of accountsToUpgrade) {
+    const mnemonic = await getMnemonic(accountId, password, account);
+    if (!mnemonic) {
+      return { error: ApiCommonError.InvalidPassword };
+    }
+
+    if (isMnemonicPrivateKey(mnemonic)) {
+      continue;
+    }
+
+    const { network } = parseAccountId(accountId);
+    const solanaWallet = await (chains.solana.getWalletFromBip39Mnemonic as any)(network, mnemonic, true);
+    const currentAccount = await fetchStoredAccount<ApiBip39Account>(accountId);
+
+    if (currentAccount.type !== 'bip39' || currentAccount.byChain.solana) {
+      continue;
+    }
+
+    await updateStoredAccount<ApiBip39Account>(accountId, {
+      byChain: {
+        ...currentAccount.byChain,
+        solana: solanaWallet,
+      },
+    });
+
+    onUpdate({
+      type: 'updateAccount',
+      accountId,
+      chain: 'solana',
+      address: solanaWallet.address,
+    });
+
+    updates.push({
+      accountId,
+      address: solanaWallet.address,
+    });
+  }
+
+  return updates;
+}
+
+export async function importViewAccount(
+  network: ApiNetwork,
+  addressByChain: ApiImportAddressByChain,
+  isTemporary?: true,
+): Promise<{ error: ApiAnyDisplayError } | { error: string; chain: ApiChain } | ApiAuthImportViewAccountResult> {
   try {
     const account: ApiViewAccount = {
       type: 'view',
       byChain: {},
     };
     let title: string | undefined;
-    let error: { error: string; chain: ApiChain } | undefined;
+    const errors: { error: string; chain: ApiChain }[] = [];
 
     await Promise.all(Object.entries(addressByChain).map(async ([_chain, address]) => {
-      const chain = _chain as ApiChain;
+      // TypeScript emits false notices, because it doesn't see relations between the key and value types in record
+      // mapping. We lock the key type to one of the possible values to resolve the TS notices and have at least
+      // some type checking.
+      const chain = _chain as 'ton';
       const wallet = await chains[chain].getWalletFromAddress(network, address);
       if ('error' in wallet) {
-        error = { ...wallet, chain };
+        errors.push({ ...wallet, chain });
         return;
       }
 
-      account.byChain[chain as 'ton'] = wallet.wallet as ApiWalletByChain['ton'];
+      account.byChain[chain] = wallet.wallet;
       if (wallet.title) title = wallet.title;
     }));
 
-    if (error) return error;
+    // Import of all submitted addresses failed
+    if (errors.length && errors.length === Object.keys(addressByChain).length) return errors[0];
+
+    if (errors.length) {
+      // An error occurred while importing some of the addresses.
+      // We are transferring it to the logs.
+      for (const error of errors) {
+        logDebugError('Import view address: ', error);
+      }
+    }
 
     const accountId = await addAccount(network, account);
     void activateAccount(accountId);
@@ -319,6 +390,7 @@ export async function importViewAccount(network: ApiNetwork, addressByChain: Api
       accountId,
       title,
       byChain: getAccountChains(account),
+      ...(isTemporary && { isTemporary: true }),
     };
   } catch (err) {
     return handleServerError(err);
@@ -333,7 +405,6 @@ export async function importNewWalletVersion(
   isNew: true;
   accountId: string;
   address: string;
-  ledger?: { index: number; driver: ApiLedgerDriver };
 } | {
   isNew: false;
   accountId: string;
@@ -359,16 +430,22 @@ export async function importNewWalletVersion(
     };
   }
 
-  const ledger = account.type === 'ledger'
-    ? { index: account.byChain.ton.index, driver: account.driver }
-    : undefined;
-
   const newAccountId = await addAccount(network, newAccount);
 
   return {
     isNew: true,
     accountId: newAccountId,
     address: newAccount.byChain.ton.address,
-    ledger,
   };
+}
+
+/** In explorer mode, we don't need to store all data, only current account, so we clear the storage  */
+export async function clearStorageForExplorerMode() {
+  const currentAccountId = await storage.getItem('currentAccountId');
+  const accounts = await storage.getItem('accounts') as Record<string, ApiAccountAny> | undefined;
+  await storage.clear();
+
+  if (currentAccountId && accounts?.[currentAccountId]) {
+    await storage.setItem('accounts', { [currentAccountId]: accounts[currentAccountId] });
+  }
 }

@@ -10,6 +10,7 @@ import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
+import org.mytonwallet.app_air.uicomponents.helpers.typeface
 import org.mytonwallet.app_air.uicomponents.image.Content
 import org.mytonwallet.app_air.uicomponents.image.WCustomImageView
 import org.mytonwallet.app_air.uicomponents.widgets.AutoScaleContainerView
@@ -24,17 +25,15 @@ import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
 import org.mytonwallet.app_air.uicomponents.widgets.sensitiveDataContainer.WSensitiveDataContainer
 import org.mytonwallet.app_air.uiinappbrowser.InAppBrowserVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
-import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
+import org.mytonwallet.app_air.walletbasecontext.models.MBaseCurrency
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.doubleAbsRepresentation
 import org.mytonwallet.app_air.walletbasecontext.utils.toString
-import org.mytonwallet.app_air.walletcontext.utils.colorWithAlpha
+import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
 import org.mytonwallet.app_air.walletcore.models.MToken
-import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.BalanceStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
 import java.math.BigInteger
@@ -46,6 +45,7 @@ import kotlin.math.roundToInt
 class TokenHeaderView(
     val navigationController: WNavigationController,
     private val navigationBar: WNavigationBar,
+    private val accountId: String,
     var token: MToken
 ) :
     WView(navigationController.context), WThemedView {
@@ -77,7 +77,7 @@ class TokenHeaderView(
                             LocaleController.getString("View on Explorer"),
                             true,
                         ) {
-                            token.explorerUrl?.let {
+                            token.explorerUrl(MBlockchainNetwork.ofAccountId(accountId))?.let {
                                 open(it)
                             }
                         } else null,
@@ -111,7 +111,7 @@ class TokenHeaderView(
                     ) {
                         open("https://dexscreener.com/search?q=${token.name.lowercase()}")
                     }),
-                aboveView = true
+                positioning = WMenuPopup.Positioning.ALIGNED
             )
         }
         btn
@@ -122,10 +122,13 @@ class TokenHeaderView(
         chainSizeGap = 2f.dp
     }
 
-    private val balanceContentView = WBalanceView(context, true).apply {
-        setStyle(36f, 28f, WFont.NunitoExtraBold)
+    private val balanceContentView = WBalanceView(context).apply {
+        primarySize = 36f
+        decimalsSize = 30f
+        typeface = WFont.NunitoExtraBold.typeface
         clipChildren = false
         clipToPadding = false
+        smartDecimalsColor = true
     }
     private val balanceView = WSensitiveDataContainer(
         AutoScaleContainerView(balanceContentView).apply {
@@ -156,7 +159,7 @@ class TokenHeaderView(
         addView(balanceView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         addView(equivalentLabel, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
 
-        iconView.set(Content.of(token = token, alwaysShowChain = true))
+        iconView.set(Content.of(token = token, showChain = true))
 
         setConstraints {
             toTopPx(iconView, navDefaultHeight + 24.dp)
@@ -177,8 +180,10 @@ class TokenHeaderView(
     }
 
     override fun updateTheme() {
-        updateBackgroundColor()
-        balanceContentView.setTextColor(WColor.PrimaryText.color, WColor.Decimals.color)
+        balanceContentView.updateTheme()
+        balanceContentView.apply {
+            typeface = WFont.NunitoExtraBold.typeface
+        }
         equivalentLabel.contentView.setTextColor(WColor.SubtitleText.color)
         val moreDrawable =
             ContextCompat.getDrawable(
@@ -207,46 +212,30 @@ class TokenHeaderView(
             min(0f, -dy.toFloat())
         val balanceLayoutParams = balanceView.layoutParams as LayoutParams
         balanceLayoutParams.topMargin = calculatedMinHeight +
-            if (dy < 0) 126.dp - dy else
-                ((-64.5f).dp + (1 - collapseProgress) * 190.5f.dp).roundToInt()
+            if (dy < 0) 124.dp - dy else
+                ((-70.5f).dp + (1 - collapseProgress) * 194.5f.dp).roundToInt()
         balanceView.layoutParams = balanceLayoutParams
         balanceContentView.setScale(
             (18 + 18 * (1 - collapseProgress)) / 36f,
-            (18 + 10 * (1 - collapseProgress)) / 28f,
-            collapseProgress
+            (18 + 12 * (1 - collapseProgress)) / 30f,
+            (-1.5f).dp * collapseProgress
         )
         balanceView.setMaskPivotYPercent(1f)
         balanceView.setMaskScale(0.5f + (1 - collapseProgress) / 2f)
         val equivalentLabelLayoutParams = equivalentLabel.layoutParams as LayoutParams
-        equivalentLabelLayoutParams.topMargin = (collapseProgress * (-19).dp).roundToInt()
+        equivalentLabelLayoutParams.topMargin =
+            ((-2.5f).dp + (collapseProgress * (-14.5f).dp)).roundToInt()
         equivalentLabel.scaleX = (14 + 8 * (1 - collapseProgress)) / 22f
         equivalentLabel.scaleY = equivalentLabel.scaleX
         equivalentLabel.setMaskPivotYPercent(0f)
         equivalentLabel.setMaskScale(0.5f + (1 - collapseProgress) / 2f)
-
-        if (ThemeManager.uiMode.hasRoundedCorners)
-            return
-        val newAlpha = min(
-            1f,
-            (contentHeight - dy + 92.dp) / ViewConstants.GAP.dp.toFloat()
-        )
-        updateBackgroundColor(newAlpha)
-    }
-
-    private var backgroundAlpha = 1f
-    private fun updateBackgroundColor(newAlpha: Float? = null) {
-        backgroundAlpha = newAlpha ?: backgroundAlpha
-        if (!ThemeManager.uiMode.hasRoundedCorners && backgroundAlpha > 0)
-            setBackgroundColor(WColor.Background.color.colorWithAlpha((backgroundAlpha * 255).toInt()))
-        else
-            background = null
     }
 
     private var prevBalance: BigInteger? = null
     fun reloadData() {
         token = TokenStore.getToken(token.slug) ?: token
         val balance =
-            BalanceStore.getBalances(AccountStore.activeAccountId!!)?.get(token.slug)
+            BalanceStore.getBalances(accountId)?.get(token.slug)
                 ?: BigInteger.ZERO
         balanceContentView.animateText(
             AnimateConfig(
@@ -254,20 +243,30 @@ class TokenHeaderView(
                 token.decimals,
                 token.symbol,
                 prevBalance != null,
+                setInstantly = false,
                 forceCurrencyToRight = true
             )
         )
         prevBalance = balance
+        val fallbackToUsd = token.symbol == WalletCore.baseCurrency.currencyCode
+        val tokenPrice = if (fallbackToUsd)
+            token.priceUsd
+        else
+            token.price
         val balanceInBaseCurrency =
             balance?.let { balance ->
-                token.price?.let { tokenPrice ->
+                tokenPrice?.let { tokenPrice ->
                     balance.doubleAbsRepresentation(token.decimals) * tokenPrice
                 }
             }
+        val equivalentCurrency = if (fallbackToUsd)
+            MBaseCurrency.USD
+        else
+            WalletCore.baseCurrency
         equivalentLabel.contentView.text = balanceInBaseCurrency?.toString(
-            WalletCore.baseCurrency.decimalsCount,
-            WalletCore.baseCurrency.sign,
-            WalletCore.baseCurrency.decimalsCount,
+            9,
+            equivalentCurrency.sign,
+            equivalentCurrency.decimalsCount,
             true
         )
     }
@@ -278,7 +277,7 @@ class TokenHeaderView(
             InAppBrowserVC(
                 context,
                 null,
-                InAppBrowserConfig(url, injectTonConnectBridge = true)
+                InAppBrowserConfig(url, injectDappConnect = true)
             )
         )
         navigationController.window.present(nav)

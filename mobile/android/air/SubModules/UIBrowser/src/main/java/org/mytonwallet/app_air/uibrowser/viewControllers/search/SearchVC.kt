@@ -25,7 +25,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WButton
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
-import org.mytonwallet.app_air.uicomponents.widgets.addRippleEffect
+import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uiinappbrowser.InAppBrowserVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
@@ -39,6 +39,7 @@ import java.lang.ref.WeakReference
 
 class SearchVC(context: Context) : WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource {
+    override val TAG = "Search"
 
     override val isSwipeBackAllowed = false
 
@@ -261,7 +262,7 @@ class SearchVC(context: Context) : WViewController(context),
                     openInAppBrowser(
                         InAppBrowserConfig(
                             url = site.url,
-                            injectTonConnectBridge = true,
+                            injectDappConnect = true,
                             saveInVisitedHistory = true,
                         )
                     )
@@ -270,15 +271,19 @@ class SearchVC(context: Context) : WViewController(context),
 
             RECENT_SEARCH_TITLE_CELL -> {
                 HeaderCell(context).apply {
-                    titleLabel.setStyle(16f, WFont.SemiBold)
+                    titleLabel.setStyle(14f, WFont.DemiBold)
                     val clearAllButton = object : WLabel(context) {
+                        private val ripple = WRippleDrawable.create(20f.dp)
+                        init {
+                            background = ripple
+                        }
                         override fun updateTheme() {
                             super.updateTheme()
-                            addRippleEffect(WColor.TintRipple.color, 20f.dp)
+                            ripple.rippleColor = WColor.TintRipple.color
                         }
                     }.apply {
                         text = LocaleController.getString("Clear All")
-                        setStyle(16f, WFont.Regular)
+                        setStyle(14f, WFont.Regular)
                         setTextColor(WColor.Tint)
                         setPadding(12.dp, 4.dp, 12.dp, 4.dp)
                         setOnClickListener {
@@ -297,9 +302,7 @@ class SearchVC(context: Context) : WViewController(context),
             }
 
             SEARCH_TITLE_CELL -> {
-                HeaderCell(context).apply {
-                    titleLabel.setStyle(16f, WFont.SemiBold)
-                }
+                HeaderCell(context)
             }
 
             SEARCH_SEARCHED_CELL -> {
@@ -308,7 +311,7 @@ class SearchVC(context: Context) : WViewController(context),
                     openInAppBrowser(
                         InAppBrowserConfig(
                             url = uri.toString(),
-                            injectTonConnectBridge = true,
+                            injectDappConnect = true,
                             saveInVisitedHistory = isValidUrl
                         )
                     )
@@ -334,7 +337,7 @@ class SearchVC(context: Context) : WViewController(context),
                             url = app.url!!,
                             title = app.name,
                             thumbnail = app.iconUrl,
-                            injectTonConnectBridge = true,
+                            injectDappConnect = true,
                             saveInVisitedHistory = true,
                         )
                     )
@@ -371,8 +374,8 @@ class SearchVC(context: Context) : WViewController(context),
                             searchResult?.noResultsFound == true
                     }.configure(
                         LocaleController.getString(if (searchResult?.noResultsFound == true) "Search in Google" else "Recent Searches"),
-                        titleColor = WColor.Tint.color,
-                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) ViewConstants.TOP_RADIUS.dp else ViewConstants.BIG_RADIUS.dp
+                        titleColor = WColor.Tint,
+                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) HeaderCell.TopRounding.FIRST_ITEM else HeaderCell.TopRounding.NORMAL
                     )
                 } else {
                     (cellHolder.cell as SearchItemCell).configure(
@@ -386,8 +389,8 @@ class SearchVC(context: Context) : WViewController(context),
                 if (indexPath.row == 0) {
                     (cellHolder.cell as HeaderCell).configure(
                         LocaleController.getString("Suggestions"),
-                        titleColor = WColor.Tint.color,
-                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) ViewConstants.TOP_RADIUS.dp else ViewConstants.BIG_RADIUS.dp
+                        titleColor = WColor.Tint,
+                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) HeaderCell.TopRounding.FIRST_ITEM else HeaderCell.TopRounding.NORMAL
                     )
                 } else {
                     val search = searchResult?.recentSearches!![indexPath.row - 1]
@@ -399,7 +402,7 @@ class SearchVC(context: Context) : WViewController(context),
                             openInAppBrowser(
                                 InAppBrowserConfig(
                                     url = uri.toString(),
-                                    injectTonConnectBridge = true,
+                                    injectDappConnect = true,
                                     saveInVisitedHistory = isValidUrl
                                 )
                             )
@@ -412,8 +415,8 @@ class SearchVC(context: Context) : WViewController(context),
                 if (indexPath.row == 0) {
                     (cellHolder.cell as HeaderCell).configure(
                         LocaleController.getString("Popular and connected apps"),
-                        titleColor = WColor.Tint.color,
-                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) ViewConstants.TOP_RADIUS.dp else ViewConstants.BIG_RADIUS.dp
+                        titleColor = WColor.Tint,
+                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) HeaderCell.TopRounding.FIRST_ITEM else HeaderCell.TopRounding.NORMAL
                     )
                 } else {
                     (cellHolder.cell as SearchDappCell).configure(
@@ -427,8 +430,8 @@ class SearchVC(context: Context) : WViewController(context),
                 if (indexPath.row == 0) {
                     (cellHolder.cell as HeaderCell).configure(
                         LocaleController.getString("History"),
-                        titleColor = WColor.Tint.color,
-                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) ViewConstants.TOP_RADIUS.dp else ViewConstants.BIG_RADIUS.dp
+                        titleColor = WColor.Tint,
+                        topRounding = if (rvAdapter.indexPathToPosition(indexPath) == 0) HeaderCell.TopRounding.FIRST_ITEM else HeaderCell.TopRounding.NORMAL
                     )
                 } else {
                     val site = searchResult?.recentVisitedSites!![indexPath.row - 1]
@@ -439,7 +442,7 @@ class SearchVC(context: Context) : WViewController(context),
                             openInAppBrowser(
                                 InAppBrowserConfig(
                                     url = site.url,
-                                    injectTonConnectBridge = true,
+                                    injectDappConnect = true,
                                     saveInVisitedHistory = true
                                 )
                             )

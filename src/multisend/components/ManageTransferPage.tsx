@@ -4,7 +4,7 @@ import type { TransferRow } from '../types';
 
 import buildClassName from '../../util/buildClassName';
 import { vibrate } from '../../util/haptics';
-import { isValidAddressOrDomain } from '../../util/isValidAddressOrDomain';
+import { isValidAddressOrDomain } from '../../util/isValidAddress';
 import { trimStringByMaxBytes } from '../../util/text';
 import { validateAndProcessTransfer } from '../utils/transferValidation';
 
@@ -141,10 +141,10 @@ function ManageTransferPage({ isActive, onBack, onSubmit, onDelete, editingTrans
           <AddressInput
             label={lang('Recipient Address')}
             chain="ton"
+            withCurrentAccount
             value={toAddress}
             address={toAddress}
             addressName=""
-            currentAccountId=""
             onInput={handleAddressInput}
             onClose={onBack}
           />

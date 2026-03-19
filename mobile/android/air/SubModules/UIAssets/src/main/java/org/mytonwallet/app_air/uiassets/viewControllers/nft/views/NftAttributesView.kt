@@ -15,6 +15,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcore.moshi.ApiNft
@@ -77,7 +78,8 @@ class NftAttributesView(
             titlesBackground,
             LayoutParams(MATCH_CONSTRAINT, LayoutParams.MATCH_PARENT)
         )
-        for (attribute in nft.metadata?.attributes ?: emptyList()) {
+        val attributes = nft.metadata?.attributes ?: emptyList()
+        for ((index, attribute) in attributes.withIndex()) {
             val titleLabel = WLabel(context).apply {
                 setStyle(15f, WFont.Medium)
                 text = attribute.traitType
@@ -89,7 +91,11 @@ class NftAttributesView(
                 text = attribute.value
                 setTextColor(WColor.PrimaryText)
             }
-            val separator = WBaseView(context)
+            val separator = WBaseView(context).apply {
+                if (index != attributes.lastIndex) {
+                    setBackground(WColor.Separator)
+                }
+            }
             val horizontalBarrier = Barrier(context).apply {
                 id = generateViewId()
                 type = Barrier.BOTTOM
@@ -97,7 +103,7 @@ class NftAttributesView(
             }
             addView(titleLabel)
             addView(valueLabel)
-            addView(separator, LayoutParams(LayoutParams.MATCH_PARENT, 1))
+            addView(separator, LayoutParams(MATCH_CONSTRAINT, 1.dp))
             addView(horizontalBarrier)
             rowViews.add(
                 RowView(
@@ -138,6 +144,8 @@ class NftAttributesView(
                 toEnd(rowView.valueLabel, 12f)
                 // Separator
                 topToTop(rowView.separator, rowView.horizontalBarrier, 10f)
+                toStart(rowView.separator)
+                toEnd(rowView.separator)
             }
             rowViews.lastOrNull()?.separator?.let { separator ->
                 separator.visibility = INVISIBLE
@@ -149,15 +157,14 @@ class NftAttributesView(
     }
 
     override fun updateTheme() {
-        rowViews.forEach { rowView ->
-            rowView.separator.setBackgroundColor(WColor.Separator.color)
-        }
         setBackgroundColor(WColor.Background.color, 8f.dp, 8f.dp, true, WColor.Separator.color, 1)
         titlesBackground.setBackgroundColor(
             WColor.AttributesBackground.color,
-            topRadius = 0f,
+            topLeftRadius = 8f.dp,
+            topRightRadius = 0f.dp,
+            bottomRightRadius = 0f.dp,
+            bottomLeftRadius = 8f.dp,
             clipToBounds = true,
-            bottomRadius = 0f,
             strokeColor = WColor.Separator.color,
             strokeWidth = 1
         )

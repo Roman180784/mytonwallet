@@ -1,13 +1,12 @@
 
 import SwiftUI
 import UIKit
-import Ledger
 import UIPasscode
 import UIComponents
 import WalletCore
 import WalletContext
 
-class SignDataVC: WViewController {
+class SignDataVC: WViewController, UISheetPresentationControllerDelegate {
     
     var update: ApiUpdate.DappSignData?
     var onConfirm: ((String?) -> ())?
@@ -17,11 +16,14 @@ class SignDataVC: WViewController {
     
     var hostingController: UIHostingController<SignDataViewOrPlaceholder>?
     
+    @AccountContext var account: MAccount
+    
     init(
         update: ApiUpdate.DappSignData,
         onConfirm: @escaping (String?) -> (),
         onCancel: @escaping () -> ()
     ) {
+        self._account = AccountContext(accountId: update.accountId)
         self.update = update
         self.onConfirm = onConfirm
         self.onCancel = onCancel
@@ -29,7 +31,7 @@ class SignDataVC: WViewController {
     }
     
     init(placeholderAccountId: String?) {
-        self.placeholderAccountId = placeholderAccountId
+        self._account = AccountContext(accountId: placeholderAccountId)
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -46,6 +48,7 @@ class SignDataVC: WViewController {
         self.onConfirm = onConfirm
         self.onCancel = onCancel
         withAnimation {
+            self.$account.accountId = update.accountId
             self.hostingController?.rootView = makeView()
         }
     }
@@ -56,33 +59,28 @@ class SignDataVC: WViewController {
     }
     
     private func setupViews() {
-        
-        addNavigationBar(title: nil, subtitle: nil, closeIcon: true)
+        navigationItem.title = lang("Confirm Actions", arg1: 1)
+        addCloseNavigationItemIfNeeded()
 
         hostingController = addHostingController(makeView(), constraints: .fill)
         
-        bringNavigationBarToFront()
-        
         updateTheme()
+        
+        sheetPresentationController?.delegate = self
     }
     
     private func makeView() -> SignDataViewOrPlaceholder {
         if let update {
-            let account = AccountStore.accountsById[update.accountId] ?? DUMMY_ACCOUNT
             return SignDataViewOrPlaceholder(content: .signData(SignDataView(
                 update: update,
-                account: account,
+                accountContext: _account,
                 onConfirm: { [weak self] in self?._onConfirm() },
                 onCancel: { [weak self] in self?._onCancel() },
-                navigationBarInset: navigationBarHeight,
-                onScroll: weakifyUpdateProgressiveBlur(),
             )))
         } else {
-            let account = placeholderAccountId.flatMap { AccountStore.accountsById[$0] }
             return SignDataViewOrPlaceholder(content: .placeholder(TonConnectPlaceholder(
                 account: account,
                 connectionType: .signData,
-                navigationBarInset: navigationBarHeight
             )))
         }
     }
@@ -99,6 +97,8 @@ class SignDataVC: WViewController {
                 subtitle: update.dapp.name,
                 onDone: { passcode in
                     onConfirm(passcode)
+                    self.onConfirm = nil
+                    self.onCancel = nil
                     self.dismiss(animated: true)
                 },
                 cancellable: true
@@ -107,7 +107,15 @@ class SignDataVC: WViewController {
     }
 
     func _onCancel() {
-        navigationController?.presentingViewController?.dismiss(animated: true)
-        onCancel?()
+        if let onCancel {
+            navigationController?.presentingViewController?.dismiss(animated: true)
+            onCancel()
+            self.onConfirm = nil
+            self.onCancel = nil
+        }
+    }
+    
+    public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        _onCancel()
     }
 }

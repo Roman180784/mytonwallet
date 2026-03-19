@@ -3,6 +3,7 @@ package org.mytonwallet.app_air.uibrowser.viewControllers.explore
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -25,7 +26,6 @@ import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.commonViews.WEmptyIconView
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.widgets.SwapSearchEditText
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
@@ -34,9 +34,11 @@ import org.mytonwallet.app_air.uicomponents.widgets.fadeOut
 import org.mytonwallet.app_air.uiinappbrowser.InAppBrowserVC
 import org.mytonwallet.app_air.uisettings.viewControllers.connectedApps.ConnectedAppsVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletbasecontext.utils.ceilToInt
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
@@ -45,14 +47,14 @@ import org.mytonwallet.app_air.walletcore.models.MExploreSite
 import org.mytonwallet.app_air.walletcore.moshi.ApiDapp
 import org.mytonwallet.app_air.walletcore.stores.ExploreHistoryStore
 import java.lang.ref.WeakReference
-import kotlin.math.ceil
 import kotlin.math.max
 
 @SuppressLint("ViewConstructor")
 class ExploreVC(context: Context) : WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource, ExploreVM.Delegate {
+    override val TAG = "Explore"
 
-    override val ignoreSideGuttering: Boolean = true
+    override var ignoreSideGuttering: Boolean = false
 
     companion object {
         val EXPLORE_HEADER_CELL = WCell.Type(1)
@@ -66,10 +68,11 @@ class ExploreVC(context: Context) : WViewController(context),
         const val SECTION_TRENDING = 2
         const val SECTION_ALL = 3
 
-        private const val PADDING = 4
     }
 
     override val shouldDisplayTopBar = false
+
+    private var pendingTarget: Uri? = null
 
     private val exploreVM by lazy {
         ExploreVM(this)
@@ -150,7 +153,6 @@ class ExploreVC(context: Context) : WViewController(context),
 
         setupNavBar(true)
         setTopBlur(visible = false, animated = false)
-        navigationBar?.titleLabel?.setStyle(22f, WFont.Medium)
         navigationBar?.setTitleGravity(Gravity.START)
 
         view.addView(recyclerView, ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -166,7 +168,7 @@ class ExploreVC(context: Context) : WViewController(context),
     override fun updateTheme() {
         super.updateTheme()
         view.setBackgroundColor(WColor.SecondaryBackground.color)
-        rvAdapter.reloadData()
+        rvAdapter.updateTheme()
     }
 
     override fun insetsUpdated() {
@@ -176,7 +178,7 @@ class ExploreVC(context: Context) : WViewController(context),
             0,
             topPadding,
             0,
-            PADDING.dp + (navigationController?.getSystemBars()?.bottom ?: 0)
+            navigationController?.getSystemBars()?.bottom ?: 0
         )
         bottomReversedCornerView?.setHorizontalPadding(ViewConstants.HORIZONTAL_PADDINGS.dp.toFloat())
         rvAdapter.reloadData()
@@ -188,35 +190,18 @@ class ExploreVC(context: Context) : WViewController(context),
     }
 
     override fun viewWillDisappear() {
+        // We don't want to hide keyboard on search, so super.viewWillDisappear is not called here.
+        Logger.i(Logger.LogTag.SCREEN, "VCWillDisappear: $TAG ${hashCode()}")
         isDisappeared = true
     }
 
     private fun onSiteTap(app: MExploreSite) {
-        if (app.url.isNullOrEmpty())
-            return
-        if (app.isExternal ||
-            (!app.url!!.startsWith("http://") && !app.url!!.startsWith("https://")) ||
-            app.isTelegram
-        ) {
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.setData(app.url?.toUri())
-            window?.startActivity(intent)
+        pendingTarget = null
+        if (app.url.isNullOrEmpty()) {
             return
         }
-        val inAppBrowserVC = InAppBrowserVC(
-            context,
-            navigationController?.tabBarController,
-            InAppBrowserConfig(
-                url = app.url!!,
-                title = app.name,
-                thumbnail = app.iconUrl,
-                injectTonConnectBridge = true,
-                saveInVisitedHistory = true,
-            )
-        )
-        val nav = WNavigationController(window!!)
-        nav.setRoot(inAppBrowserVC)
-        window?.present(nav)
+        val uri = app.uri ?: return
+        openTargetUri(app, uri)
     }
 
     private fun onCategoryTap(category: MExploreCategory) {
@@ -233,7 +218,7 @@ class ExploreVC(context: Context) : WViewController(context),
     private val trendingCellWidth: Int
         get() {
             val cols = calculateNoOfColumns()
-            return (view.width - 22.dp) / cols
+            return (view.width - 4.dp) / cols
         }
 
     override fun onBackPressed(): Boolean {
@@ -251,9 +236,8 @@ class ExploreVC(context: Context) : WViewController(context),
     val catsCount: Int
         get() {
             val colCount = calculateNoOfColumns()
-            return ceil(
-                (exploreVM.showingExploreCategories?.size ?: 0) / colCount.toFloat()
-            ).toInt() * colCount
+            return ((exploreVM.showingExploreCategories?.size
+                ?: 0) / colCount.toFloat()).ceilToInt() * colCount
         }
 
     val showLargeConnectedApps: Boolean
@@ -434,7 +418,14 @@ class ExploreVC(context: Context) : WViewController(context),
     }
 
     override fun sitesUpdated() {
+        val newIgnoreSideGuttering = exploreVM.showingTrendingSites.size > 1
+        if (ignoreSideGuttering != newIgnoreSideGuttering) {
+            ignoreSideGuttering = newIgnoreSideGuttering
+            val padding = if (newIgnoreSideGuttering) 0f else ViewConstants.HORIZONTAL_PADDINGS.dp.toFloat()
+            topReversedCornerView?.setHorizontalPadding(padding)
+        }
         rvAdapter.reloadData()
+        pendingTarget?.let { findSiteAndOpenTargetUri(it) }
     }
 
     override fun accountChanged() {
@@ -485,7 +476,7 @@ class ExploreVC(context: Context) : WViewController(context),
                     url = url,
                     title = it.name,
                     thumbnail = it.iconUrl,
-                    injectTonConnectBridge = true,
+                    injectDappConnect = true,
                     saveInVisitedHistory = true,
                 )
             )
@@ -501,5 +492,49 @@ class ExploreVC(context: Context) : WViewController(context),
         navigationController?.tabBarController?.navigationController?.push(
             ConnectedAppsVC(context)
         )
+    }
+
+    fun findSiteAndOpenTargetUri(targetUri: Uri) {
+        val sites = exploreVM.allSites
+        if (sites == null) {
+            pendingTarget = targetUri
+            return
+        }
+        pendingTarget = null
+
+        val targetHost = targetUri.host?.lowercase()
+        if (targetHost.isNullOrEmpty()) {
+            return
+        }
+
+        val matchedSite = sites.firstOrNull { site ->
+            site.url?.toUri()?.host?.lowercase() == targetHost
+        } ?: return
+
+        openTargetUri(matchedSite, targetUri)
+    }
+
+    private fun openTargetUri(app: MExploreSite, uri: Uri) {
+        val window = this.window ?: return
+        if (app.isExternal || (uri.scheme != "http" && uri.scheme != "https") || app.isTelegram) {
+            window.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setData(uri)
+            })
+            return
+        }
+        val inAppBrowserVC = InAppBrowserVC(
+            context,
+            navigationController?.tabBarController,
+            InAppBrowserConfig(
+                url = uri.toString(),
+                title = app.name,
+                thumbnail = app.iconUrl,
+                injectDappConnect = true,
+                saveInVisitedHistory = true,
+            )
+        )
+        window.present(WNavigationController(window).apply {
+            setRoot(inAppBrowserVC)
+        })
     }
 }

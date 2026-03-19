@@ -1,5 +1,7 @@
 package org.mytonwallet.app_air.uicomponents.base
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.graphics.Color
@@ -17,8 +19,8 @@ import org.mytonwallet.app_air.uicomponents.widgets.hideKeyboard
 import org.mytonwallet.app_air.uicomponents.widgets.lockView
 import org.mytonwallet.app_air.uicomponents.widgets.material.bottomSheetBehavior.BottomSheetBehavior
 import org.mytonwallet.app_air.uicomponents.widgets.material.bottomSheetBehavior.BottomSheetBehavior.BottomSheetCallback
-import org.mytonwallet.app_air.uicomponents.widgets.updateThemeForChildren
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.helpers.WInterpolator
 import java.lang.ref.WeakReference
@@ -43,6 +45,8 @@ class WNavigationController(
 
     interface ITabBarController {
         val navigationController: WNavigationController?
+        val activeNavigationController: WNavigationController?
+        val pausedBlurViews: Boolean
         fun getBottomNavigationHeight(): Int
         fun minimize(
             nav: WNavigationController,
@@ -97,8 +101,8 @@ class WNavigationController(
 
     var isDismissed = false
     fun willBeDismissed() {
+        viewWillDisappear()
         lockView()
-        viewControllers.last().viewWillDisappear()
         hideKeyboard()
         isDismissed = true
     }
@@ -166,26 +170,48 @@ class WNavigationController(
         addView(viewController.view, LayoutParams(MATCH_PARENT, MATCH_PARENT))
         if (presentationConfig.isBottomSheet) {
             // Presented as modal. Should setup bottom sheet behaviour.
-            setupBottomSheetBehaviour(viewController)
             if (viewController.isExpandable)
                 viewController.view.post {
                     setupBottomSheetBehaviour(viewController)
                 }
+            else
+                setupBottomSheetBehaviour(viewController)
         }
     }
 
+    var isDisappeared = true
+        private set
+
     fun viewWillAppear() {
+        Logger.d(Logger.LogTag.SCREEN, "NavWillAppear: hash=${hashCode()}")
+        if (isDisappeared) {
+            isDisappeared = false
+            unblockTouches()
+        }
         viewControllers.lastOrNull()?.viewWillAppear()
     }
 
+    fun viewWillDisappear() {
+        Logger.d(Logger.LogTag.SCREEN, "NavWillDisappear: hash=${hashCode()}")
+        isDisappeared = true
+        viewControllers.lastOrNull()?.viewWillDisappear()
+    }
+
     fun viewDidAppear() {
-        viewControllers.lastOrNull()?.viewDidAppear()
+        viewControllers.lastOrNull()?.apply {
+            if (isDisappeared)
+                viewWillAppear()
+            viewDidAppear()
+        }
+    }
+
+    fun viewDidEnterForeground() {
+        viewControllers.lastOrNull()?.viewDidEnterForeground()
     }
 
     override fun updateTheme() {
         viewControllers.forEach {
-            it.updateTheme()
-            updateThemeForChildren(it.view)
+            it.notifyThemeChanged()
         }
     }
 
@@ -248,17 +274,23 @@ class WNavigationController(
             viewController.view.alpha = 0f
             viewController.view.translationX = 48f * LocaleController.rtlMultiplier
 
+            var ended = false
             val animation = viewController.view.animate()
                 .alpha(1f)
                 .translationX(0f)
                 .setDuration(AnimationConstants.NAV_PUSH)
                 .setInterpolator(WInterpolator.emphasized)
-                .withEndAction {
-                    isAnimating = false
-                    WGlobalStorage.decDoNotSynchronize()
-                    unblockTouches()
-                    onEnd()
-                }
+                .setListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (ended)
+                            return
+                        ended = true
+                        isAnimating = false
+                        WGlobalStorage.decDoNotSynchronize()
+                        unblockTouches()
+                        onEnd()
+                    }
+                })
             viewController.view.post {
                 isAnimating = true
                 WGlobalStorage.incDoNotSynchronize()
@@ -440,6 +472,23 @@ class WNavigationController(
         if (keptFirstViewControllers > 0) {
             viewControllers[keptFirstViewControllers].swipeTouchListener?.behindView =
                 WeakReference(viewControllers[keptFirstViewControllers - 1].view)
+        }
+    }
+
+    fun removeViewController(removingVC: WViewController) {
+        if (viewControllers.lastOrNull() == removingVC) {
+            pop()
+        } else {
+            removingVC.viewWillDisappear()
+            if (removingVC.view.parent == this)
+                removeView(removingVC.view)
+            removingVC.onDestroy()
+            val index = viewControllers.indexOf(removingVC)
+            if (index > 0) {
+                viewControllers.getOrNull(index + 1)?.swipeTouchListener?.behindView =
+                    WeakReference(viewControllers[index - 1].view)
+            }
+            viewControllers.remove(removingVC)
         }
     }
 

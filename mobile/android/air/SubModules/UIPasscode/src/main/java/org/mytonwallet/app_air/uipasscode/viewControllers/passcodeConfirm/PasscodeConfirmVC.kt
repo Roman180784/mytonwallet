@@ -35,6 +35,7 @@ class PasscodeConfirmVC(
     private val allowedToCancel: Boolean = true,
     private val ignoreBiometry: Boolean = false,
 ) : WViewController(context), PasscodeScreenView.Delegate {
+    override val TAG = "PasscodeConfirm"
 
     override val protectFromScreenRecord = true
 
@@ -131,7 +132,7 @@ class PasscodeConfirmVC(
                 ViewConstants.HORIZONTAL_PADDINGS.dp,
                 0,
                 ViewConstants.HORIZONTAL_PADDINGS.dp,
-                0
+                if (passcodeViewState is PasscodeViewState.CustomHeader) 48.dp else 0
             )
         }
     }
@@ -177,7 +178,7 @@ class PasscodeConfirmVC(
         fun onPasscodeVerified() {
             view.lockView()
             isDoingTask = true
-            Logger.i(Logger.LogTag.PASSCODE_CONFIRM, "Running the task")
+            Logger.d(Logger.LogTag.PASSCODE_CONFIRM, "onPasscodeVerified: Running task")
             task(passcode)
             if (isTaskAsync && passcodeViewState !is PasscodeViewState.Default) {
                 navigationBar?.fadeOutActions()
@@ -218,10 +219,10 @@ class PasscodeConfirmVC(
     override fun signOutPressed() {
         super.signOutPressed()
         showAlert(
-            LocaleController.getString("Log Out"),
-            LocaleController.getString("\$remove_all_wallets_desc")
+            LocaleController.getString("Sign Out"),
+            LocaleController.getString("\$logout_warning")
                 .toProcessedSpannableStringBuilder(),
-            LocaleController.getString("Exit"),
+            LocaleController.getString("Sign Out"),
             buttonPressed = {
                 view.lockView()
                 WalletCore.resetAccounts { ok, err ->
@@ -229,7 +230,7 @@ class PasscodeConfirmVC(
                         view.unlockView()
                         showError(err)
                     }
-                    Logger.d(Logger.LogTag.ACCOUNT, "Reset accounts from lock screen")
+                    Logger.d(Logger.LogTag.ACCOUNT, "signOutPressed: Resetting accounts")
                     WGlobalStorage.deleteAllWallets()
                     WSecureStorage.deleteAllWalletValues()
                     WalletContextManager.delegate?.restartApp()

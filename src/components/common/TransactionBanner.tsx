@@ -8,6 +8,7 @@ import type { UserSwapToken, UserToken } from '../../global/types';
 import buildClassName from '../../util/buildClassName';
 import { unique } from '../../util/iteratees';
 import getChainNetworkIcon from '../../util/swap/getChainNetworkIcon';
+import { getIsNativeToken } from '../../util/tokens';
 
 import useLang from '../../hooks/useLang';
 
@@ -24,6 +25,8 @@ interface OwnProps {
   secondText?: string;
   color?: 'purple' | 'green';
   className?: string;
+  textClassName?: string;
+  isTextHidden?: boolean;
 }
 
 function TransactionBanner({
@@ -35,6 +38,8 @@ function TransactionBanner({
   secondText,
   color,
   className,
+  textClassName,
+  isTextHidden,
 }: OwnProps) {
   const lang = useLang();
 
@@ -57,7 +62,7 @@ function TransactionBanner({
         {imageUrls.map((image) => (
           <img src={image} alt="" key={image} className={styles.image} />
         ))}
-        {withChainIcon && tokenIn?.chain && (
+        {withChainIcon && tokenIn?.chain && tokenIn.slug && !getIsNativeToken(tokenIn.slug) && (
           <img
             src={getChainNetworkIcon(tokenIn.chain)}
             alt=""
@@ -80,22 +85,24 @@ function TransactionBanner({
         />
       )}
       {isNftTransaction && renderNftIcon()}
-      <span className={styles.text}>
-        {secondText
-          ? text
-            ? (
-              lang('%amount% to %address%', {
-                amount: (
-                  <span className={buildClassName(styles.bold, isNftTransaction && styles.nftTitle)}>
-                    {text}
-                  </span>
-                ),
-                address: <span className={buildClassName(styles.bold, styles.address)}>{secondText}</span>,
-              })
-            )
-            : lang('$transaction_to', { address: <span className={styles.bold}>{secondText}</span> })
-          : <span className={styles.bold}>{text}</span>}
-      </span>
+      {!isTextHidden && (
+        <span className={buildClassName(styles.text, textClassName)}>
+          {secondText
+            ? text
+              ? (
+                lang('%amount% to %address%', {
+                  amount: (
+                    <span className={buildClassName(styles.bold, isNftTransaction && styles.nftTitle)}>
+                      {text}
+                    </span>
+                  ),
+                  address: <span className={buildClassName(styles.bold, styles.address)}>{secondText}</span>,
+                })
+              )
+              : lang('$transaction_to', { address: <span className={styles.bold}>{secondText}</span> })
+            : <span className={styles.bold}>{text}</span>}
+        </span>
+      )}
       {tokenOut && (
         <TokenIcon
           token={tokenOut}

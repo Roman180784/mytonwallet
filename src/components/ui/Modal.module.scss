@@ -167,27 +167,6 @@
     }
   }
 
-  :global(html.is-native-bottom-sheet) & {
-    .container {
-      align-items: flex-start;
-      background: var(--color-background-window);
-    }
-
-    .dialog {
-      max-height: none;
-      border-radius: 0;
-      box-shadow: none;
-      transition: none;
-    }
-
-    &:global(.closing) .dialog {
-      transform: none;
-    }
-
-    .backdrop {
-      display: none;
-    }
-  }
 }
 
 .container {
@@ -269,7 +248,8 @@
     grid-template-columns: 0.25fr 1.5fr 0.25fr;
   }
 
-  &_back {
+  &_back,
+  &_share {
     cursor: var(--custom-cursor, pointer);
 
     z-index: 1;
@@ -277,10 +257,11 @@
     display: flex;
     grid-area: back;
     align-items: center;
+  }
 
+  &_back {
     margin-left: -0.875rem;
     padding: 0 0.5rem;
-
     font-size: 1.0625rem;
     color: var(--color-accent);
 
@@ -291,6 +272,22 @@
 
   &_backIcon {
     font-size: 1.5rem;
+  }
+
+  &_share {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+
+    font-size: 2rem;
+    color: var(--color-gray-3);
+
+    @include mixins.transition('color 200ms');
+
+    &:hover,
+    &:focus-visible {
+      color: var(--color-accent);
+    }
   }
 }
 
@@ -315,10 +312,7 @@
     color: var(--color-text) !important;
   }
 
-  &:active {
-    // Optimization
-    transition: none;
-  }
+  @include mixins.active-transition-optimization();
 
   :global(html.animation-level-0) & {
     transition: var(--no-animation-transition) !important;
@@ -344,9 +338,9 @@
 .closeButton {
   grid-area: button;
 
-  width: 1.875rem !important;
+  width: 2rem !important;
   max-width: none !important;
-  height: 1.875rem !important;
+  height: 2rem !important;
   margin-left: auto;
   padding: 0 !important;
   border-radius: 50% !important;
@@ -363,10 +357,7 @@
     background-color: var(--color-close-button-background-hover) !important;
   }
 
-  &:active {
-    // Optimization
-    transition: none;
-  }
+  @include mixins.active-transition-optimization();
 
   :global(html.animation-level-0) & {
     transition: var(--no-animation-transition) !important;
@@ -550,7 +541,6 @@
     padding-top: 5.5rem;
   }
 
-  :global(.is-native-bottom-sheet),
   :global(html:not(.is-android-app)) & {
     padding-bottom: max(var(--safe-area-bottom, 1rem), 1rem);
   }

@@ -11,7 +11,8 @@ private let START_STEPS: OrderedDictionary<StepId, StepStatus> = [
 ]
 private let log = Log("LedgerSignModel")
 
-public final class LedgerSignModel: LedgerBaseModel, @unchecked Sendable {
+@MainActor
+public final class LedgerSignModel: LedgerBaseModel, Sendable {
     
     public let accountId: String
     public let fromAddress: String
@@ -24,7 +25,7 @@ public final class LedgerSignModel: LedgerBaseModel, @unchecked Sendable {
         await super.init(steps: START_STEPS)
     }
     
-    deinit {
+    isolated deinit {
         log.info("deinit")
         task?.cancel()
     }
@@ -34,7 +35,7 @@ public final class LedgerSignModel: LedgerBaseModel, @unchecked Sendable {
         try await openApp()
         try await signAndSend()
         try? await Task.sleep(for: .seconds(0.8))
-        await onDone?()
+        onDone?()
     }
     
     func signAndSend() async throws {
@@ -63,13 +64,19 @@ public final class LedgerSignModel: LedgerBaseModel, @unchecked Sendable {
             
         case .signDappTransfers(update: let update):
             do {
-                let signedMessages = try await Api.signTransfers(
+                let account = AccountStore.get(accountId: update.accountId)
+                let chain = update.operationChain
+                let address = account.getAddress(chain: chain) ?? ""
+                let dappChain = ApiDappSessionChain(chain: chain, address: address, network: account.network)
+                let signedMessages = try await Api.signDappTransfers(
+                    dappChain: dappChain,
                     accountId: update.accountId,
                     messages: update.transactions.map(ApiTransferToSign.init),
                     options: .init(
                         password: nil,
                         vestingAddress: update.vestingAddress,
                         validUntil: update.validUntil,
+                        isLegacyOutput: update.isLegacyOutput,
                     )
                 )
                 try await Api.confirmDappRequestSendTransaction(
@@ -84,15 +91,21 @@ public final class LedgerSignModel: LedgerBaseModel, @unchecked Sendable {
         case .signLedgerProof(let promiseId, let proof):
             do {
                 let accountId = try AccountStore.accountId.orThrow()
-                var result: ApiSignTonProofResult?
+                var signatures: [String]? = nil
                 if let proof {
-                    result = try await Api.signTonProof(accountId: accountId, proof: proof, password: nil)
+                    let account = AccountStore.get(accountId: accountId)
+                    let tonAddress = account.getAddress(chain: .ton) ?? ""
+                    let dappChains = [
+                        ApiDappSessionChain(chain: .ton, address: tonAddress, network: account.network),
+                    ]
+                    let result = try await Api.signDappProof(dappChains: dappChains, accountId: accountId, proof: proof, password: nil)
+                    signatures = result.signatures
                 }
                 try await Api.confirmDappRequestConnect(
                     promiseId: promiseId,
                     data: .init(
                         accountId: accountId,
-                        proofSignature: result?.signature
+                        proofSignatures: signatures
                     )
                 )
             } catch {
@@ -100,15 +113,17 @@ public final class LedgerSignModel: LedgerBaseModel, @unchecked Sendable {
                 throw error
             }
 
-        case .signNftTransfer(accountId: let accountId, nft: let nft, toAddress: let toAddress, comment: let comment, realFee: let realFee):
+        case .signNftTransfer(chain: let chain, accountId: let accountId, nft: let nft, toAddress: let toAddress, comment: let comment, realFee: let realFee, let isNftBurn):
             do {
                 let result = try await Api.submitNftTransfers(
+                    chain: chain,
                     accountId: accountId,
                     password: nil,
                     nfts: [nft],
                     toAddress: toAddress,
                     comment: comment,
-                    totalRealFee: realFee
+                    totalRealFee: realFee,
+                    isNftBurn: isNftBurn,
                 )
                 if let error = result.error {
                     throw BridgeCallError(message: error, payload: nil)

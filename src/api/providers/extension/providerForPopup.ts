@@ -9,9 +9,10 @@ import initExtensionMethods from '../../extensionMethods/init';
 import * as methods from '../../methods';
 import initApi, { destroy as destroyMethods } from '../../methods/init';
 
-void createExtensionInterface(POPUP_PORT, (name: string, origin?: string, ...args: any[]) => {
+// FIXME: fix port disconnection on popup close
+void createExtensionInterface(POPUP_PORT, async (name: string, origin?: string, ...args: any[]) => {
   if (name === 'init') {
-    void initApi(args[0] as OnApiUpdate, args[1] as ApiInitArgs);
+    await initApi(args[0] as OnApiUpdate, args[1] as ApiInitArgs);
     return initExtensionMethods(args[0] as OnApiUpdate);
   } else {
     if (name in extensionMethods) {

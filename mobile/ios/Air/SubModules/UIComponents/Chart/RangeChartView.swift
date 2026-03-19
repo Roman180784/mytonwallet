@@ -113,22 +113,11 @@ public class RangeChartView: UIControl, WThemedView, UIGestureRecognizerDelegate
         self.upperBoundTintView.backgroundColor = Self.rangeViewTintColor
     }
     
-    public override func awakeFromNib() {
-        super.awakeFromNib()
-        
-        self.setup()
-    }
-    
     public var rangeDidChangeClosure: ((ClosedRange<CGFloat>) -> Void)?
     public var touchedOutsideClosure: (() -> Void)?
 
     required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
-    }
-    
-    public func setRangePaging(enabled: Bool, minimumSize: CGFloat) {
-        isRangePagingEnabled = enabled
-        minimumRangeDistance = minimumSize
     }
     
     public func setRange(_ range: ClosedRange<CGFloat>, animated: Bool) {
@@ -244,10 +233,6 @@ private extension RangeChartView {
     
     func locationInView(for fraction: CGFloat) -> CGFloat {
         return contentFrame.minX + contentFrame.width * fraction
-    }
-    
-    func locationInView(for fraction: Double) -> CGFloat {
-        return locationInView(for: CGFloat(fraction))
     }
     
     func fractionFor(offsetX: CGFloat) -> CGFloat {

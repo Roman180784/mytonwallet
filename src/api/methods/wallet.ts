@@ -1,11 +1,19 @@
 import * as tonWebMnemonic from 'tonweb-mnemonic';
-import type { SignDataRpcResponseSuccess } from '@tonconnect/protocol';
 
-import type { ApiDappRequestConfirmation } from '../tonConnect/types';
-import type { ApiAccountWithMnemonic, ApiAnyDisplayError, ApiChain, ApiNetwork, ApiSignedTransfer } from '../types';
+import type { DappProtocolType, DappSignDataResult } from '../dappProtocols';
+import type { ApiDappRequestConfirmation } from '../dappProtocols/adapters/tonConnect/types';
+import type {
+  OnApiUpdate } from '../types';
+import {
+  type ApiAccountWithMnemonic,
+  type ApiAnyDisplayError,
+  type ApiChain,
+  type ApiNetwork,
+  type ApiSignedTransfer,
+} from '../types';
 
+import { logDebugError } from '../../util/logs';
 import chains from '../chains';
-import * as ton from '../chains/ton';
 import {
   fetchStoredAccount,
   fetchStoredAccounts,
@@ -14,13 +22,16 @@ import {
 } from '../common/accounts';
 import * as dappPromises from '../common/dappPromises';
 import { getMnemonic } from '../common/mnemonic';
-import { handleServerError } from '../errors';
+import { upgradeMultichainAccounts } from './auth';
 
-export async function fetchPrivateKey(accountId: string, password: string) {
-  const account = await fetchStoredAccount<ApiAccountWithMnemonic>(accountId);
-  const privateKey = await ton.fetchPrivateKey(accountId, password, account);
+let onUpdate: OnApiUpdate;
 
-  return Buffer.from(privateKey!).toString('hex');
+export function initWallet(_onUpdate: OnApiUpdate) {
+  onUpdate = _onUpdate;
+}
+
+export function fetchPrivateKey(accountId: string, chain: ApiChain, password: string) {
+  return chains[chain].fetchPrivateKeyString(accountId, password);
 }
 
 export async function fetchMnemonic(accountId: string, password: string) {
@@ -47,6 +58,7 @@ export async function checkWorkerStorageIntegrity(): Promise<boolean> {
 }
 
 export async function verifyPassword(password: string): Promise<boolean> {
+  let isValidPassword = false;
   try {
     const [accountId, account] = (await getAccountWithMnemonic()) ?? [];
     if (!accountId || !account) {
@@ -54,9 +66,26 @@ export async function verifyPassword(password: string): Promise<boolean> {
     }
 
     const mnemonic = await getMnemonic(accountId, password, account);
-    return Boolean(mnemonic);
-  } catch {
-    return false;
+    if (!mnemonic) {
+      return false;
+    }
+
+    isValidPassword = true;
+
+    await upgradeMultichainAccounts(password);
+
+    return true;
+  } catch (err: any) {
+    logDebugError('verifyPassword', err);
+
+    if (isValidPassword) {
+      onUpdate?.({
+        type: 'showError',
+        error: err,
+      });
+    }
+
+    return isValidPassword;
   }
 }
 
@@ -68,11 +97,17 @@ export function confirmDappRequestConnect(promiseId: string, data: ApiDappReques
   dappPromises.resolveDappPromise(promiseId, data);
 }
 
-export function confirmDappRequestSendTransaction(promiseId: string, data: ApiSignedTransfer[]) {
+export function confirmDappRequestSendTransaction<T extends DappProtocolType>(
+  promiseId: string,
+  data: ApiSignedTransfer<T>[],
+) {
   dappPromises.resolveDappPromise(promiseId, data);
 }
 
-export function confirmDappRequestSignData(promiseId: string, signedData: SignDataRpcResponseSuccess['result']) {
+export function confirmDappRequestSignData<T extends DappProtocolType>(
+  promiseId: string,
+  signedData: DappSignDataResult<T>,
+) {
   dappPromises.resolveDappPromise(promiseId, signedData);
 }
 
@@ -84,19 +119,8 @@ export function fetchAddress(accountId: string, chain: ApiChain) {
   return fetchStoredAddress(accountId, chain);
 }
 
-export async function getAddressInfo(network: ApiNetwork, toAddress: string): Promise<{
-  addressName?: string;
-  isScam?: boolean;
-  resolvedAddress?: string;
-  isToAddressNew?: boolean;
-  isBounceable?: boolean;
-  isMemoRequired?: boolean;
-} | { error: string }> {
-  try {
-    return await ton.checkToAddress(network, toAddress);
-  } catch (err: any) {
-    return handleServerError(err);
-  }
+export async function getAddressInfo(chain: ApiChain, network: ApiNetwork, address: string) {
+  return await chains[chain].getAddressInfo(network, address);
 }
 
 /**

@@ -1,19 +1,20 @@
 package org.mytonwallet.app_air.walletbasecontext.localization
 
-enum class WLanguage(val langCode: String) {
-    ENGLISH("en"),
-    RUSSIAN("ru");
+import java.util.Locale
 
-    /*CHINESE_SIMPLIFIED("zh-Hans"),
+enum class WLanguage(val langCode: String) {
+    CHINESE_SIMPLIFIED("zh-Hans"),
     CHINESE_TRADITIONAL("zh-Hant"),
     ENGLISH("en"),
     GERMAN("de"),
-    PERSIAN("fa"),
+
+    //PERSIAN("fa"),
     POLISH("pl"),
+    RUSSIAN("ru"),
     SPANISH("es"),
     THAI("th"),
     TURKISH("tr"),
-    UKRAINIAN("uk");*/
+    UKRAINIAN("uk");
 
     val isRTL: Boolean
         get() {
@@ -25,7 +26,7 @@ enum class WLanguage(val langCode: String) {
             return when (this) {
                 ENGLISH -> "English"
                 RUSSIAN -> "Russian"
-                /*SPANISH -> "Spanish"
+                SPANISH -> "Spanish"
                 CHINESE_TRADITIONAL -> "Chinese (Traditional)"
                 CHINESE_SIMPLIFIED -> "Chinese (Simplified)"
                 TURKISH -> "Turkish"
@@ -33,7 +34,7 @@ enum class WLanguage(val langCode: String) {
                 THAI -> "Thai"
                 UKRAINIAN -> "Ukrainian"
                 POLISH -> "Polish"
-                PERSIAN -> "Persian"*/
+                //PERSIAN -> "Persian"
             }
         }
 
@@ -42,7 +43,7 @@ enum class WLanguage(val langCode: String) {
             return when (this) {
                 ENGLISH -> "English"
                 RUSSIAN -> "Русский"
-                /*SPANISH -> "Español"
+                SPANISH -> "Español"
                 CHINESE_TRADITIONAL -> "繁體"
                 CHINESE_SIMPLIFIED -> "简体"
                 TURKISH -> "Türkçe"
@@ -50,7 +51,31 @@ enum class WLanguage(val langCode: String) {
                 THAI -> "ไทย"
                 UKRAINIAN -> "Українська"
                 POLISH -> "Polski"
-                PERSIAN -> "فارسی"*/
+                //PERSIAN -> "فارسی"
             }
         }
+
+    companion object {
+        fun valueOfLocale(locale: Locale): WLanguage? {
+            val language = locale.language.lowercase(Locale.ROOT)
+
+            if (language == "zh") {
+                return chineseVariant(locale)
+            }
+
+            return entries.firstOrNull { it.langCode == language }
+        }
+
+        private fun chineseVariant(locale: Locale): WLanguage {
+            val script = locale.script
+            val country = locale.country.uppercase(Locale.ROOT)
+
+            return when {
+                script.equals("Hant", ignoreCase = true) -> CHINESE_TRADITIONAL
+                script.equals("Hans", ignoreCase = true) -> CHINESE_SIMPLIFIED
+                country in setOf("TW", "HK", "MO") -> CHINESE_TRADITIONAL
+                else -> CHINESE_SIMPLIFIED
+            }
+        }
+    }
 }

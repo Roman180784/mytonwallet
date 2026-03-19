@@ -10,8 +10,10 @@ import UIKit
 import UIComponents
 import WalletCore
 import WalletContext
-import Capacitor
 import WidgetKit
+#if canImport(Capacitor)
+import Capacitor
+#endif
 
 private let log = Log("SceneDelegate")
 
@@ -40,6 +42,8 @@ final class SceneDelegate: UIResponder, UISceneDelegate {
             handleUrl(url)
         } else if let urlContext = connectionOptions.urlContexts.first {
             handleUrl(urlContext.url)
+        } else if let notificationResponse = connectionOptions.notificationResponse {
+            handleNotification(notificationResponse)
         }
         
         WidgetCenter.shared.reloadAllTimelines()
@@ -47,8 +51,7 @@ final class SceneDelegate: UIResponder, UISceneDelegate {
     
     func sceneWillResignActive(_ scene: UIScene) {
         log.info("sceneWillResignActive")
-        AirLauncher.willResignActive()
-        
+
         WidgetCenter.shared.reloadAllTimelines()
     }
     
@@ -68,7 +71,15 @@ final class SceneDelegate: UIResponder, UISceneDelegate {
         if isOnTheAir {
             AirLauncher.handle(url: url)
         } else {
+            #if canImport(Capacitor)
             _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: url)
+            #endif
+        }
+    }
+    
+    private func handleNotification(_ notificationResponse: UNNotificationResponse) {
+        if isOnTheAir {
+            AirLauncher.handle(notification: notificationResponse.notification)
         }
     }
     
@@ -103,7 +114,7 @@ final class SceneDelegate: UIResponder, UISceneDelegate {
     
     func sceneDidBecomeActive(_ scene: UIScene) {
         log.info("sceneDidBecomeActive")
-        AirLauncher.willBecomeActive()
+        
         if let view = self.backgroundCover {
             UIView.animate(withDuration: 0.15) {
                 view.alpha = 0

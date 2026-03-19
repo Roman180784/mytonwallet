@@ -19,15 +19,15 @@ import {
   GLOBAL_STATE_CACHE_KEY,
   IS_CAPACITOR,
   MAIN_ACCOUNT_ID,
-  TOKEN_INFO,
   TONCOIN,
 } from '../config';
 import { buildAccountId, parseAccountId } from '../util/account';
 import { getActivityTokenSlugs, getIsActivityPending, getIsTxIdLocal } from '../util/activities';
 import { bigintReviver } from '../util/bigint';
+import { getTokenInfo } from '../util/chain';
 import isEmptyObject from '../util/isEmptyObject';
 import {
-  cloneDeep, extractKey, filterValues, mapValues, pick, pickTruthy,
+  cloneDeep, extractKey, filterValues, mapValues, omit, pick, pickTruthy, unique,
 } from '../util/iteratees';
 import {
   clearPoisoningCache,
@@ -377,9 +377,7 @@ function migrateCache(cached: GlobalState, initialState: GlobalState) {
   }
 
   if (cached.stateVersion === 23) {
-    if (!('isSortByValueEnabled' in cached.settings)) {
-      cached.settings.isSortByValueEnabled = initialState.settings.isSortByValueEnabled;
-    }
+    // Removed: isSortByValueEnabled initialization (deprecated in v50)
     cached.stateVersion = 24;
   }
 
@@ -526,7 +524,10 @@ function migrateCache(cached: GlobalState, initialState: GlobalState) {
   if (cached.stateVersion === 46) {
     if (cached.accounts) {
       for (const _account of Object.values(cached.accounts.byId)) {
-        const account = _account as Account & { ledger?: { index: number } };
+        const account = _account as Account & {
+          ledger?: { index: number };
+          byChain: { ton?: { ledgerIndex?: number } };
+        };
 
         if (
           account.type !== 'hardware'
@@ -538,9 +539,76 @@ function migrateCache(cached: GlobalState, initialState: GlobalState) {
         delete account.ledger;
       }
     }
+
     cached.stateVersion = 47;
   }
 
+  if (cached.stateVersion === 47) {
+    cached.pushNotifications.enabledAccounts = Object.keys(cached.pushNotifications.enabledAccounts ?? {});
+    cached.stateVersion = 48;
+  }
+
+  if (cached.stateVersion <= 49) {
+    // Android app specific migration
+    cached.stateVersion = 50;
+  }
+
+  if (cached.stateVersion === 49) {
+    // Initialize pinnedSlugs for all accounts
+    if (cached.settings?.byAccountId) {
+      Object.values(cached.settings.byAccountId).forEach((accountSettings) => {
+        if (accountSettings && !accountSettings.pinnedSlugs) {
+          accountSettings.pinnedSlugs = [];
+        }
+      });
+    }
+
+    // Remove global isSortByValueEnabled
+    if (cached.settings && 'isSortByValueEnabled' in cached.settings) {
+      const { isSortByValueEnabled: _, ...restSettings } = cached.settings as any;
+      cached.settings = restSettings;
+    }
+
+    cached.stateVersion = 50;
+  }
+
+  if (cached.stateVersion === 50) {
+    clearActivities();
+    cached.stateVersion = 51;
+  }
+
+  if (cached.stateVersion === 51) {
+    if (cached.byAccountId && cached.settings?.byAccountId) {
+      for (const accountId of Object.keys(cached.byAccountId)) {
+        const accountState = cached.byAccountId[accountId];
+        const stateById = accountState.staking?.stateById;
+        if (!stateById) continue;
+
+        const stakingSlugs = Object.values(stateById)
+          .filter((state: any) => state?.tokenSlug)
+          .map((state: any) => `staking-${state.tokenSlug}`);
+
+        if (stakingSlugs.length > 0) {
+          const accountSettings = cached.settings.byAccountId[accountId] ??= {} as any;
+          const { pinnedSlugs = [] } = accountSettings;
+          accountSettings.pinnedSlugs = unique([...stakingSlugs, ...pinnedSlugs]);
+        }
+      }
+    }
+
+    cached.stateVersion = 52;
+  }
+  if (cached.stateVersion === 52) {
+    if (cached.byAccountId) {
+      for (const accountId of Object.keys(cached.byAccountId)) {
+        if (cached.byAccountId[accountId]?.nfts?.collectionTabs) {
+          cached.byAccountId[accountId].nfts.collectionTabs = cached.byAccountId[accountId].nfts.collectionTabs
+            ?.map((e) => typeof e === 'string' ? { address: e, chain: 'ton' } : e) || [];
+        }
+      }
+    }
+    cached.stateVersion = 53;
+  }
   // When adding migration here, increase `STATE_VERSION`
 }
 
@@ -549,7 +617,7 @@ function loadMemoryCache(cached: GlobalState) {
 }
 
 const getUsedTokenSlugs = (reducedGlobal: GlobalState): string[] => {
-  const usedTokenSlugs = new Set<string>(Object.keys(TOKEN_INFO));
+  const usedTokenSlugs = new Set<string>(Object.keys(getTokenInfo()));
 
   if (reducedGlobal.currentAccountId) {
     const currentTokenSlug = reducedGlobal.byAccountId[reducedGlobal.currentAccountId]?.currentTokenSlug;
@@ -595,13 +663,15 @@ function updateCache(force?: boolean) {
     return;
   }
 
-  const global = getGlobal();
+  const global = getGlobalWithoutTemporaryAccount();
 
   const accountsById = global.accounts?.byId || {};
   const reducedGlobal: GlobalState = {
     ...INITIAL_STATE,
     ...pick(global, [
       'currentAccountId',
+      // The temporary account is correctly removed from the state during the initialization phase
+      'currentTemporaryViewAccountId',
       'stateVersion',
       'restrictions',
       'pushNotifications',
@@ -609,6 +679,8 @@ function updateCache(force?: boolean) {
       'isManualLockActive',
       'stakingDefault',
       'currencyRates',
+      'accountSelectorViewMode',
+      'seasonalTheme',
     ]),
     accounts: {
       byId: accountsById,
@@ -628,6 +700,37 @@ function updateCache(force?: boolean) {
 
   const json = JSON.stringify(reducedGlobal);
   localStorage.setItem(GLOBAL_STATE_CACHE_KEY, json);
+}
+
+function getGlobalWithoutTemporaryAccount(): GlobalState {
+  const global = getGlobal();
+  const temporaryAccountId = global.currentTemporaryViewAccountId;
+  if (!temporaryAccountId) return global;
+
+  const accountsById = global.accounts?.byId;
+  if (!accountsById || !(temporaryAccountId in accountsById)) {
+    return global;
+  }
+
+  const newAccountsById = omit(global.accounts!.byId, [temporaryAccountId]);
+  const newByAccountId = omit(global.byAccountId, [temporaryAccountId]);
+  const newSettingsByAccountId = omit(global.settings.byAccountId, [temporaryAccountId]);
+  const orderedAccountIds = global.settings.orderedAccountIds?.filter((id) => id !== temporaryAccountId);
+
+  return {
+    ...global,
+    currentTemporaryViewAccountId: undefined,
+    accounts: {
+      ...global.accounts,
+      byId: newAccountsById,
+    },
+    byAccountId: newByAccountId,
+    settings: {
+      ...global.settings,
+      byAccountId: newSettingsByAccountId,
+      orderedAccountIds,
+    },
+  };
 }
 
 function reduceByAccountId(global: GlobalState) {

@@ -20,7 +20,6 @@ import org.mytonwallet.app_air.uicomponents.widgets.WTokenMaxButton
 import org.mytonwallet.app_air.uicomponents.widgets.WTokenSymbolIconView
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
@@ -133,7 +132,7 @@ class SwapAssetInputView(context: Context) : WCell(context), WThemedView {
         }
 
         currentAsset = asset
-        assetView.setAsset(asset)
+        assetView.setAsset(asset, showChain = true)
         asset?.let {
             amountEditText.amountTextWatcher.decimals = it.decimals
             amountEditText.amountTextWatcher.afterTextChanged(amountEditText.text)
@@ -153,13 +152,9 @@ class SwapAssetInputView(context: Context) : WCell(context), WThemedView {
 
     override fun updateTheme() {
         if (mode == Mode.SELL) {
-            setBackgroundColor(WColor.Background.color, ViewConstants.TOP_RADIUS.dp, 0f)
+            setBackgroundColor(WColor.Background.color, ViewConstants.TOOLBAR_RADIUS.dp, 0f)
         } else {
-            if (ThemeManager.uiMode.hasRoundedCorners) {
-                setBackgroundColor(WColor.Background.color, 0f, ViewConstants.BIG_RADIUS.dp)
-            } else {
-                background = separatorBackgroundDrawable
-            }
+            setBackgroundColor(WColor.Background.color, 0f, ViewConstants.BLOCK_RADIUS.dp)
         }
         separatorBackgroundDrawable.invalidateSelf()
         leftTopLabel.setTextColor(WColor.SecondaryText.color)

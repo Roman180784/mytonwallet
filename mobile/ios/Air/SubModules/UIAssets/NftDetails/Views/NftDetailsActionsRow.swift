@@ -1,250 +1,179 @@
-
 import SwiftUI
 import UIKit
 import UIComponents
 import WalletContext
 import WalletCore
-import Kingfisher
-
+import Dependencies
+import Perception
 
 struct NftDetailsActionsRow: View {
-    
-    @ObservedObject var viewModel: NftDetailsViewModel
-    
-    @Environment(\.colorScheme) private var colorScheme
-    
-    @StateObject private var wearMenu: MenuContext = MenuContext()
-    @StateObject private var moreMenu: MenuContext = MenuContext()
-    
+
+    var viewModel: NftDetailsViewModel
+
     var body: some View {
-        HStack(spacing: 8) {
-            wear
-            send
-            share
-            more
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 16)
-        .tint(viewModel.isExpanded ? Color.white : Color(WTheme.tint))
-        .environmentObject(viewModel)
-        .fixedSize(horizontal: false, vertical: true)
-        .task {
-            wearMenu.onAppear = {
-                viewModel.selectedSubmenu = "wear"
-            }
-            wearMenu.onDismiss = {
-                viewModel.selectedSubmenu = nil
-            }
-            moreMenu.onAppear = {
-                viewModel.selectedSubmenu = "more"
-            }
-            moreMenu.onDismiss = {
-                viewModel.selectedSubmenu = nil
-            }
+        WithPerceptionTracking {
+            @Perception.Bindable var viewModel = viewModel
+            NftDetailsActionsToolbarRepresentable(model: .init(
+                nft: viewModel.nft,
+                accountId: viewModel.account.id,
+                accountNetwork: viewModel.account.network,
+                accountType: viewModel.account.type,
+                linkedAddressForNft: viewModel.$account.domains.linkedAddressByAddress[viewModel.nft.address]?.nilIfEmpty
+            ))
+                .frame(height: WScalableButton.preferredHeight)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+                .tint(Color(WTheme.tint))
         }
     }
+}
+
+private final class NftDetailsActionsToolbar: ButtonsToolbar {
+    var wearButton: WScalableButton!
+    var sendButton: WScalableButton!
+    var shareButton: WScalableButton!
+    var moreButton: WScalableButton!
     
-    @ViewBuilder var wear: some View {
-        if viewModel.nft.isMtwCard {
-            ZStack {
-                ActionButton(
-                    viewModel: viewModel,
-                    id: "wear",
-                    title: lang("Wear").lowercased(),
-                    icon: "ActionWear24"
-                ) {
-                }
-                Color.clear.contentShape(.rect)
-            }
-            .compositingGroup()
-            .menuSource(menuContext: wearMenu)
-            .task {
-                wearMenu.makeConfig = {
-                    let nft = viewModel.nft
-                    var items: [MenuItem] = []
-                    if let mtwCardId = nft.metadata?.mtwCardId {
-                        let isCurrent = mtwCardId == AccountStore.currentAccountCardBackgroundNft?.metadata?.mtwCardId
-                        if isCurrent {
-                            items += .button(id: "0-card", title: lang("Reset Card"), trailingIcon: .air("MenuInstallCard26")) {
-                                AccountStore.currentAccountCardBackgroundNft = nil
-                                AccountStore.currentAccountAccentColorNft = nil
-                            }
-                        } else {
-                            items += .button(id: "0-card", title: lang("Install Card"), trailingIcon: .air("MenuInstallCard26")) {
-                                AccountStore.currentAccountCardBackgroundNft = nil
-                                AccountStore.currentAccountAccentColorNft = nil
-                            }
-                        }
-                        let isCurrentAccent = mtwCardId == AccountStore.currentAccountAccentColorNft?.metadata?.mtwCardId
-                        if isCurrentAccent {
-                            items += .button(id: "0-palette", title: lang("Reset Palette"), trailingIcon: .air("custom.paintbrush.badge.xmark")) {
-                                AccountStore.currentAccountAccentColorNft = nil
-                            }
-                        } else {
-                            items += .button(id: "0-palette", title: lang("Install Palette"), trailingIcon: .air("MenuBrush26")) {
-                                AccountStore.currentAccountAccentColorNft = nft
-                            }
-                        }
+    struct Model: Equatable {
+        let nft: ApiNft
+        let accountId: String
+        let accountNetwork: ApiNetwork
+        let accountType: AccountType
+        let linkedAddressForNft: String?
+    }
+
+    private var model: Model!
+
+    func configure(model: Model) {
+        beginUpdate()
+        defer { endUpdate() }
+        
+        self.model = model
+        if wearButton == nil {
+            setupButtons()
+        }
+        wearButton.isHidden = !model.nft.isMtwCard
+    }
+
+    private func setupButtons() {
+        let wear = WScalableButton(title: lang("Wear"), image: .airBundle("WearIconBold"), onTap: {})
+        wear.attachMenu(presentOnTap: true, makeConfig: { [weak self] in
+            guard let self, let model = self.model else { return MenuConfig(menuItems: []) }
+            @Dependency(\.accountSettings) var _accountSettings
+            let accountSettings = _accountSettings.for(accountId: model.accountId)
+            let nft = model.nft
+            var items: [MenuItem] = []
+            if let mtwCardId = nft.metadata?.mtwCardId {
+                let isCurrent = mtwCardId == accountSettings.backgroundNft?.metadata?.mtwCardId
+                if isCurrent {
+                    items += .button(id: "0-card", title: lang("Reset Card"), trailingIcon: .air("MenuInstallCard26")) {
+                        accountSettings.setBackgroundNft(nil)
                     }
-                    return MenuConfig(menuItems: items)
+                } else {
+                    items += .button(id: "0-card", title: lang("Install Card"), trailingIcon: .air("MenuInstallCard26")) {
+                        accountSettings.setBackgroundNft(nft)
+                        accountSettings.setAccentColorNft(nft)
+                    }
+                }
+                let isCurrentAccent = mtwCardId == accountSettings.accentColorNft?.metadata?.mtwCardId
+                if isCurrentAccent {
+                    items += .button(id: "0-palette", title: lang("Reset Palette"), trailingIcon: .air("custom.paintbrush.badge.xmark")) {
+                        accountSettings.setAccentColorNft(nil)
+                    }
+                } else {
+                    items += .button(id: "0-palette", title: lang("Apply Palette"), trailingIcon: .air("MenuBrush26")) {
+                        accountSettings.setAccentColorNft(nft)
+                    }
                 }
             }
-        }
-    }
-    
-    @ViewBuilder var send: some View {
-        ActionButton(
-            viewModel: viewModel,
-            id: "send",
-            title: lang("Send").lowercased(),
-            icon: "ActionSend24"
-        ) {
-            AppActions.showSend(prefilledValues: .init(nfts: [viewModel.nft], nftSendMode: .send))
-        }
-    }
-    
-    @ViewBuilder var share: some View {
-        ActionButton(
-            viewModel: viewModel,
-            id: "share",
-            title: lang("Share").lowercased(),
-            icon: "ActionShare24"
-        ) {
-            AppActions.shareUrl(ExplorerHelper.nftUrl(viewModel.nft))
-        }
-    }
-    
-    @ViewBuilder var more: some View {
-        ZStack {
-            ActionButton(
-                viewModel: viewModel,
-                id: "more",
-                title: lang("More").lowercased(),
-                icon: "ActionMore24"
-            ) {
+            return MenuConfig(menuItems: items)
+        })
+        addArrangedSubview(wear)
+        wearButton = wear
+
+        let send = WScalableButton(
+            title: lang("Send"),
+            image: .airBundle("SendIconBold" ),
+            onTap: { [weak self] in
+                guard let model = self?.model else { return }
+                AppActions.showSend(prefilledValues: .init(mode: .sendNft, nfts: [model.nft]))
             }
-            Color.clear.contentShape(.rect)
-        }
-        .compositingGroup()
-        .menuSource(menuContext: moreMenu)
-        .task {
-            self.moreMenu.makeConfig = {
-                var items: [MenuItem] = []
-                items += .button(id: "0-hide", title: lang("Hide"), trailingIcon: .air("MenuHide26")) {
-                    NftStore.setHiddenByUser(accountId: AccountStore.accountId ?? "", nftId: viewModel.nft.id, isHidden: true)
+        )
+        addArrangedSubview(send)
+        sendButton = send
+
+        let share = WScalableButton(
+            title: lang("Share"),
+            image: .airBundle("ShareIconBold"),
+            onTap: { [weak self] in
+                guard let model = self?.model else { return }
+                AppActions.shareUrl(ExplorerHelper.viewNftUrl(network: model.accountNetwork, nftAddress: model.nft.address))
+            }
+        )
+        addArrangedSubview(share)
+        shareButton = share
+
+        let more = WScalableButton(title: lang("More"), image: .airBundle("MoreIconBold"), onTap: {})
+        more.attachMenu(presentOnTap: true, makeConfig: { [weak self] in
+            guard let model = self?.model else { return MenuConfig(menuItems: []) }
+            let accountId = model.accountId
+            var items: [MenuItem] = []
+            if model.nft.isTonDns && !model.nft.isOnSale && model.accountType == .mnemonic {
+                let linkedAddress = model.linkedAddressForNft
+                let title = linkedAddress == nil ? lang("Link to Wallet") : lang("Change Linked Wallet")
+                items += .button(id: "0-link", title: title, trailingIcon: .system("link")) {
+                    AppActions.showLinkDomain(accountSource: .accountId(accountId), nftAddress: model.nft.address)
                 }
-                items += .button(id: "0-burn", title: lang("Burn"), trailingIcon: .air("MenuBurn26"), isDangerous: true) {
-                    AppActions.showSend(prefilledValues: .init(nfts: [viewModel.nft], nftSendMode: .burn))
-                }
-                items += .wideSeparator()
+            }
+            items += .button(id: "0-hide", title: lang("Hide"), trailingIcon: .air("MenuHide26")) {
+                NftStore.setHiddenByUser(accountId: accountId, nftId: model.nft.id, isHidden: true)
+            }
+            items += .button(id: "0-burn", title: lang("Burn"), trailingIcon: .air("MenuBurn26"), isDangerous: true) {
+                AppActions.showSend(prefilledValues: .init(mode: .burnNft, nfts: [model.nft]))
+            }
+            items += .wideSeparator()
+            if model.nft.chain == .ton, !ConfigStore.shared.shouldRestrictBuyNfts {
                 items += .button(id: "0-getgems", title: "Getgems", trailingIcon: .air("MenuGetgems26")) {
-                    let url = ExplorerHelper.nftUrl(viewModel.nft)
+                    let url = ExplorerHelper.nftUrl(model.nft)
                     AppActions.openInBrowser(url)
                 }
-                items += .button(id: "0-tonscan", title: "Tonscan", trailingIcon: .air("MenuTonscan26")) {
-                    let url = ExplorerHelper.tonscanNftUrl(viewModel.nft)
-                    AppActions.openInBrowser(url)
-                }
-                return MenuConfig(menuItems: items)
             }
-        }
+            items += .button(id: "0-tonscan", title: ExplorerHelper.selectedExplorerName(for: model.nft.chain), trailingIcon: .air(ExplorerHelper.selectedExplorerMenuIconName(for: model.nft.chain))) {
+                let url = ExplorerHelper.explorerNftUrl(model.nft)
+                AppActions.openInBrowser(url)
+            }
+            return MenuConfig(menuItems: items)
+        })
+        addArrangedSubview(more)
+        moreButton = more
     }
 }
 
-struct ActionButton: View {
+private struct NftDetailsActionsToolbarRepresentable: UIViewRepresentable {
+    var model: NftDetailsActionsToolbar.Model
 
-    @ObservedObject var viewModel: NftDetailsViewModel
-    
-    var id: String
-    var title: String
-    var icon: String
-    var action: () -> ()
-
-    var isEnabled: Bool { viewModel.selectedSubmenu == nil || viewModel.selectedSubmenu == id }
-    
-    init(viewModel: NftDetailsViewModel, id: String, title: String, icon: String, action: @escaping () -> Void) {
-        self.viewModel = viewModel
-        self.id = id
-        self.title = title
-        self.icon = icon
-        self.action = action
+    func makeUIView(context: Context) -> NftDetailsActionsToolbar {
+        let toolbar = NftDetailsActionsToolbar()
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.configure(model: model)
+        return toolbar
     }
 
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image.airBundle(icon)
-                    .frame(width: 24, height: 24)
-                Text(title)
-                    .font(.system(size: 12))
-            }
-            .fixedSize()
-            .drawingGroup()
-            .opacity(isEnabled ? 1 : 0.3)
-        }
-        .buttonStyle(ActionButtonStyle())
-        .animation(.smooth(duration: 0.25), value: isEnabled)
-    }
-}
-
-struct ActionButtonStyle: PrimitiveButtonStyle {
-
-    @EnvironmentObject var viewModel: NftDetailsViewModel
-    
-    @State private var isHighlighted: Bool = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(maxWidth: .infinity)
-            .frame(height: 60)
-            .opacity(isHighlighted ? 0.5 : 1)
-            .foregroundStyle(.tint)
-            .background {
-                ZStack {
-                    BackgroundBlur(radius: 20)
-                        .background(Color.white.opacity(0.04))
-                    ZStack {
-                        Color.black.opacity(0.04)
-                        Color.white.opacity(0.04)
-                    }
-                    ZStack {
-                        Color.black.opacity(0.04)
-                        Color.white.opacity(0.16)
-                    }
-                    .blendMode(.colorBurn)
-
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(WTheme.groupedItem))
-                        .opacity(viewModel.isExpanded ? 0 : 1)
-                }
-                .clipShape(.rect(cornerRadius: 12))
-            }
-            .contentShape(.rect(cornerRadius: 12))
-            .onTapGesture {
-                configuration.trigger()
-            }
-            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
-                withAnimation(.spring(duration: 0.1)) {
-                    isHighlighted = true
-                }
-            }.onEnded { _ in
-                withAnimation(.spring(duration: 0.5)) {
-                    isHighlighted = false
-                }
-            })
+    func updateUIView(_ uiView: NftDetailsActionsToolbar, context: Context) {
+        uiView.configure(model: model)
     }
 }
 
 #if DEBUG
 @available(iOS 18, *)
 #Preview {
-    @Previewable var viewModel = NftDetailsViewModel(nft: .sampleMtwCard, listContext: .none, navigationBarInset: 0)
+    @Previewable var viewModel = NftDetailsViewModel(accountId: "0-mainnet", nft: .sampleMtwCard, listContext: .none)
     VStack {
         NftDetailsActionsRow(viewModel: viewModel)
         Button("Toggle isExplanded") {
             withAnimation(.spring(duration: 2)) {
-                viewModel.isExpanded.toggle()
+                viewModel.state  = .expanded
             }
         }
     }

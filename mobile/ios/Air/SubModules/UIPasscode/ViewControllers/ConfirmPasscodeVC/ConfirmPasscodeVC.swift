@@ -8,7 +8,6 @@
 import UIKit
 import UIComponents
 import WalletContext
-import WalletCore
 
 public class ConfirmPasscodeVC: WViewController, PasscodeScreenViewDelegate {
     func animateSuccess() {
@@ -19,12 +18,9 @@ public class ConfirmPasscodeVC: WViewController, PasscodeScreenViewDelegate {
         
     }
     
-    
-    var onCompletion: (_ biometricsEnabled: Bool, _ passcode: String, _ onResult: @escaping () -> Void) -> Void
+    private let onCompletion: (_ biometricsEnabled: Bool, _ passcode: String) -> Void
 
-    public init(onCompletion: @escaping (Bool, String, @escaping () -> Void) -> Void,
-                setPasscodeVC: SetPasscodeVC,
-                selectedPasscode: String) {
+    public init(onCompletion: @escaping (Bool, String) -> Void, setPasscodeVC: SetPasscodeVC, selectedPasscode: String) {
         self.onCompletion = onCompletion
         self.setPasscodeVC = setPasscodeVC
         self.selectedPasscode = selectedPasscode
@@ -35,17 +31,25 @@ public class ConfirmPasscodeVC: WViewController, PasscodeScreenViewDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private var selectedPasscode: String!
+    private let selectedPasscode: String
     private weak var setPasscodeVC: SetPasscodeVC? = nil
 
-    var headerView: HeaderView!
-    var passcodeInputView: PasscodeInputView!
-    var passcodeOptionsView: PasscodeOptionsView!
-    var passcodeScreenView: PasscodeScreenView!
-    
-    var bottomConstraint: NSLayoutConstraint!
-
-    public static let passcodeOptionsFromBottom = CGFloat(8)
+    private lazy var headerView = HeaderView(
+        animationName: "animation_guard",
+        animationPlaybackMode: .once,
+        title: lang("Wallet is ready!"),
+        description: lang("Create a code to protect it")
+    )
+    private lazy var passcodeInputView = PasscodeInputView(delegate: self, theme: WTheme.setPasscodeInput)
+    private lazy var passcodeScreenView = PasscodeScreenView(
+        title: "zzz",
+        replacedTitle: "xxx",
+        subtitle: "rrrr",
+        compactLayout: true,
+        biometricPassAllowed: false,
+        delegate: self,
+        matchHeaderColors: false
+    )
 
     public override func loadView() {
         super.loadView()
@@ -65,14 +69,6 @@ public class ConfirmPasscodeVC: WViewController, PasscodeScreenViewDelegate {
             topView.rightAnchor.constraint(equalTo: view.safeAreaLayoutGuide.rightAnchor)
         ])
 
-        headerView = HeaderView(
-            animationName: "animation_guard",
-            animationPlaybackMode: .once,
-            title: lang("Wallet is ready!"),
-            description: lang(
-                "Create a code to protect it"
-            )
-        )
         topView.addSubview(headerView)
         NSLayoutConstraint.activate([
             headerView.topAnchor.constraint(equalTo: topView.topAnchor, constant: -10),
@@ -81,7 +77,6 @@ public class ConfirmPasscodeVC: WViewController, PasscodeScreenViewDelegate {
         ])
 
         // setup passcode input view
-        passcodeInputView = PasscodeInputView(delegate: self, theme: WTheme.setPasscodeInput)
         passcodeInputView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(passcodeInputView)
         NSLayoutConstraint.activate([
@@ -90,15 +85,6 @@ public class ConfirmPasscodeVC: WViewController, PasscodeScreenViewDelegate {
         ])
         passcodeInputView.isHidden = true
         
-        passcodeScreenView = PasscodeScreenView(
-            title: "zzz",
-            replacedTitle: "xxx",
-            subtitle: "rrrr",
-            compactLayout: true,
-            biometricPassAllowed: false,
-            delegate: self,
-            matchHeaderColors: false
-        )
         view.backgroundColor = WTheme.sheetBackground
         passcodeScreenView.layer.cornerRadius = 16
         
@@ -118,22 +104,13 @@ public class ConfirmPasscodeVC: WViewController, PasscodeScreenViewDelegate {
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
     }
-
-    @objc func passcodeOptionsPressed() {
-        passcodeOptionsView.toggle()
-    }
-    
-    @objc func backgroundPressed() {
-        if passcodeOptionsView.visibility {
-            passcodeOptionsView.toggle()
-        }
-    }
 }
 
 extension ConfirmPasscodeVC: PasscodeInputViewDelegate {
     func passcodeChanged(passcode: String) {
         headerView.animatedSticker?.toggle(!passcode.isEmpty)
     }
+
     func passcodeSelected(passcode: String) {
         if passcode != selectedPasscode {
             // wrong passcode, return to setPasscodeVC
@@ -145,17 +122,17 @@ extension ConfirmPasscodeVC: PasscodeInputViewDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else {return}
             view.isUserInteractionEnabled = true
-            if BiometricHelper.biometricType() == .none {
-                onCompletion(false, passcode, { [weak self] in
-                    guard let self else {return}
-                    view.isUserInteractionEnabled = false
-                    passcodeInputView.currentPasscode = ""
-                })
+            
+            // Suggest to enable a biometry protection, if available
+            // Note that all incomplete biometric configurations are ignored.
+            // So user with non-enrolled faceID will not receive a dialog
+            if let biometryType = BiometricHelper.biometryType {
+                navigationController?.pushViewController(
+                    ActivateBiometricVC(biometryType: biometryType) { [weak self] biometricsEnabled in
+                        self?.onCompletion(biometricsEnabled, passcode)
+                }, animated: true)
             } else {
-                navigationController?.pushViewController(ActivateBiometricVC(onCompletion: { [weak self] biometricsEnabled, onResult in
-                    self?.onCompletion(biometricsEnabled, passcode, onResult)
-                },
-                selectedPasscode: selectedPasscode), animated: true)
+                onCompletion(false, passcode)
             }
         }
     }
@@ -164,11 +141,11 @@ extension ConfirmPasscodeVC: PasscodeInputViewDelegate {
 #if DEBUG
 @available(iOS 18.0, *)
 #Preview {
-    let _ = UIFont.registerAirFonts()
+    let setVC = SetPasscodeVC(onCompletion: { _, _ in})
     UINavigationController(
         rootViewController: ConfirmPasscodeVC(
-            onCompletion: { _, _, _ in },
-            setPasscodeVC: SetPasscodeVC(onCompletion: { _, _, _ in}),
+            onCompletion: { _, _ in },
+            setPasscodeVC: setVC,
             selectedPasscode: "1111")
     )
 }

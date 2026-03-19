@@ -5,19 +5,18 @@
 //  Created by Sina on 6/25/24.
 //
 
-import UIKit
-import UIComponents
-import WalletCore
-import WalletContext
-import SwiftUI
 import Kingfisher
-
+import SwiftUI
+import UIComponents
+import UIKit
+import WalletContext
+import WalletCore
 
 struct ExploreCategoryRow: View {
+    let site: ApiSite
+    let openAction: () -> ()
     
-    var site: ApiSite
-    
-    var openAction: () -> ()
+    private let cornerRadius: CGFloat = 23
     
     var body: some View {
         HStack(spacing: 10) {
@@ -25,19 +24,38 @@ struct ExploreCategoryRow: View {
                 .resizable()
                 .loadDiskFileSynchronously(false)
                 .aspectRatio(contentMode: .fill)
-                .clipShape(.rect(cornerRadius: 12))
-                .frame(width: 48, height: 48)
+                .clipShape(.rect(cornerRadius: cornerRadius))
+                .frame(width: 88, height: 88)
+                .applyModifierConditionally {
+                    if #available(iOS 26.0, *) {
+                        $0.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+                    } else {
+                        $0
+                    }
+                }
+                .padding(.vertical, 13)
             
-            VStack(alignment: .leading, spacing: 3) {
-                Text(site.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .fixedSize()
-                Text(site.description)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color(WTheme.secondaryLabel))
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            textsAndButton()
+            
+            Spacer(minLength: 0)
+        }
+        .frame(height: 114)
+    }
+    
+    private func textsAndButton() -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(site.name).font(.system(size: 15, weight: .semibold))
+                .fixedSize()
+                .padding(.top, 11)
+                
+            Spacer().frame(height: 4)
+                
+            Text(site.description).font(.system(size: 14))
+                .multilineTextAlignment(.leading)
+                .lineLimit(1)
+                .foregroundStyle(Color(WTheme.secondaryLabel))
+            
+            Spacer(minLength: 0)
             
             Button(action: openAction) {
                 HStack(spacing: 2) {
@@ -48,8 +66,10 @@ struct ExploreCategoryRow: View {
                     }
                     Text(lang("Open"))
                 }
+                .foregroundStyle(Color(WTheme.tint))
             }
             .buttonStyle(OpenButtonStyle())
+            .padding(.bottom, 10)
         }
     }
 }
@@ -57,7 +77,12 @@ struct ExploreCategoryRow: View {
 #if DEBUG
 @available(iOS 18, *)
 #Preview {
-    ExploreCategoryRow(site: .sampleFeaturedTelegram, openAction: {})
-        .padding(20)
+    VStack(spacing: 0) {
+        ExploreCategoryRow(site: .sampleFeatured(), openAction: {})
+        Rectangle().fill(Color.gray).frame(height: 1)
+        ExploreCategoryRow(site: .sampleFeaturedTelegram, openAction: {})
+        Spacer()
+    }
+    .padding(.horizontal, 20)
 }
 #endif

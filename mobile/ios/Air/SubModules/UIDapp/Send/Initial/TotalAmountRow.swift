@@ -7,10 +7,10 @@ import UIComponents
 
 public struct TotalAmountRow: View {
     
-    var info: MDappSendTransactions.CombinedInfo
+    var info: ApiUpdate.DappSendTransactions.CombinedInfo
     
     var amountInBaseCurrency: BaseCurrencyAmount {
-        let baseCurrency = TokenStore.baseCurrency ?? .USD
+        let baseCurrency = TokenStore.baseCurrency
         var total: BigInt = 0
         for (tokenSlug, amount) in info.tokenTotals {
             if let token = TokenStore.tokens[tokenSlug] {
@@ -41,7 +41,7 @@ public struct TotalAmountRow: View {
     var text: some View {
         let bc = Text(
             amountInBaseCurrency.formatAttributed(
-                format: .init(),
+                format: .init(preset: .baseCurrencyEquivalent),
                 integerFont: .systemFont(ofSize: 24, weight: .semibold),
                 fractionFont: .systemFont(ofSize: 20, weight: .semibold),
                 symbolFont: .systemFont(ofSize: 20, weight: .semibold),
@@ -54,7 +54,7 @@ public struct TotalAmountRow: View {
         if !tokenAmounts.isEmpty {
             let _tokens = tokenAmounts
                 .map { tokenAmount in
-                    tokenAmount.formatted()
+                    tokenAmount.formatted(.defaultAdaptive)
                 }
                 .joined(separator: " + ")
             let tokens = Text(_tokens)

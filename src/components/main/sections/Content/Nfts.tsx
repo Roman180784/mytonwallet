@@ -1,36 +1,43 @@
-import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from '../../../../lib/teact/teact';
+import React, { memo, useEffect, useMemo, useRef } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
-import type { ApiNft } from '../../../../api/types';
+import type { ApiNft, ApiNftCollection } from '../../../../api/types';
+import type { Theme } from '../../../../global/types';
 
 import {
   ANIMATED_STICKER_BIG_SIZE_PX,
   ANIMATED_STICKER_SMALL_SIZE_PX,
+  ANIMATION_LEVEL_MIN,
   NFT_MARKETPLACE_TITLE,
   NFT_MARKETPLACE_URL,
   TELEGRAM_GIFTS_SUPER_COLLECTION,
 } from '../../../../config';
 import renderText from '../../../../global/helpers/renderText';
-import { selectCurrentAccountState, selectIsCurrentAccountViewMode } from '../../../../global/selectors';
+import {
+  selectCurrentAccountId,
+  selectCurrentAccountState,
+  selectIsCurrentAccountViewMode,
+} from '../../../../global/selectors';
 import buildClassName from '../../../../util/buildClassName';
 import captureEscKeyListener from '../../../../util/captureEscKeyListener';
-import { getTonDnsExpirationDate } from '../../../../util/dns';
 import { stopEvent } from '../../../../util/domEvents';
 import { openUrl } from '../../../../util/openUrl';
 import { getHostnameFromUrl } from '../../../../util/url';
 import { ANIMATED_STICKERS_PATHS } from '../../../ui/helpers/animatedAssets';
-import { getScrollContainerClosestSelector } from '../../helpers/scrollableContainer';
 
+import useAppTheme from '../../../../hooks/useAppTheme';
 import { useDeviceScreen } from '../../../../hooks/useDeviceScreen';
-import { useIntersectionObserver } from '../../../../hooks/useIntersectionObserver';
 import useLang from '../../../../hooks/useLang';
-import useLastCallback from '../../../../hooks/useLastCallback';
+import { usePrevDuringAnimationSimple } from '../../../../hooks/usePrevDuringAnimationSimple';
+import useScrolledState from '../../../../hooks/useScrolledState';
 
 import AnimatedIconWithPreview from '../../../ui/AnimatedIconWithPreview';
 import Spinner from '../../../ui/Spinner';
-import Nft from './Nft';
+import NftList from './NftList';
 
 import styles from './Nft.module.scss';
+
+const SLIDE_TRANSITION_DURATION_MS = 300;
 
 interface OwnProps {
   isActive?: boolean;
@@ -38,51 +45,65 @@ interface OwnProps {
 
 interface StateProps {
   orderedAddresses?: string[];
-  selectedAddresses?: string[];
+  selectedNfts?: ApiNft[];
   byAddress?: Record<string, ApiNft>;
-  currentCollectionAddress?: string;
+  currentCollection?: ApiNftCollection;
   blacklistedNftAddresses?: string[];
   whitelistedNftAddresses?: string[];
   isNftBuyingDisabled?: boolean;
   dnsExpiration?: Record<string, number>;
   isViewAccount?: boolean;
+  isLoading?: boolean;
+  theme: Theme;
+  animationDuration: number;
 }
-
-const INTERSECTION_THROTTLE = 200;
-const INITIAL_SLICE_LENGTH = 50;
-const SCROLL_THRESHOLD = 800;
 
 function Nfts({
   isActive,
   orderedAddresses,
-  selectedAddresses,
+  selectedNfts,
   byAddress,
-  currentCollectionAddress,
+  currentCollection,
   dnsExpiration,
   isNftBuyingDisabled,
   blacklistedNftAddresses,
   whitelistedNftAddresses,
   isViewAccount,
+  isLoading,
+  theme,
+  animationDuration,
 }: OwnProps & StateProps) {
   const { fetchNftsFromCollection, clearNftsSelection } = getActions();
 
   const lang = useLang();
-  const containerRef = useRef<HTMLDivElement>();
+  const contentRef = useRef<HTMLDivElement>();
   const { isPortrait, isLandscape } = useDeviceScreen();
-  const hasSelection = Boolean(selectedAddresses?.length);
-  const [isScrolled, setIsScrolled] = useState(false);
-  const scrollContainerClosest = getScrollContainerClosestSelector(true, isPortrait) || '.nfts-container';
+  const realIsActive = usePrevDuringAnimationSimple(isActive, animationDuration);
+  const appTheme = useAppTheme(theme);
 
+  const hasSelection = Boolean(selectedNfts?.length);
   useEffect(() => {
-    if (currentCollectionAddress) {
-      fetchNftsFromCollection({ collectionAddress: currentCollectionAddress });
+    if (currentCollection && currentCollection.address !== TELEGRAM_GIFTS_SUPER_COLLECTION) {
+      fetchNftsFromCollection({ collection: currentCollection });
     }
-  }, [currentCollectionAddress]);
+  }, [currentCollection]);
 
-  useEffect(clearNftsSelection, [clearNftsSelection, isActive, currentCollectionAddress]);
+  useEffect(clearNftsSelection, [clearNftsSelection, isActive, currentCollection?.address]);
   useEffect(() => (hasSelection ? captureEscKeyListener(clearNftsSelection) : undefined), [hasSelection]);
 
-  const nfts = useMemo(() => {
+  const {
+    handleScroll: handleContentScroll,
+    isScrolled,
+    update: updateScrolledState,
+  } = useScrolledState();
+
+  useEffect(() => {
+    if (isActive && contentRef.current) {
+      updateScrolledState(contentRef.current);
+    }
+  }, [isActive, updateScrolledState]);
+
+  const nftAddresses = useMemo(() => {
     if (!orderedAddresses || !byAddress) {
       return undefined;
     }
@@ -90,61 +111,24 @@ function Nfts({
     const blacklistedNftAddressesSet = new Set(blacklistedNftAddresses);
     const whitelistedNftAddressesSet = new Set(whitelistedNftAddresses);
 
-    const result = orderedAddresses.reduce<ApiNft[]>((acc, address) => {
+    return orderedAddresses.filter((address) => {
       const nft = byAddress[address];
+      if (!nft) return false;
 
-      if (nft && (
-        !currentCollectionAddress
-        || nft.collectionAddress === currentCollectionAddress
-        || (currentCollectionAddress === TELEGRAM_GIFTS_SUPER_COLLECTION && nft.isTelegramGift)
-      ) && (
+      const matchesCollection = !currentCollection?.address
+        || (nft.collectionAddress === currentCollection.address && nft.chain === currentCollection.chain)
+        || (currentCollection.address === TELEGRAM_GIFTS_SUPER_COLLECTION && nft.isTelegramGift);
+
+      const isVisible = (
         !nft.isHidden || whitelistedNftAddressesSet.has(nft.address)
-      ) && (
-        !blacklistedNftAddressesSet.has(nft.address)
-      )) {
-        acc.push(nft);
-      }
+      ) && !blacklistedNftAddressesSet.has(nft.address);
 
-      return acc;
-    }, []);
-
-    return isScrolled ? result : result.slice(0, INITIAL_SLICE_LENGTH);
+      return matchesCollection && isVisible;
+    });
   }, [
-    byAddress, currentCollectionAddress, orderedAddresses, blacklistedNftAddresses, whitelistedNftAddresses,
-    isScrolled,
+    byAddress, currentCollection?.address, currentCollection?.chain, orderedAddresses,
+    blacklistedNftAddresses, whitelistedNftAddresses,
   ]);
-
-  const handleNativeScroll = useLastCallback(() => {
-    const closestScrollContainer = containerRef.current?.closest<HTMLDivElement>(scrollContainerClosest);
-    if (!closestScrollContainer || isScrolled) {
-      return;
-    }
-
-    const { scrollTop, scrollHeight, clientHeight } = closestScrollContainer;
-    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
-
-    if (distanceToBottom <= SCROLL_THRESHOLD) {
-      setIsScrolled(true);
-    }
-  });
-
-  useLayoutEffect(() => {
-    if (!scrollContainerClosest || !nfts?.length) return undefined;
-
-    const closestScrollContainer = containerRef.current?.closest<HTMLDivElement>(scrollContainerClosest);
-    if (!closestScrollContainer) return undefined;
-
-    closestScrollContainer.addEventListener('scroll', handleNativeScroll);
-
-    return () => {
-      closestScrollContainer.removeEventListener('scroll', handleNativeScroll);
-    };
-  }, [nfts?.length, scrollContainerClosest]);
-
-  const { observe: observeIntersection } = useIntersectionObserver({
-    throttleMs: INTERSECTION_THROTTLE,
-    isDisabled: !nfts?.length,
-  });
 
   function handleNftMarketplaceClick(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
     stopEvent(e);
@@ -155,7 +139,7 @@ function Nfts({
     });
   }
 
-  if (nfts === undefined) {
+  if (nftAddresses === undefined || (nftAddresses.length === 0 && isLoading)) {
     return (
       <div className={buildClassName(styles.emptyList, styles.emptyListLoading)}>
         <Spinner />
@@ -163,7 +147,7 @@ function Nfts({
     );
   }
 
-  if (nfts.length === 0) {
+  if (nftAddresses.length === 0) {
     return (
       <div className={styles.emptyList}>
         <AnimatedIconWithPreview
@@ -193,17 +177,26 @@ function Nfts({
   }
 
   return (
-    <div ref={containerRef} className={buildClassName(styles.list, isLandscape && styles.landscapeList)}>
-      {nfts.map((nft) => (
-        <Nft
-          key={nft.address}
-          nft={nft}
-          selectedAddresses={selectedAddresses}
-          tonDnsExpiration={getTonDnsExpirationDate(nft, dnsExpiration)}
-          isViewAccount={isViewAccount}
-          observeIntersection={observeIntersection}
-        />
-      ))}
+    <div
+      ref={contentRef}
+      className={buildClassName(
+        styles.listContainer,
+        isLandscape && 'custom-scroll nfts-container',
+        isLandscape && isScrolled && styles.listContainerScrolled,
+      )}
+      onScroll={isLandscape ? handleContentScroll : undefined}
+    >
+      <NftList
+        key={currentCollection ? `${currentCollection.address}_${currentCollection.chain}` : 'nft-list'}
+        isActive={realIsActive}
+        isLoading={isLoading}
+        appTheme={appTheme}
+        addresses={nftAddresses}
+        dnsExpiration={dnsExpiration}
+        isViewAccount={isViewAccount}
+        nftsByAddresses={byAddress!}
+        selectedNfts={selectedNfts}
+      />
     </div>
   );
 }
@@ -214,9 +207,10 @@ export default memo(
       const {
         orderedAddresses,
         byAddress,
-        currentCollectionAddress,
-        selectedAddresses,
+        currentCollection,
+        selectedNfts,
         dnsExpiration,
+        isFullLoadingByChain,
       } = selectCurrentAccountState(global)?.nfts || {};
       const { isNftBuyingDisabled } = global.restrictions;
 
@@ -225,24 +219,36 @@ export default memo(
         whitelistedNftAddresses,
       } = selectCurrentAccountState(global) || {};
 
+      const animationLevel = global.settings.animationLevel;
+      const animationDuration = animationLevel === ANIMATION_LEVEL_MIN ? 0 : SLIDE_TRANSITION_DURATION_MS;
+
       return {
         orderedAddresses,
-        selectedAddresses,
+        selectedNfts,
         byAddress,
-        currentCollectionAddress,
+        currentCollection,
         blacklistedNftAddresses,
         whitelistedNftAddresses,
         isNftBuyingDisabled,
         dnsExpiration,
         isViewAccount: selectIsCurrentAccountViewMode(global),
+        isLoading: isFullLoadingByChain ? Object.values(isFullLoadingByChain).some(Boolean) : undefined,
+        theme: global.settings.theme,
+        animationDuration,
       };
     },
     (global, _, stickToFirst) => {
       const {
-        currentCollectionAddress,
+        currentCollection,
       } = selectCurrentAccountState(global)?.nfts || {};
 
-      return stickToFirst(`${global.currentAccountId}_${currentCollectionAddress || 'all'}`);
+      const isCollectionSelected = !!currentCollection;
+
+      return stickToFirst(
+        `${selectCurrentAccountId(global)}_${isCollectionSelected
+          ? `${currentCollection.address}_${currentCollection.chain}`
+          : 'all'}`,
+      );
     },
   )(Nfts),
 );

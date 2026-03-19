@@ -31,22 +31,23 @@ class SeparatorBackgroundDrawable : Drawable() {
     // Force separator even in Common ui-mode and dark theme
     var forceSeparator: Boolean = false
 
-    var allowSeparator: Boolean = true
+    var allowSeparator: Boolean = false
     var offsetStart = 0f
     var offsetEnd = 0f
     var topRadius = 0f
+    var bottomRadius = 0f
 
     override fun draw(canvas: Canvas) {
         (backgroundWColor?.color ?: backgroundColor)?.let {
             backgroundPaint.color = it
 
-            if (topRadius > 0f) {
+            if (topRadius > 0f || bottomRadius > 0) {
                 val rectF = RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
                 val radii = floatArrayOf(
                     topRadius, topRadius,
                     topRadius, topRadius,
-                    0f, 0f,
-                    0f, 0f
+                    bottomRadius, bottomRadius,
+                    bottomRadius, bottomRadius
                 )
                 val path = Path().apply { addRoundRect(rectF, radii, Path.Direction.CW) }
                 canvas.drawPath(path, backgroundPaint)

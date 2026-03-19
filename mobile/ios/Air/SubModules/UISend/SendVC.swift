@@ -18,33 +18,28 @@ public final class SendVC: WNavigationController {
     let sendModel: SendModel
     let rootVC: UIViewController
 
-    public init(prefilledValues: SendModel.PrefilledValues? = nil) {
+    public init(prefilledValues: SendPrefilledValues) {
         self.sendModel = SendModel(prefilledValues: prefilledValues)
         
-        if sendModel.nftSendMode != .burn {
-            rootVC = SendComposeVC(model: sendModel)
-        } else {
+        switch sendModel.mode {
+        case .burnNft, .sellToMoonpay:
             rootVC = SendConfirmVC(model: sendModel)
+        case .regular, .sendNft:
+            rootVC = SendComposeVC(model: sendModel)
         }
         super.init(rootViewController: rootVC)
-        
-        sendModel.present = { [weak self] in
-            self?.present($0, animated: true)
-        }
-        sendModel.push = { [weak self] in
-            self?.isEditing = false
-            self?.pushViewController($0, animated: true)
-        }
-        sendModel.dismiss = { [weak self] vc in
-            self?.dismiss(animated: true)
-        }
-        sendModel.showAlert = { [weak self] error in
-            self?.view.endEditing(true)
-            self?.showAlert(error: error)
-        }
     }
     
     @MainActor public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }    
+    }
+    
+    public override func viewDidLoad() {
+        super.viewDidLoad()
+        let textField = UITextField()
+        view.addSubview(textField)
+        textField.becomeFirstResponder()
+        textField.resignFirstResponder()
+        textField.removeFromSuperview()
+    }
 }

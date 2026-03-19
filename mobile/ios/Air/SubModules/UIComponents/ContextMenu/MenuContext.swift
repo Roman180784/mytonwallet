@@ -1,53 +1,89 @@
 
 import UIKit
 import SwiftUI
+import Perception
 
 let MENU_EDGE_PADDING: CGFloat = 4
 private let distanceFromAnchor: CGFloat = 8
 
-public final class MenuContext: ObservableObject, @unchecked Sendable {
+public struct MenuSourceViewLayout {
+    /// A frame used for menu positioning. Formely known as sourceFrame. Window (global) coordinates
+    var frame: CGRect = .zero
     
-    @Published public var sourceView: UIView? = nil
-    @Published public var sourceFrame: CGRect = .zero
-    @Published var anchor: Alignment = .bottom
-    @Published var locations: [String: CGRect] = [:]
-    @Published var currentLocation: CGPoint?
-    @Published var currentItem: String?
-    @Published public var menuShown: Bool = false
-    @Published var submenuId = "0"
-    @Published var visibleSubmenus: Set<String> = []
-    @Published public var minWidth: CGFloat? = 180.0
-    @Published public var maxWidth: CGFloat? = 280.0
-    @Published public var verticalOffset: CGFloat = 0
+    /// Portal masking. If nil then `frame` is used. Window (global) coordinates
+    var portalMaskFrame: CGRect?
+}
+
+@Perceptible
+@MainActor public final class MenuContext: Sendable {
     
+    @PerceptionIgnored
+    public var sourceView: UIView? = nil
+    @PerceptionIgnored
+    private(set) var sourceViewLayout = MenuSourceViewLayout()
+    @PerceptionIgnored
+    var onGetSourceViewLayout: (() -> MenuSourceViewLayout?)?
+    @PerceptionIgnored
+    var anchor: Alignment = .bottom
+    
+    var locations: [String: CGRect] = [:]
+    var currentLocation: CGPoint?
+    var currentItem: String?
+    var menuShown: Bool = false
+    /// Set when menu is about to be shown; cleared on dismiss. Used by gesture handlers to suppress conflicting actions (e.g. segment tap).
+    @PerceptionIgnored
+    var menuTriggered: Bool = false
+    var submenuId = "0"
+    var visibleSubmenus: Set<String> = []
+    
+    @PerceptionIgnored
+    public var minWidth: CGFloat? = 180.0
+    @PerceptionIgnored
+    public var maxWidth: CGFloat? = 280.0
+    @PerceptionIgnored
+    public var verticalOffset: CGFloat = 0
+    
+    @PerceptionIgnored
     public var makeConfig: () -> MenuConfig = { MenuConfig(menuItems: []) }
+    @PerceptionIgnored
     public var makeSubmenuConfig: (() -> MenuConfig)?
     
-    var actions: [String: () -> ()] = [:]
+    @PerceptionIgnored
+    var actions: [String: @MainActor () -> ()] = [:]
     
+    @PerceptionIgnored
     public var onAppear: (() -> ())?
+    @PerceptionIgnored
     public var onDismiss: (() -> ())?
+    
+    /// When true, a regular tap presents the menu (in addition to long press).
+    @PerceptionIgnored
+    public var presentOnTap: Bool = false
     
     public init() {}
     
     func update(location: CGPoint) {
         currentLocation = location
+        let previousItem = currentItem
         for (id, frame) in locations {
             if id.hasPrefix(submenuId) && frame.contains(location) {
                 if id != currentItem {
                     currentItem = id
-                    UISelectionFeedbackGenerator().selectionChanged()
+                    // Only play haptic when changing FROM one item to another (not on initial touch)
+                    if previousItem != nil {
+                        Haptics.play(.selection)
+                    }
                 }
                 return
             }
         }
         if currentItem != nil {
             currentItem = nil
-            UISelectionFeedbackGenerator().selectionChanged()
+            Haptics.play(.selection)
         }
     }
     
-    func registerAction(id: String, action: @escaping () -> ()) {
+    func registerAction(id: String, action: @escaping @MainActor () -> ()) {
         actions[id] = action
     }
     
@@ -65,8 +101,16 @@ public final class MenuContext: ObservableObject, @unchecked Sendable {
         }
     }
     
-    @MainActor public func present() {
+    @MainActor func present() {
         if !menuShown {
+            if let layout = onGetSourceViewLayout?() {
+                sourceViewLayout = layout
+            } else {
+                if let sourceView {
+                    let frame = sourceView.convert(sourceView.bounds, to: nil)
+                    sourceViewLayout = MenuSourceViewLayout(frame: frame)
+                }
+            }
             if let view = getMenuLayerView() {
                 view.showMenu(menuContext: self)
             }
@@ -78,15 +122,16 @@ public final class MenuContext: ObservableObject, @unchecked Sendable {
     }
     
     var showBelowSource: Bool {
-        sourceFrame.maxY < 700
+        sourceViewLayout.frame.maxY < 600
     }
     
     var source: CGPoint {
-        CGPoint(x: sourceFrame.midX, y: showBelowSource ? sourceFrame.maxY + distanceFromAnchor + verticalOffset : sourceFrame.minY - distanceFromAnchor + verticalOffset)
+        let sourceFrame = sourceViewLayout.frame
+        return CGPoint(x: sourceFrame.midX, y: showBelowSource ? sourceFrame.maxY + distanceFromAnchor + verticalOffset : sourceFrame.minY - distanceFromAnchor + verticalOffset)
     }
     
     var sourceX: CGFloat {
-        sourceFrame.midX - MENU_EDGE_PADDING
+        sourceViewLayout.frame.midX - MENU_EDGE_PADDING
     }
     
     var showShadow: Bool {

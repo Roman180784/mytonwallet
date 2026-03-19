@@ -9,7 +9,6 @@ import Foundation
 import UIKit
 import UIComponents
 import WalletContext
-import WalletCore
 
 
 class SettingsItemCell: UICollectionViewCell, WThemedView {
@@ -32,6 +31,7 @@ class SettingsItemCell: UICollectionViewCell, WThemedView {
     }()
     
     private var iconImageView = IconView(size: 30)
+    private var gradeintView = GradientView()
     
     private var titleLabel: UILabel = {
         let lbl = UILabel()
@@ -108,7 +108,6 @@ class SettingsItemCell: UICollectionViewCell, WThemedView {
         valueContainer.isTapToRevealEnabled = false
         
         let titleLabelLeadingConstraint = labelStack.leadingAnchor.constraint(equalTo: leadingGuide.trailingAnchor)
-        titleLabelLeadingConstraint.priority = .defaultLow
         
         titleCenterXConstraint = labelStack.centerXAnchor.constraint(equalTo: containerView.centerXAnchor)
         
@@ -116,16 +115,34 @@ class SettingsItemCell: UICollectionViewCell, WThemedView {
         valueToRightConstraint.priority = .defaultLow
 
         // This constraint will be deactivated, whenever rightArrow is not visible.
-        valueToLeftOfArrowConstraint = valueLabel.trailingAnchor.constraint(equalTo: rightArrow.leadingAnchor, constant: -8)
+        valueToLeftOfArrowConstraint = valueLabel.trailingAnchor.constraint(equalTo: rightArrow.leadingAnchor, constant: -16)
+        
+        gradeintView.translatesAutoresizingMaskIntoConstraints = false
+        iconImageView.addSubview(gradeintView)
+        gradeintView.colors = [
+            UIColor.white.withAlphaComponent(1),
+            UIColor.white.withAlphaComponent(0),
+        ]
+        gradeintView.gradientLayer.locations = [0, 1]
+        gradeintView.gradientLayer.startPoint = CGPoint(x: 0.5, y: 0)
+        gradeintView.gradientLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        gradeintView.gradientLayer.opacity = 0.5
+        gradeintView.gradientLayer.cornerRadius = 8
+        gradeintView.gradientLayer.compositingFilter = "softLightBlendMode"
         
         NSLayoutConstraint.activate([
             
             leadingGuide.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            leadingGuide.widthAnchor.constraint(equalToConstant: 60),
+            leadingGuide.widthAnchor.constraint(equalToConstant: 62),
             leadingGuide.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
             
             iconImageView.centerXAnchor.constraint(equalTo: leadingGuide.centerXAnchor),
             iconImageView.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
+
+            gradeintView.leadingAnchor.constraint(equalTo: iconImageView.leadingAnchor),
+            gradeintView.trailingAnchor.constraint(equalTo: iconImageView.trailingAnchor),
+            gradeintView.topAnchor.constraint(equalTo: iconImageView.topAnchor),
+            gradeintView.bottomAnchor.constraint(equalTo: iconImageView.bottomAnchor),
             
             titleLabelLeadingConstraint,
             labelStack.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
@@ -153,28 +170,18 @@ class SettingsItemCell: UICollectionViewCell, WThemedView {
     
     func configure(with item: SettingsItem, value: String?) {
         self.item = item
-        switch item.id {
-        case .account(let accountId):
-            iconImageView.setSize(40)
-            if let account = AccountStore.allAccounts.first(where: { $0.id == accountId }) {
-                iconImageView.config(with: account)
-            } else {
-                iconImageView.config(with: item.icon, tintColor: WTheme.tint)
-            }
-            valueContainer.isDisabled = false
-            let cols = 6 + (abs(accountId.hashValue) % 6)
-            valueContainer.setCols(cols)
-            titleLabel.font = .systemFont(ofSize: 17, weight: .medium)
-        default:
-            iconImageView.setSize(30)
-            iconImageView.config(with: item.icon, tintColor: WTheme.tint)
-            valueContainer.isDisabled = true
-            titleLabel.font = .systemFont(ofSize: 17, weight: .regular)
-        }
+        iconImageView.setSize(30)
+        iconImageView.config(with: item.icon, tintColor: WTheme.tint)
+        valueContainer.isDisabled = true
+        titleLabel.font = .systemFont(ofSize: 17, weight: .regular)
         titleLabel.text = item.title
         subtitleLabel.text = item.subtitle
         subtitleLabel.isHidden = item.subtitle?.nilIfEmpty == nil
-        heightConstraint.constant = subtitleLabel.isHidden ? 44 : 50
+        if IOS_26_MODE_ENABLED, #available(iOS 26, iOSApplicationExtension 26, *) {
+            heightConstraint.constant = subtitleLabel.isHidden ? 52 : 60
+        } else {
+            heightConstraint.constant = subtitleLabel.isHidden ? 44 : 50
+        }
         valueLabel.text = value
         if item.isDangerous {
             titleCenterXConstraint.isActive = true
@@ -187,5 +194,6 @@ class SettingsItemCell: UICollectionViewCell, WThemedView {
         }
         valueToLeftOfArrowConstraint.isActive = !rightArrow.isHidden
         containerView.backgroundColor = WTheme.groupedItem
+        gradeintView.isHidden = item.icon == nil || !item.highlightIcon
     }
 }

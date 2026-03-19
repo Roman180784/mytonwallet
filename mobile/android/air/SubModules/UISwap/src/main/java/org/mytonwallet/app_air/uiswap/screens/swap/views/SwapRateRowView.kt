@@ -15,8 +15,8 @@ import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.setPaddingLocalized
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
-import org.mytonwallet.app_air.uicomponents.widgets.WGradientLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
+import org.mytonwallet.app_air.uicomponents.widgets.WLinearGradientLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.animateHeight
@@ -50,8 +50,8 @@ class SwapRateRowView(
         setStyle(16f)
     }
 
-    private val bestRateLabel = WGradientLabel(context).apply {
-        setStyle(12f, WFont.Bold)
+    private val bestRateLabel = WLinearGradientLabel(context).apply {
+        setStyle(12f, WFont.SemiBold)
         setGradientColor(
             intArrayOf(
                 WColor.EarnGradientLeft.color,
@@ -111,7 +111,7 @@ class SwapRateRowView(
     }
 
     init {
-        layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, 56.dp)
+        layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, 50.dp)
     }
 
     @SuppressLint("SetTextI18n")
@@ -161,14 +161,14 @@ class SwapRateRowView(
         if (dexView.visibility != dexVisibility) {
             if (dexVisibility == VISIBLE) {
                 dexView.visibility = VISIBLE
-                dexView.fadeIn { }
+                dexView.fadeIn()
             } else {
                 dexView.fadeOut {
                     if (dexVisibility == GONE)
                         dexView.visibility = GONE
                 }
             }
-            animateHeight(if (dex == null) 56.dp else 80.dp)
+            animateHeight(if (dex == null) 50.dp else 80.dp)
         }
     }
 
@@ -182,6 +182,6 @@ class SwapRateRowView(
             if (dexVisibility == GONE)
                 dexView.visibility = GONE
         }
-        animateHeight(56.dp)
+        animateHeight(50.dp)
     }
 }

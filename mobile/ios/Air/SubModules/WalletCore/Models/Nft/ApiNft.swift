@@ -6,6 +6,7 @@ import OrderedCollections
 
 // Generated based on TypeScript definition. Do not edit manually.
 public struct ApiNft: Equatable, Hashable, Codable, Sendable {
+    public var chain: ApiChain = FALLBACK_CHAIN
     public var index: Int?
     public var ownerAddress: String?
     public var name: String?
@@ -21,11 +22,22 @@ public struct ApiNft: Equatable, Hashable, Codable, Sendable {
     public var isTelegramGift: Bool?
     public var isScam: Bool?
     public var metadata: ApiNftMetadata?
+    public var interface: ApiNftInterface = .default
+    public var compression: ApiNftCompression?
+    
+    public static func == (lhs: ApiNft, rhs: ApiNft) -> Bool {
+        lhs.address == rhs.address
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(address)
+    }
 }
 
 extension ApiNft {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.chain = (try? container.decodeIfPresent(ApiChain.self, forKey: .chain)) ?? FALLBACK_CHAIN
         self.index = try? container.decode(Int.self, forKey: .index)
         self.ownerAddress = try? container.decodeIfPresent(String.self, forKey: .ownerAddress)
         self.name = try? container.decodeIfPresent(String.self, forKey: .name)
@@ -41,6 +53,8 @@ extension ApiNft {
         self.isTelegramGift = try? container.decodeIfPresent(Bool.self, forKey: .isTelegramGift)
         self.isScam = try? container.decodeIfPresent(Bool.self, forKey: .isScam)
         self.metadata = try? container.decodeIfPresent(ApiNftMetadata.self, forKey: .metadata)
+        self.interface = (try? container.decodeIfPresent(ApiNftInterface.self, forKey: .interface)) ?? .default
+        self.compression = try? container.decodeIfPresent(ApiNftCompression.self, forKey: .compression)
     }
 }
 
@@ -64,9 +78,23 @@ public struct ApiNftMetadata: Equatable, Hashable, Codable, Sendable {
     public var mtwCardBorderShineType: ApiMtwCardBorderShineType?
 }
 
+// Generated based on TypeScript definition. Do not edit manually.
+public enum ApiNftInterface: String, Equatable, Hashable, Codable, Sendable, CaseIterable {
+    case `default` = "default"
+    case compressed = "compressed"
+    case mplCore = "mplCore"
+}
+
+public struct ApiNftCompression: Equatable, Hashable, Codable, Sendable {
+    public var tree: String
+    public var dataHash: String
+    public var creatorHash: String
+    public var leafId: Int
+}
+
 extension ApiNftMetadata {
     public var mtwCardBackgroundUrl: URL? {
-        if let mtwCardId { return URL(string: "https://static.mytonwallet.org/cards/\(mtwCardId).webp")! }
+        if let mtwCardId { return URL(string: "https://static.mytonwallet.org/cards/v2/cards/\(mtwCardId).webp")! }
         return nil
     }
 }
@@ -111,17 +139,6 @@ extension ApiMtwCardType {
         self != .standard
     }
 }
-
-extension ApiNft: WEquatable {
-    public static func == (lhs: ApiNft, rhs: ApiNft) -> Bool {
-        lhs.address == rhs.address
-    }
-    
-    public func isChanged(comparing: ApiNft) -> Bool {
-        return isHidden != comparing.isHidden || isOnSale != comparing.isOnSale
-    }
-}
-
 
 public extension ApiNft {
     var isStandalone: Bool { collectionName?.nilIfEmpty == nil }

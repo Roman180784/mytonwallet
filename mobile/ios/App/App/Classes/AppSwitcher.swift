@@ -7,7 +7,9 @@
 
 import UIKit
 import WebKit
+#if canImport(Capacitor)
 import Capacitor
+#endif
 import AirAsFramework
 import WalletContext
 import UIComponents
@@ -15,32 +17,34 @@ import UIComponents
 private let log = Log("AppSwitcher")
 
 
-class AppSwitcher: NSObject {
+@MainActor final class AppSwitcher: NSObject {
     
     let window: WWindow
 
-    var webView: WKWebView? = nil
-    
     init(window: WWindow) {
         log.info("AppSwitcher.init")
         self.window = window
         AirLauncher.set(window: window)
     }
     
-    @MainActor func startTheApp() {
-        log.info("startTheApp isOnTheAir=\(AirLauncher.isOnTheAir) isCapacitorAppAvailable=\(AirLauncher.isCapacitorAppAvailable)")
-        if AirLauncher.isOnTheAir || !AirLauncher.isCapacitorAppAvailable {
+    func startTheApp() {
+        let canSwitchToCapacitor = (UIApplication.shared.delegate as? AppDelegate)?.canSwitchToCapacitor ?? true
+        log.info("startTheApp isOnTheAir=\(AirLauncher.isOnTheAir) canSwitchToCapacitor=\(canSwitchToCapacitor)")
+        if AirLauncher.isOnTheAir || !canSwitchToCapacitor {
             Task(priority: .userInitiated) {
                 await AirLauncher.soarIntoAir()
             }
         } else {
+            #if canImport(Capacitor)
             let capBridgeVC = UIStoryboard(name: "Main", bundle: Bundle.main).instantiateViewController(withIdentifier: "capBridgeVC") as! CAPBridgeViewController
             addLongTapGesture(vc: capBridgeVC)
             window.rootViewController = capBridgeVC
             window.makeKeyAndVisible()
+            #endif
         }
     }
     
+    #if canImport(Capacitor)
     func addLongTapGesture(vc: CAPBridgeViewController) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             if let webView = vc.webView {
@@ -64,4 +68,5 @@ class AppSwitcher: NSObject {
             _showDebugView()
         }
     }
+    #endif
 }

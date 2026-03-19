@@ -123,6 +123,8 @@ export type ApiSwapAsset = {
   tokenAddress?: string;
   keywords?: string[];
   color?: string;
+  /** A small dim label to show in the UI right after the token name */
+  label?: string;
 };
 
 export type ApiSwapPairAsset = {
@@ -132,23 +134,17 @@ export type ApiSwapPairAsset = {
   isReverseProhibited?: boolean;
 };
 
-export type ApiSwapHistoryItem = {
+export type ApiSwapHistoryItem = BaseApiSwapHistoryItem & {
   id: string;
   timestamp: number;
   lt?: number;
-  from: string;
-  fromAmount: string;
-  to: string;
-  toAmount: string;
-  /** The real fee in the chain's native token */
-  networkFee: string;
-  swapFee: string;
   ourFee?: string;
   /**
    * Swap confirmation status
    * Both 'pendingTrusted' and 'pending' mean the swap is awaiting confirmation by the blockchain.
    * - 'pendingTrusted' — awaiting confirmation and trusted (initiated by our app).
    * - 'pending' — awaiting confirmation from an external/unauthenticated source.
+   * - 'confirmed' — included in a shardblock but not yet finalized in the masterchain.
    *
    * There are two backends: ToncenterApi and our backend.
    * Swaps returned by ToncenterApi have the status 'pending'.
@@ -157,16 +153,30 @@ export type ApiSwapHistoryItem = {
    *
    * TODO: Replace the status 'pending' with 'pendingTrusted' on our backend once all clients are updated.
    */
-  status: 'pending' | 'pendingTrusted' | 'completed' | 'failed' | 'expired';
+  status: 'pending' | 'pendingTrusted' | 'confirmed' | 'completed' | 'failed' | 'expired';
   hashes: string[];
   isCanceled?: boolean;
   cex?: {
+    /** The address to send the "from" token to */
     payinAddress: string;
+    /** The address where the "to" token will be sent to */
     payoutAddress: string;
+    /** The memo to use with the "from" token sending transaction */
     payinExtraId?: string;
     status: ApiSwapCexTransactionStatus;
     transactionId: string;
   };
+};
+
+export type BaseApiSwapHistoryItem = {
+  from: string;
+  fromAmount: string;
+  fromAddress: string;
+  to: string;
+  toAmount: string;
+  /** The real fee in the chain's native token */
+  networkFee: string;
+  swapFee: string;
 };
 
 // Cross-chain centralized swap
@@ -193,12 +203,16 @@ export type ApiSwapCexEstimateResponse = {
 export type ApiSwapCexCreateTransactionRequest = {
   from: string;
   fromAmount: string;
-  fromAddress: string; // Always TON address
+  /** Always TON address */
+  fromAddress: string;
   to: string;
-  toAddress: string; // TON or other crypto address
+  /** Any chain address */
+  toAddress: string;
   payoutExtraId?: string;
-  swapFee: string; // from estimate request
-  networkFee?: string; // only for sent TON
+  /** From the estimate request */
+  swapFee: string;
+  /** Measured in the "from" chain's native token */
+  networkFee?: string;
 };
 
 export type ApiSwapCexCreateTransactionResponse = {
@@ -271,6 +285,7 @@ export type ApiSite = {
   extendedIcon?: string;
   badgeText?: string;
   withBorder?: boolean;
+  borderColor?: [string, string?];
 };
 
 export type ApiSiteCategory = {
@@ -308,9 +323,40 @@ export type ApiCardsInfo = Record<ApiMtwCardType, ApiCardInfo>;
 
 export type ApiAccountConfig = {
   cardsInfo?: ApiCardsInfo;
+  activePromotion?: ApiPromotion;
 };
 
 export type ApiSwapVersion = 2 | 3;
+
+export type ApiPromotion = {
+  id: string;
+  kind: 'cardOverlay';
+  cardOverlay: {
+    mascotIcon?: {
+      url: string;
+      top: number;
+      right: number;
+      height: number;
+      width: number;
+      rotation: number;
+    };
+    onClickAction: 'openPromotionModal' | 'openMintCardModal';
+  };
+  modal?: {
+    backgroundImageUrl: string;
+    backgroundFallback: string;
+    heroImageUrl?: string;
+    title: string;
+    titleColor?: string;
+    description: string;
+    descriptionColor?: string;
+    availabilityIndicator?: string;
+    actionButton?: {
+      title: string;
+      url: string;
+    };
+  };
+};
 
 export type ApiBackendConfig = {
   isLimited: boolean;
@@ -321,5 +367,7 @@ export type ApiBackendConfig = {
   isUpdateRequired: boolean;
   isVestingEnabled?: boolean;
   isWebSocketEnabled?: boolean;
+  shouldAutoSwitchToAir?: boolean;
   swapVersion?: ApiSwapVersion;
+  seasonalTheme?: 'newYear' | 'valentine';
 };

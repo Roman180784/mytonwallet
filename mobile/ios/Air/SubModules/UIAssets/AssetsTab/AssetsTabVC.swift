@@ -11,71 +11,78 @@ import UIComponents
 import WalletCore
 import WalletContext
 
-public class AssetsTabVC: WViewController, WSegmentedController.Delegate, WalletCoreData.EventsObserver {
+public class AssetsTabVC: WViewController, WalletCoreData.EventsObserver, NftsViewControllerDelegate, WSegmentedControllerDelegate {
+    public enum Tab: String {
+        case tokens
+        case nfts
+    }
     
-    // MARK: - View Model and UI Components
+    private let accountIdProvider: AccountIdProvider
+    
+    var accountId: String { accountIdProvider.accountId }
+    
     private var segmentedController: WSegmentedController!
     private let defaultTabIndex: Int
-    
-    public init(defaultTabIndex: Int) {
+    private var nftsVC: NftsVC!
+
+    public init(accountSource: AccountSource, defaultTabIndex: Int) {
+        self.accountIdProvider = AccountIdProvider(source: accountSource)
         self.defaultTabIndex = defaultTabIndex
         super.init(nibName: nil, bundle: nil)
     }
-    
-    var moreButton: UIButton?
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
     public func walletCore(event: WalletCoreData.Event) {
         switch event {
-        case .nftsChanged(let accountId):
-            if accountId == AccountStore.accountId {
-                moreButton?.menu = NftStore.makeNftCollectionsMenu(accountId: accountId)
-            }
         default:
             break
         }
     }
-    
-    // MARK: - Load and SetupView Functions
-    public override func loadView() {
-        super.loadView()
-        setupViews()
-    }
-    
+
     public override func viewDidLoad() {
         super.viewDidLoad()
-        
-        // listen for keyboard
-        WKeyboardObserver.observeKeyboard(delegate: self)
+        setupViews()
+        WalletCoreData.add(eventObserver: self)
     }
     
-    public override var hideNavigationBar: Bool {
-        true
-    }
-
-    // MARK: - Setup browser views
-    private var bottomViewBottomConstraint: NSLayoutConstraint!
     func setupViews() {
-        let tokensVC = WalletTokensVC(compactMode: false)
-        let nftsVC = NftsVC(compactMode: false, filter: .none, topInset: 56)
+        
+        if let sheet = self.sheetPresentationController {
+            sheet.configureFullScreen(true)
+            sheet.configureAllowsInteractiveDismiss(true)
+            if IOS_26_MODE_ENABLED {
+                sheet.prefersGrabberVisible = true
+            }
+        }
+        let tokensVC = WalletTokensVC(accountSource: accountIdProvider.source, mode: .expanded)
+        nftsVC = NftsVC(accountSource: accountIdProvider.source, mode: .embedded, filter: .none)
         addChild(tokensVC)
         addChild(nftsVC)
-        
+        tokensVC.didMove(toParent: self)
+        nftsVC.didMove(toParent: self)
+        nftsVC.delegate = self
+
         segmentedController = WSegmentedController(
-            viewControllers: [tokensVC.tokensView, nftsVC],
             items: [
-               .init(index: 0, id: "tokens", content: AnyView(Text(lang("Assets")))),
-               .init(index: 1, id: "nfts", content: AnyView(Text(lang("Collectibles")))),
+                SegmentedControlItem(
+                    id: Tab.tokens.rawValue,
+                    title: lang("Assets"),
+                    viewController: tokensVC
+                ),
+                SegmentedControlItem(
+                    id: Tab.nfts.rawValue,
+                    title: lang("Collectibles"),
+                    viewController: nftsVC
+                ),
            ],
-            defaultIndex: defaultTabIndex,
-            barHeight: 56,
-            animationSpeed: .slow,
-            delegate: self
+            defaultItemId: defaultTabIndex == 1 ? Tab.nfts.rawValue : Tab.tokens.rawValue,
+            barHeight: 0,
+            goUnderNavBar: true,
+            animationSpeed: .slow
         )
-        segmentedController(scrollOffsetChangedTo: 0)
         segmentedController.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(segmentedController)
         NSLayoutConstraint.activate([
@@ -84,91 +91,80 @@ public class AssetsTabVC: WViewController, WSegmentedController.Delegate, Wallet
             segmentedController.rightAnchor.constraint(equalTo: view.rightAnchor),
             segmentedController.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-
-        let navigationBar = WNavigationBar(closeIcon: true)
-        navigationBar.blurView.isHidden = true
-        navigationBar.shouldPassTouches = true
-        view.addSubview(navigationBar)
-        NSLayoutConstraint.activate([
-            navigationBar.topAnchor.constraint(equalTo: view.topAnchor),
-            navigationBar.leftAnchor.constraint(equalTo: view.leftAnchor),
-            navigationBar.rightAnchor.constraint(equalTo: view.rightAnchor)
-        ])
+        segmentedController.separator.isHidden = true
+        segmentedController.blurView.isHidden = true
+        segmentedController.delegate = self
         
-        let moreButton = UIButton(type: .custom)
-        self.moreButton = moreButton
-        moreButton.setImage(UIImage(systemName: "ellipsis.circle.fill"), for: .normal)
-        moreButton.showsMenuAsPrimaryAction = true
-        if let accountId = AccountStore.accountId {
-            moreButton.menu = NftStore.makeNftCollectionsMenu(accountId: accountId)
-        }
-        moreButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(moreButton)
-        NSLayoutConstraint.activate([
-            moreButton.leadingAnchor.constraint(equalTo: segmentedController.newSegmentedControl.trailingAnchor, constant: -8),
-            moreButton.centerYAnchor.constraint(equalTo: segmentedController.newSegmentedControl.centerYAnchor),
-        ])
-        moreButton.alpha = 0
-
+        updateNavigationAppearance()
+        configureNavigationItemWithTransparentBackground()
+        addCustomNavigationBarBackground()
+        
+        let segmentedControl = segmentedController.segmentedControl!
+        segmentedControl.removeFromSuperview()
+        navigationItem.titleView = segmentedControl
+        segmentedControl.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        
         updateTheme()
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if let sheet = self.sheetPresentationController {
+            sheet.configureAllowsInteractiveDismiss(true)
+        }
+    }
+    
+    private func stopReordering(isCanceled: Bool) {
+        nftsVC.stopReordering(isCanceled: isCanceled)
+        updateNavigationAppearance()
+        updateReorderingBehavior()
+    }
+    
+    private func updateReorderingBehavior(){
+        navigationController?.allowBackSwipeToDismiss(!nftsVC.isReordering)
+        navigationController?.isModalInPresentation = nftsVC.isReordering
+    }
+    
+    private func updateNavigationAppearance() {
+        if nftsVC.isReordering {
+            segmentedController.segmentedControl?.isHidden = true
+            segmentedController.scrollView.isScrollEnabled = false
+            let doneItem = UIBarButtonItem.doneButtonItem { [weak self] in self?.stopReordering(isCanceled: false) }
+            navigationItem.trailingItemGroups = [doneItem.asSingleItemGroup()]
+            navigationItem.leftBarButtonItem = .cancelTextButtonItem { [weak self] in self?.stopReordering(isCanceled: true)}
+        } else {
+            segmentedController.scrollView.isScrollEnabled = true
+            segmentedController.segmentedControl?.isHidden = false
+            addCloseNavigationItemIfNeeded()
+            navigationItem.leftBarButtonItem = nil
+        }
     }
     
     public override func updateTheme() {
         view.backgroundColor = WTheme.pickerBackground
         segmentedController?.updateTheme()
     }
-    
+
     public override func scrollToTop(animated: Bool) {
         segmentedController?.scrollToTop(animated: animated)
     }
-    
-    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        updateTheme()
+
+    // MARK: - NftsViewControllerDelegate
+        
+    public func nftsViewControllerDidChangeReorderingState(_ vc: NftsVC) {
+        updateNavigationAppearance()
+        updateReorderingBehavior()
     }
     
-    public func switchToTokensTab() {
-        segmentedController?.switchTo(tabIndex: 0)
-    }
+    // MARK: - WSegmentedControllerDelegate
     
-    func openContextMenu() {
-        if let accountId = AccountStore.accountId {
-            moreButton?.menu = NftStore.makeNftCollectionsMenu(accountId: accountId)
-            if #available(iOS 17.4, *) {
-                moreButton?.performPrimaryAction()
-            } else {
-                moreButton?.sendActions(for: .touchUpInside)
+    public func segmentedControllerDidEndScrolling() {
+        // workaround for:
+        // on iPad open AssetsTabVC to tokens, swipe to nfts. sidebar obscures nfts
+        if segmentedController.segmentedControl.model.selectedItem?.id == Tab.nfts.rawValue {
+            UIView.animate(withDuration: 0.3) {
+                self.nftsVC.view.setNeedsLayout()
             }
         }
     }
-    
-    
-    // MARK: - Segmented controller delegate
-    
-    public func segmentedController(scrollOffsetChangedTo progress: CGFloat) {
-        (children.last as? NftsVC)?.updateIsVisible(progress > 0.3)
-    }
-    
-    public func segmentedControllerDidStartDragging() {
-    }
-    
-    public func segmentedControllerDidEndScrolling() {
-    }
 }
-
-extension AssetsTabVC: WKeyboardObserverDelegate {
-    public func keyboardWillShow(info: WKeyboardDisplayInfo) {
-        UIView.animate(withDuration: info.animationDuration) { [self] in
-            bottomViewBottomConstraint?.constant = -info.height + (tabBarController?.tabBar.frame.height ?? 0)
-            view.layoutIfNeeded()
-        }
-    }
-    
-    public func keyboardWillHide(info: WKeyboardDisplayInfo) {
-        UIView.animate(withDuration: info.animationDuration) { [self] in
-            bottomViewBottomConstraint?.constant = 0
-            view.layoutIfNeeded()
-        }
-    }
-}
-

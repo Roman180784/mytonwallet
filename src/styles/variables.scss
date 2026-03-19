@@ -7,6 +7,7 @@
   --color-default-accent-hover: #0088CCCC;
   --color-accent: #0088CC;
   --color-black: #2C333E;
+  --color-black-rgb: 44, 51, 62;
   --color-gray-1: #616770;
   --color-gray-2: #8B8F96;
   --color-gray-3: #A5A8AD;
@@ -88,7 +89,7 @@
   --color-gpurple-button-background-rest: #D0D2FE;
   --color-gpurple-button-background-hover: #C0C2FE;
 
-  --color-close-button-text: #8399AE;
+  --color-close-button-text: #8B8F96;
   --color-close-button-text-hover: #616770;
   --color-close-button-background: #E5E6E8;
   --color-close-button-background-hover: #D7D7DA;
@@ -144,6 +145,7 @@
   --color-card-apy-text: #FFF;
   --color-card-apy-background: rgba(86, 233, 145, 0.7);
   --color-card-connected-bg: rgba(0, 0, 0, 0.16);
+  --color-card-button-border: #FFFFFF40;
 
   --color-add-wallet-text: #616770;
   --color-add-wallet-text-hover: #434953;
@@ -203,16 +205,18 @@
   --header-padding-bottom: 0.8125rem;
 
   --z-below: -1;
+  --z-container: 1;
   --z-card: 10;
   --z-sticky-card: 10;
-  --z-header: 11;
+  --z-suggestions: 11;
+  --z-header: 12;
   --z-loading-overlay: 98;
   --z-media-viewer: 99;
   --z-modal: 100;
   --z-menu-backdrop: 199;
   --z-menu-bubble: calc(var(--z-menu-backdrop) + 1);
   --z-over-menu-bubble: calc(var(--z-menu-bubble) + 1);
-  --z-notification: 250;
+  --z-toast: 250;
   --z-tooltip: 300;
   --z-confetti: 400;
   --z-portal-menu: 2500;
@@ -257,6 +261,7 @@
     --color-default-accent-hover: #469CECCC;
     --color-accent: #469CEC;
     --color-black: #F6F7F8;
+    --color-black-rgb: 246, 247, 248;
     --color-gray-1: #BFC0C2;
     --color-gray-2: #89898B;
     --color-gray-3: #626363;

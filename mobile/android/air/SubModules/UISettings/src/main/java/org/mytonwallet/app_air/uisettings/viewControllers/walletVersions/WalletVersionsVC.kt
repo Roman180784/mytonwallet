@@ -28,10 +28,12 @@ import org.mytonwallet.app_air.walletcore.api.importNewWalletVersion
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.pushNotifications.AirPushNotifications
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
+import org.mytonwallet.app_air.walletcore.utils.jsonObject
 import java.lang.ref.WeakReference
 
 class WalletVersionsVC(context: Context) : WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource, WalletCore.EventObserver {
+    override val TAG = "WalletVersions"
 
     companion object {
         val HEADER_CELL = WCell.Type(1)
@@ -121,7 +123,11 @@ class WalletVersionsVC(context: Context) : WViewController(context),
                     WalletCore.activateAccount(accountId, notifySDK = true) { res, err ->
                         if (res != null && err == null) {
                             navigationController?.popToRoot()
-                            WalletCore.notifyEvent(WalletEvent.AccountChangedInApp)
+                            WalletCore.notifyEvent(
+                                WalletEvent.AccountChangedInApp(
+                                    persistedAccountsModified = false
+                                )
+                            )
                         }
                     }
                     return
@@ -229,8 +235,7 @@ class WalletVersionsVC(context: Context) : WViewController(context),
             WGlobalStorage.addAccount(
                 accountId = importedAccountId,
                 accountType = importedAccount.accountType.value,
-                importedAccount.tonAddress,
-                importedAccount.addressByChain["tron"],
+                importedAccount.byChain.jsonObject,
                 name = importedAccount.name,
                 importedAt = importedAccount.importedAt
             )
@@ -251,7 +256,8 @@ class WalletVersionsVC(context: Context) : WViewController(context),
                     )
                     return@activateAccount
                 }
-                navigationController?.pop(false)
+                if ((navigationController?.viewControllers?.size ?: 0) > 1)
+                    navigationController?.pop(false)
                 WalletCore.notifyEvent(WalletEvent.AddNewWalletCompletion)
             }
         }

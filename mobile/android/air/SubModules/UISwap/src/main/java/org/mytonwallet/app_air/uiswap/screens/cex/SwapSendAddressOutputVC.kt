@@ -56,6 +56,7 @@ class SwapSendAddressOutputVC(
     payinAddress: String,
     transactionId: String
 ) : WViewControllerWithModelStore(context) {
+    override val TAG = "SwapSendAddressOutput"
 
     override val shouldDisplayTopBar = true
     override val shouldDisplayBottomBar = true
@@ -144,7 +145,8 @@ class SwapSendAddressOutputVC(
 
         includeFontPadding = false
         clipLabel = "Address"
-        clipToast = LocaleController.getString("Address was copied!")
+        clipToast = LocaleController.getString("%chain% Address Copied")
+            .replace("%chain%", fromToken.mBlockchain?.displayName ?: "")
         text = payinAddress
     }
 
@@ -162,7 +164,7 @@ class SwapSendAddressOutputVC(
         }
         includeFontPadding = false
         clipLabel = "Transaction ID"
-        clipToast = LocaleController.getString("Transaction ID was copied!")
+        clipToast = LocaleController.getString("Transaction ID Copied")
         text = transactionId
     }
 
@@ -285,18 +287,13 @@ class SwapSendAddressOutputVC(
 
     override fun updateTheme() {
         super.updateTheme()
-        if (ThemeManager.uiMode.hasRoundedCorners) {
-            scrollView.setBackgroundColor(WColor.SecondaryBackground.color)
-            confirmView.setBackgroundColor(WColor.Background.color, 0f, ViewConstants.BIG_RADIUS.dp)
-            bottomDetails.setBackgroundColor(
-                WColor.Background.color,
-                ViewConstants.BIG_RADIUS.dp,
-                0f
-            )
-        } else {
-            scrollView.setBackgroundColor(WColor.Background.color)
-            confirmView.background = separatorDrawable
-        }
+        scrollView.setBackgroundColor(WColor.SecondaryBackground.color)
+        confirmView.setBackgroundColor(WColor.Background.color, 0f, ViewConstants.BLOCK_RADIUS.dp)
+        bottomDetails.setBackgroundColor(
+            WColor.Background.color,
+            ViewConstants.BLOCK_RADIUS.dp,
+            0f
+        )
         qrCodeView.setPadding(if (ThemeManager.isDark) 16.dp else 0)
         if (ThemeManager.isDark) {
             qrCodeView.setBackgroundColor(Color.WHITE, 16f.dp)

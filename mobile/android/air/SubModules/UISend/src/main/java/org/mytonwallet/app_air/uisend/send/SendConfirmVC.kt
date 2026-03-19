@@ -3,6 +3,7 @@ package org.mytonwallet.app_air.uisend.send
 import android.annotation.SuppressLint
 import android.content.Context
 import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -14,15 +15,21 @@ import androidx.appcompat.widget.AppCompatTextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_CONSTRAINT
 import androidx.constraintlayout.widget.ConstraintSet
+import androidx.core.text.buildSpannedString
+import androidx.core.text.inSpans
+import androidx.core.view.isGone
 import org.mytonwallet.app_air.ledger.screens.ledgerConnect.LedgerConnectVC
 import org.mytonwallet.app_air.uicomponents.adapter.implementation.holders.ListGapCell
-import org.mytonwallet.app_air.uicomponents.adapter.implementation.holders.ListTitleCell
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.commonViews.ReversedCornerViewUpsideDown
+import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.setPaddingDp
+import org.mytonwallet.app_air.uicomponents.extensions.styleDots
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
+import org.mytonwallet.app_air.uicomponents.helpers.spans.ScamLabelSpan
 import org.mytonwallet.app_air.uicomponents.helpers.spans.WForegroundColorSpan
+import org.mytonwallet.app_air.uicomponents.helpers.spans.WTypefaceSpan
 import org.mytonwallet.app_air.uicomponents.helpers.typeface
 import org.mytonwallet.app_air.uicomponents.image.Content
 import org.mytonwallet.app_air.uicomponents.widgets.CopyTextView
@@ -37,10 +44,13 @@ import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.Passco
 import org.mytonwallet.app_air.uipasscode.viewControllers.passcodeConfirm.views.PasscodeScreenView
 import org.mytonwallet.app_air.uisend.send.lauouts.ConfirmAmountView
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
+import org.mytonwallet.app_air.walletbasecontext.logger.Logger
+import org.mytonwallet.app_air.walletbasecontext.models.MBaseCurrency
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletbasecontext.utils.replaceSpacesWithNbsp
+import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.utils.CoinUtils
 import org.mytonwallet.app_air.walletcore.moshi.MApiSubmitTransferOptions
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
@@ -53,10 +63,22 @@ class SendConfirmVC(
     context: Context,
     private val config: SendViewModel.DraftResult.Result,
     private val transferOptions: MApiSubmitTransferOptions,
-    private val slug: String
+    private val slug: String,
+    private val name: String? = null,
+    private val isScam: Boolean = false,
+    private val isSell: Boolean = false
 ) : WViewController(context) {
+    override val TAG = "SendConfirm"
+
+    override val displayedAccount =
+        DisplayedAccount(AccountStore.activeAccountId, AccountStore.isPushedTemporary)
+    private var isShowingAccountMultichain =
+        WGlobalStorage.isMultichain(AccountStore.activeAccountId!!)
 
     private var task: ((passcode: String?) -> Unit)? = null
+    private val scamLabelSpan by lazy {
+        ScamLabelSpan(LocaleController.getString("Scam").uppercase())
+    }
 
     fun setNextTask(task: (passcode: String?) -> Unit) {
         this.task = task
@@ -70,7 +92,7 @@ class SendConfirmVC(
             val amount = SpannableStringBuilder(config.request.amountEquivalent.getFmt(false))
             CoinUtils.setSpanToFractionalPart(amount, WForegroundColorSpan(WColor.SecondaryText))
             set(
-                Content.of(config.request.token),
+                Content.of(config.request.token, showChain = isShowingAccountMultichain),
                 amount = amount,
                 currency = config.request.amountEquivalent.getFmt(true),
                 fee = LocaleController.getString("\$fee_value_with_colon").replace(
@@ -82,9 +104,14 @@ class SendConfirmVC(
             )
         }
     }
-    private val title1 = ListTitleCell(context).apply {
-        text = LocaleController.getString("Send to")
+    private val title1 = HeaderCell(context).apply {
+        configure(
+            title = LocaleController.getString("Send to"),
+            titleColor = WColor.Tint,
+            topRounding = HeaderCell.TopRounding.FIRST_ITEM
+        )
     }
+
     private val addressInputView by lazy {
         CopyTextView(context).apply {
             typeface = WFont.Regular.typeface
@@ -92,13 +119,19 @@ class SendConfirmVC(
                 MATCH_PARENT,
                 WRAP_CONTENT
             )
-            setPaddingDp(20, 8, 20, 20)
+            setPaddingDp(20, 19, 20, 14)
 
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
-            text = config.resolvedAddress
+            val destination = config.request.input.destination
+            val resolved = resolvedAddress(destination)
+            setText(
+                buildRecipientPreview(resolved),
+                resolved
+            )
             clipLabel = "Address"
-            clipToast = LocaleController.getString("Address was copied!")
+            clipToast = LocaleController.getString("%chain% Address Copied")
+                .replace("%chain%", config.request.token.mBlockchain?.displayName ?: "")
         }
     }
 
@@ -107,7 +140,7 @@ class SendConfirmVC(
             typeface = WFont.Regular.typeface
             layoutParams =
                 ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-            setPaddingDp(20, 0, 20, 20)
+            setPaddingDp(20, 20, 20, 14)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
             text = config.request.input.comment
@@ -115,13 +148,21 @@ class SendConfirmVC(
     }
 
     private val gap1 = ListGapCell(context)
-    private val title2 = ListTitleCell(context).apply {
-        text = LocaleController.getString("Amount")
+    private val title2 = HeaderCell(context).apply {
+        configure(
+            title = LocaleController.getString("Amount"),
+            titleColor = WColor.Tint,
+            topRounding = HeaderCell.TopRounding.FIRST_ITEM
+        )
     }
 
     private val gap2 = ListGapCell(context)
-    private val title3 = ListTitleCell(context).apply {
-        text = LocaleController.getString("Comment or Memo")
+    private val title3 = HeaderCell(context).apply {
+        configure(
+            title = LocaleController.getString("Comment or Memo"),
+            titleColor = WColor.Tint,
+            topRounding = HeaderCell.TopRounding.FIRST_ITEM
+        )
     }
 
     private val signatureWarningGap = ListGapCell(context)
@@ -138,9 +179,12 @@ class SendConfirmVC(
     private val binaryMessageGap = ListGapCell(context)
 
     private val binaryMessageTitle by lazy {
-        ListTitleCell(context).apply {
-            id = View.generateViewId()
-            text = LocaleController.getString("Signing Data")
+        HeaderCell(context).apply {
+            configure(
+                title = LocaleController.getString("Signing Data"),
+                titleColor = WColor.Tint,
+                topRounding = HeaderCell.TopRounding.FIRST_ITEM
+            )
         }
     }
 
@@ -152,22 +196,25 @@ class SendConfirmVC(
                 MATCH_PARENT,
                 WRAP_CONTENT
             )
-            setPaddingDp(20, 8, 20, 20)
+            setPaddingDp(20, 14, 20, 14)
 
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
             text = config.request.input.binary
             clipLabel = "Signing Data"
-            clipToast = LocaleController.getString("Data was copied!")
+            clipToast = LocaleController.getString("Data Copied")
         }
     }
 
     private val initDataGap = ListGapCell(context)
 
     private val initDataTitle by lazy {
-        ListTitleCell(context).apply {
-            id = View.generateViewId()
-            text = LocaleController.getString("Contract Initialization Data")
+        HeaderCell(context).apply {
+            configure(
+                title = LocaleController.getString("Contract Initialization Data"),
+                titleColor = WColor.Tint,
+                topRounding = HeaderCell.TopRounding.FIRST_ITEM
+            )
         }
     }
 
@@ -179,13 +226,13 @@ class SendConfirmVC(
                 MATCH_PARENT,
                 WRAP_CONTENT
             )
-            setPaddingDp(20, 8, 20, 20)
+            setPaddingDp(20, 14, 20, 14)
 
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setLineHeight(TypedValue.COMPLEX_UNIT_SP, 24f)
             text = config.request.input.stateInit
             clipLabel = "Contract Initialization Data"
-            clipToast = LocaleController.getString("Contract Initialization Data was copied!")
+            clipToast = LocaleController.getString("Contract Initialization Data Copied")
         }
     }
 
@@ -271,9 +318,22 @@ class SendConfirmVC(
 
     override fun setupViews() {
         super.setupViews()
-        setNavTitle(LocaleController.getString("Is it all ok?"))
+        setNavTitle(if (isSell) LocaleController.getString("Sell") else LocaleController.getString("Is it all ok?"))
         setupNavBar(true)
         navigationBar?.addCloseButton()
+
+        if (isScam) {
+            confirmButton.type = WButton.Type.DESTRUCTIVE
+        }
+
+        if (isSell) {
+            val tokenSymbol = config.request.token.symbol ?: MBaseCurrency.TON.currencyCode
+            confirmButton.text = LocaleController.getStringWithKeyValues(
+                "Sell %symbol%",
+                listOf("%symbol%" to tokenSymbol)
+            )
+            cancelButton.isGone = true
+        }
 
         view.addView(scrollView, ViewGroup.LayoutParams(MATCH_PARENT, 0))
         view.addView(
@@ -285,39 +345,48 @@ class SendConfirmVC(
         )
         view.addView(cancelButton, ViewGroup.LayoutParams(0, 50.dp))
         view.addView(confirmButton, ViewGroup.LayoutParams(0, 50.dp))
+        val buttonsBottomMargin = getButtonsBottomMargin()
         view.setConstraints {
             toCenterX(scrollView)
             topToBottom(scrollView, navigationBar!!)
             bottomToTop(scrollView, confirmButton, 20f)
-            toBottomPx(
-                cancelButton, 20.dp + max(
-                    (navigationController?.getSystemBars()?.bottom ?: 0),
-                    (window?.imeInsets?.bottom ?: 0)
-                )
-            )
+            toBottomPx(confirmButton, buttonsBottomMargin)
             topToTop(
                 bottomReversedCornerViewUpsideDown,
-                cancelButton,
-                -20f - ViewConstants.BIG_RADIUS
+                confirmButton,
+                -ViewConstants.GAP - ViewConstants.BLOCK_RADIUS
             )
             toBottom(bottomReversedCornerViewUpsideDown)
-            topToTop(confirmButton, cancelButton)
-            toLeft(cancelButton)
-            leftToRight(confirmButton, cancelButton)
-            toRight(confirmButton)
-            setMargin(cancelButton.id, ConstraintSet.START, 20.dp)
-            setMargin(confirmButton.id, ConstraintSet.START, 8.dp)
-            setMargin(confirmButton.id, ConstraintSet.END, 20.dp)
-            createHorizontalChain(
-                ConstraintSet.PARENT_ID, ConstraintSet.LEFT,
-                ConstraintSet.PARENT_ID, ConstraintSet.RIGHT,
-                if (LocaleController.isRTL)
-                    intArrayOf(confirmButton.id, cancelButton.id)
-                else
-                    intArrayOf(cancelButton.id, confirmButton.id),
-                null,
-                ConstraintSet.CHAIN_SPREAD
-            )
+            if (isSell) {
+                toLeft(confirmButton)
+                toRight(confirmButton)
+                setMargin(confirmButton.id, ConstraintSet.START, 20.dp)
+                setMargin(confirmButton.id, ConstraintSet.END, 20.dp)
+            } else {
+                toBottomPx(cancelButton, buttonsBottomMargin)
+                topToTop(
+                    bottomReversedCornerViewUpsideDown,
+                    cancelButton,
+                    -ViewConstants.GAP - ViewConstants.BLOCK_RADIUS
+                )
+                topToTop(confirmButton, cancelButton)
+                toLeft(cancelButton)
+                leftToRight(confirmButton, cancelButton)
+                toRight(confirmButton)
+                setMargin(cancelButton.id, ConstraintSet.START, 20.dp)
+                setMargin(confirmButton.id, ConstraintSet.START, 8.dp)
+                setMargin(confirmButton.id, ConstraintSet.END, 20.dp)
+                createHorizontalChain(
+                    ConstraintSet.PARENT_ID, ConstraintSet.LEFT,
+                    ConstraintSet.PARENT_ID, ConstraintSet.RIGHT,
+                    if (LocaleController.isRTL)
+                        intArrayOf(confirmButton.id, cancelButton.id)
+                    else
+                        intArrayOf(cancelButton.id, confirmButton.id),
+                    null,
+                    ConstraintSet.CHAIN_SPREAD
+                )
+            }
         }
 
         updateTheme()
@@ -340,7 +409,7 @@ class SendConfirmVC(
         topRoundedItems.forEach {
             it.setBackgroundColor(
                 WColor.Background.color,
-                ViewConstants.BAR_ROUNDS.dp,
+                ViewConstants.TOOLBAR_RADIUS.dp,
                 0f
             )
         }
@@ -349,7 +418,7 @@ class SendConfirmVC(
             it.setBackgroundColor(
                 WColor.Background.color,
                 0f,
-                ViewConstants.BIG_RADIUS.dp
+                ViewConstants.BLOCK_RADIUS.dp
             )
         }
 
@@ -357,12 +426,17 @@ class SendConfirmVC(
             it.setTextColor(WColor.PrimaryText.color)
         }
 
-        val showSeparator =
-            !ThemeManager.uiMode.hasRoundedCorners && !ThemeManager.isDark
-        gap1.showSeparator = showSeparator
-        gap2.showSeparator = showSeparator
+        gap1.showSeparator = false
+        gap2.showSeparator = false
         gap1.invalidate()
         gap2.invalidate()
+
+        val destination = config.request.input.destination
+        val resolved = resolvedAddress(destination)
+        addressInputView.setText(
+            buildRecipientPreview(resolved),
+            resolved
+        )
     }
 
     override fun insetsUpdated() {
@@ -373,17 +447,78 @@ class SendConfirmVC(
             ViewConstants.HORIZONTAL_PADDINGS.dp,
             0
         )
+        val buttonsBottomMargin = getButtonsBottomMargin()
         view.setConstraints {
-            toBottomPx(
-                cancelButton, 20.dp + max(
-                    (navigationController?.getSystemBars()?.bottom ?: 0),
-                    (window?.imeInsets?.bottom ?: 0)
-                )
-            )
+            toBottomPx(confirmButton, buttonsBottomMargin)
+            if (!isSell) {
+                toBottomPx(cancelButton, buttonsBottomMargin)
+            }
+        }
+    }
+
+    private fun getButtonsBottomMargin(): Int {
+        return 20.dp + max(
+            (navigationController?.getSystemBars()?.bottom ?: 0),
+            (window?.imeInsets?.bottom ?: 0)
+        )
+    }
+
+    private fun resolvedAddress(destination: String): String {
+        return config.resolvedAddress ?: destination
+    }
+
+    private fun resolvedName(): String? {
+        return name ?: config.addressName
+    }
+
+    private fun buildRecipientPreview(address: String): CharSequence {
+        val name = resolvedName()?.takeIf { it.isNotBlank() }
+        return buildSpannedString {
+            if (isScam) {
+                append(" ", scamLabelSpan, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                append(" ")
+            }
+
+            if (!isScam && name != null) {
+                inSpans(WTypefaceSpan(WFont.Medium.typeface, WColor.PrimaryText.color)) {
+                    append(name)
+                }
+                append(" · ")
+            }
+
+            append(buildAddressSpan(address)).styleDots()
+        }.replaceSpacesWithNbsp()
+    }
+
+    private fun buildAddressSpan(address: String): CharSequence {
+        if (address.length <= 12) {
+            return buildSpannedString {
+                inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.PrimaryText.color)) {
+                    append(address)
+                }
+            }
+        }
+        val prefix = address.take(6)
+        val suffix = address.takeLast(6)
+        val middle = address.substring(6, address.length - 6)
+        return buildSpannedString {
+            inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.PrimaryText.color)) {
+                append(prefix)
+            }
+            inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.SecondaryText.color)) {
+                append(middle)
+            }
+            inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.PrimaryText.color)) {
+                append(suffix)
+            }
         }
     }
 
     private fun confirmHardware(transferOptions: MApiSubmitTransferOptions) {
+        Logger.d(
+            Logger.LogTag.SEND,
+            "confirmHardware: Confirming send with hardware wallet slug=$slug"
+        )
         confirmButton.lockView()
         val account = AccountStore.activeAccount!!
         val ledgerConnectVC = LedgerConnectVC(
@@ -391,6 +526,7 @@ class SendConfirmVC(
             LedgerConnectVC.Mode.ConnectToSubmitTransfer(
                 account.tonAddress!!,
                 signData = LedgerConnectVC.SignData.SignTransfer(
+                    accountId = account.accountId,
                     transferOptions = transferOptions,
                     slug = slug
                 ),
@@ -404,6 +540,7 @@ class SendConfirmVC(
                 configSendingToken(
                     config.request.token,
                     config.request.amountEquivalent.getFmt(false),
+                    account.network,
                     config.resolvedAddress
                 )
             }
@@ -414,6 +551,10 @@ class SendConfirmVC(
     }
 
     private fun confirmWithPassword() {
+        Logger.d(
+            Logger.LogTag.SEND,
+            "confirmWithPassword: Confirming send with passcode slug=$slug"
+        )
         push(
             PasscodeConfirmVC(
                 context,
@@ -425,6 +566,7 @@ class SendConfirmVC(
                         configSendingToken(
                             config.request.token,
                             config.request.amountEquivalent.getFmt(false),
+                            AccountStore.activeAccount!!.network,
                             config.resolvedAddress
                         )
                     },

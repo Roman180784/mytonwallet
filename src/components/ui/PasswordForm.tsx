@@ -1,7 +1,5 @@
 import type { RefObject, TeactNode } from '../../lib/teact/teact';
-import React, {
-  memo, useEffect, useMemo, useRef, useState,
-} from '../../lib/teact/teact';
+import React, { memo, useEffect, useMemo, useRef, useState } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { AuthConfig } from '../../util/authApi/types';
@@ -22,7 +20,7 @@ import { stopEvent } from '../../util/domEvents';
 import { getTranslation } from '../../util/langProvider';
 import { pause } from '../../util/schedulers';
 import { createSignal } from '../../util/signals';
-import { IS_ANDROID_APP, IS_DELEGATING_BOTTOM_SHEET } from '../../util/windowEnvironment';
+import { IS_ANDROID_APP } from '../../util/windowEnvironment';
 import { callApi } from '../../api';
 import { ANIMATED_STICKERS_PATHS } from './helpers/animatedAssets';
 
@@ -62,13 +60,12 @@ interface OwnProps {
   containerClassName?: string;
   pinPadClassName?: string;
   withCloseButton?: boolean;
+  isFullWidthButton?: boolean;
   children?: TeactNode;
   noAnimatedIcon?: boolean;
   inputWrapperClassName?: string;
   forceBiometricsInMain?: boolean;
-  // Works only if the password is memoized. If `true`, the component will render
-  // a separate screen with an action info and buttons 'Cancel' and 'Confirm'.
-  skipAuthScreen?: boolean;
+  noAutoConfirm?: boolean;
   onCancel?: NoneToVoidFunction;
   onUpdate: NoneToVoidFunction;
   onSubmit: (password: string) => void;
@@ -119,7 +116,7 @@ function useStorageClearedDialog(operationType?: OperationType) {
       }),
       buttons: {
         cancel: { title: 'Cancel' },
-        confirm: { title: 'Log Out', isDestructive: true, action: 'signOutAll' },
+        confirm: { title: 'Remove', isDestructive: true, action: 'signOutAll' },
       },
       noBackdropClose: true,
       isInAppLock: operationType === 'unlock',
@@ -138,7 +135,7 @@ function PasswordForm({
   cancelLabel,
   submitLabel,
   stickerSize = STICKER_SIZE,
-  placeholder = 'Enter your password',
+  placeholder = getDoesUsePinPad() ? 'Enter your passcode' : 'Enter your password',
   error,
   help,
   resetStateDelayMs,
@@ -146,11 +143,12 @@ function PasswordForm({
   pinPadClassName,
   children,
   withCloseButton,
+  isFullWidthButton,
   noAnimatedIcon,
   inputWrapperClassName,
   forceBiometricsInMain,
-  skipAuthScreen,
   isAutoConfirmEnabled,
+  noAutoConfirm,
   onUpdate,
   onCancel,
   onSubmit,
@@ -161,8 +159,7 @@ function PasswordForm({
 
   const memoizedPasswordRef = useRef<string>();
   const hasInMemoryPassword = useInMemoryPassword(memoizedPasswordRef);
-
-  const showOnlyConfirmScreen = skipAuthScreen && hasInMemoryPassword;
+  const withConfirmScreenOnly = !noAutoConfirm && hasInMemoryPassword;
 
   const passwordRef = useRef<HTMLInputElement>();
   const [password, setPassword] = useState<string>('');
@@ -170,7 +167,7 @@ function PasswordForm({
   const [wrongAttempts, setWrongAttempts] = useState(0);
   const [isResetBiometricsWarningOpen, openResetBiometricsWarning, closeResetBiometricsWarning] = useFlag(false);
   const { isSmallHeight, isPortrait } = useDeviceScreen();
-  const isSubmitDisabled = !password.length && !showOnlyConfirmScreen;
+  const isSubmitDisabled = !password.length && !withConfirmScreenOnly;
   const canUsePinPad = getDoesUsePinPad();
   const [isLogOutModalOpened, openLogOutModal, closeLogOutModal] = useFlag(false);
   const shouldSuggestLogout = useMatchCount(!!error || !!localError, WRONG_ATTEMPTS_BEFORE_LOG_OUT_SUGGESTION);
@@ -185,24 +182,23 @@ function PasswordForm({
   }, [isActive]);
 
   const submitCallback = useLastCallback(async (enteredPassword: string) => {
-    const passwordToReturn = showOnlyConfirmScreen ? memoizedPasswordRef.current! : enteredPassword;
+    const passwordToReturn = withConfirmScreenOnly ? memoizedPasswordRef.current! : enteredPassword;
     onSubmit(passwordToReturn);
 
-    if (showOnlyConfirmScreen) return;
+    if (withConfirmScreenOnly) return;
 
-    const passwordVerified = await callApi('verifyPassword', passwordToReturn);
-    if (!passwordVerified) {
+    const isVerified = await callApi('verifyPassword', passwordToReturn);
+    if (!isVerified) {
       // Password verification failed - check if it's due to storage corruption
       const isStorageOk = await callApi('checkWorkerStorageIntegrity');
       if (!isStorageOk) {
         return showStorageClearedDialog();
       }
-      // Storage is intact, so it's just a wrong password - let normal error handling proceed
+
+      return;
     }
 
-    if (passwordVerified) {
-      setInMemoryPassword({ password: passwordToReturn });
-    }
+    setInMemoryPassword({ password: passwordToReturn });
   });
 
   const handleSubmit = useLastCallback(() => {
@@ -230,16 +226,15 @@ function PasswordForm({
 
   useEffect(() => {
     if (
-      (IS_DELEGATING_BOTTOM_SHEET && !forceBiometricsInMain)
-      || !isActive
+      !isActive
       || !isBiometricAuthEnabled
-      || showOnlyConfirmScreen
+      || withConfirmScreenOnly
     ) {
       return;
     }
 
     void pause(APPEAR_ANIMATION_DURATION_MS).then(handleBiometrics);
-  }, [forceBiometricsInMain, handleBiometrics, isActive, isBiometricAuthEnabled, showOnlyConfirmScreen]);
+  }, [forceBiometricsInMain, handleBiometrics, isActive, isBiometricAuthEnabled, withConfirmScreenOnly]);
 
   useEffectOnce(() => {
     return getHandleBiometricsSignal.subscribe(handleBiometrics);
@@ -338,12 +333,13 @@ function PasswordForm({
             {lang('Try Again')}
           </Button>
         )}
-        {(!isBiometricAuthEnabled || showOnlyConfirmScreen) && (
+        {(!isBiometricAuthEnabled || withConfirmScreenOnly) && (
           <Button
             isPrimary
             isLoading={isLoading}
             isDisabled={isSubmitDisabled}
-            className={!shouldRenderFullWidthButton ? modalStyles.buttonHalfWidth : modalStyles.buttonFullWidth}
+            className={(shouldRenderFullWidthButton || isFullWidthButton)
+              ? modalStyles.buttonFullWidth : modalStyles.buttonHalfWidth}
             onClick={!isLoading ? handleSubmit : undefined}
           >
             {submitLabel || lang('Send')}
@@ -373,12 +369,11 @@ function PasswordForm({
     const actionName = lang(
       !isNativeBiometricAuthEnabled
         ? 'Enter code'
-        : (getIsFaceIdAvailable()
+        : getIsFaceIdAvailable()
           ? 'Enter code or use Face ID'
-          : (getIsTouchIdAvailable()
+          : getIsTouchIdAvailable()
             ? 'Enter code or use Touch ID'
-            : 'Enter code or use biometrics')
-        ),
+            : 'Enter code or use biometrics',
     );
 
     const content = (
@@ -407,7 +402,7 @@ function PasswordForm({
           {children}
         </div>
 
-        {showOnlyConfirmScreen ? renderFooterButtons() : (
+        {withConfirmScreenOnly ? renderFooterButtons() : (
           <PinPad
             isActive={isActive}
             title={lang(hasError ? (localError || error!) : (isSmallHeight && title ? title : actionName))}
@@ -430,7 +425,7 @@ function PasswordForm({
       </>
     );
 
-    return showOnlyConfirmScreen ? (
+    return withConfirmScreenOnly ? (
       <div className={modalStyles.transitionContent}>
         {content}
       </div>
@@ -448,7 +443,7 @@ function PasswordForm({
     return (
       <div className={styles.verify}>
         {lang(operationType === 'transfer'
-          ? 'Please confirm transaction using biometrics' : 'Please confirm operation using biometrics')}
+          ? 'Please confirm transfer using biometrics' : 'Please confirm action using biometrics')}
       </div>
     );
   }
@@ -496,7 +491,7 @@ function PasswordForm({
 
       {children}
 
-      {!showOnlyConfirmScreen && (isBiometricAuthEnabled ? renderBiometricPrompt() : renderPasswordForm())}
+      {!withConfirmScreenOnly && (isBiometricAuthEnabled ? renderBiometricPrompt() : renderPasswordForm())}
 
       {shouldSuggestLogout && operationType === 'unlock' && (
         <div className={styles.logOutWrapper}>

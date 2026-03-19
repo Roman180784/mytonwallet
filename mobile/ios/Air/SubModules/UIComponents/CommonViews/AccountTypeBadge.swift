@@ -3,19 +3,17 @@ import SwiftUI
 import WalletCore
 import WalletContext
 
+let viewBadgeCornerRadius: CGFloat = 5
+let viewBadgeVerticalPadding: CGFloat = 3
 
 public struct AccountTypeBadge: View {
     
     var accountType: AccountType
-    public enum Style {
-        case card
-        case list
-    }
-    var style: Style
+    var increasedOpacity: Bool
     
-    public init(_ accountType: AccountType, style: Style) {
+    public init(_ accountType: AccountType, increasedOpacity: Bool = false) {
         self.accountType = accountType
-        self.style = style
+        self.increasedOpacity = increasedOpacity
     }
     
     public var body: some View {
@@ -29,7 +27,6 @@ public struct AccountTypeBadge: View {
                 view
             }
         }
-        .foregroundStyle(foregroundStyle)
     }
     
     var mnemonic: some View {
@@ -38,9 +35,10 @@ public struct AccountTypeBadge: View {
     
     var hardware: some View {
         Image.airBundle("LedgerBadge")
-            .opacity(0.75)
+            .opacity(increasedOpacity ? 1 : 0.75)
     }
     
+    @ViewBuilder
     var view: some View {
         HStack(spacing: 2) {
             Image.airBundle("ViewBadge")
@@ -49,31 +47,15 @@ public struct AccountTypeBadge: View {
                 .font(.system(size: 12, weight: .semibold))
         }
         .offset(y: -0.333)
-        .opacity(0.75)
+        .opacity(increasedOpacity ? 1 : 0.75)
         .padding(.horizontal, 3)
         .frame(height: 18)
         .background {
-            ZStack {
-                BackgroundBlur(radius: 16)
-                switch style {
-                case .card:
-                    Color.primary.opacity(0.18)
-                case .list:
-                    Color(WTheme.secondaryLabel).opacity(0.12)
-                }
-                
-            }
+            Rectangle()
+                .opacity(0.12)
         }
-        .clipShape(.rect(cornerRadius: 5))
-    }
-    
-    var foregroundStyle: Color {
-        switch style {
-        case .card:
-            Color.primary
-        case .list:
-            Color(WTheme.secondaryLabel)
-        }
+        .clipShape(.rect(cornerRadius: viewBadgeCornerRadius))
+        .padding(.vertical, -viewBadgeVerticalPadding)
     }
 }
 
@@ -86,9 +68,9 @@ public struct AccountTypeBadge: View {
         }
         
         VStack {
-            AccountTypeBadge(.mnemonic, style: .card)
-            AccountTypeBadge(.hardware, style: .card)
-            AccountTypeBadge(.view, style: .card)
+            AccountTypeBadge(.mnemonic)
+            AccountTypeBadge(.hardware)
+            AccountTypeBadge(.view)
         }
         .foregroundStyle(.white)
         .scaleEffect(4)

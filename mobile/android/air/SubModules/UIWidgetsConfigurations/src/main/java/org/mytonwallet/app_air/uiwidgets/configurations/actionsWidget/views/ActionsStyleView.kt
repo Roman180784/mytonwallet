@@ -76,8 +76,6 @@ class ActionsStyleView(
         v
     }
 
-    private val separatorView = WBaseView(context)
-
     var selectedStyle = ActionsWidget.Config.Style.VIVID
 
     override fun setupViews() {
@@ -85,7 +83,6 @@ class ActionsStyleView(
 
         addView(titleLabel)
         addView(themeView, LayoutParams(0, LayoutParams.WRAP_CONTENT))
-        addView(separatorView, LayoutParams(LayoutParams.MATCH_PARENT, 1))
 
         setConstraints {
             toTop(titleLabel, 16f)
@@ -93,7 +90,6 @@ class ActionsStyleView(
             topToBottom(themeView, titleLabel, 24f)
             toCenterX(themeView)
             toBottom(themeView, 20f)
-            toBottom(separatorView)
         }
 
         arrayOf(vividView, neutralView).forEach {
@@ -110,19 +106,10 @@ class ActionsStyleView(
     }
 
     override fun updateTheme() {
-        when (ThemeManager.uiMode) {
-            ThemeManager.UIMode.COMMON -> {
-                background = separatorBackgroundDrawable
-                separatorBackgroundDrawable.invalidateSelf()
-            }
-
-            else -> {
-                setBackgroundColor(
-                    WColor.Background.color,
-                    ViewConstants.BIG_RADIUS.dp
-                )
-            }
-        }
+        setBackgroundColor(
+            WColor.Background.color,
+            ViewConstants.BLOCK_RADIUS.dp
+        )
         titleLabel.setTextColor(WColor.Tint.color)
     }
 

@@ -1,3 +1,4 @@
+export * from './auth';
 export * from './updates';
 export * from './misc';
 export * from './payload';
@@ -10,3 +11,4 @@ export * from './notifications';
 export * from './emulation';
 export * from './ledger';
 export * from './transfer';
+export * from './wallet';

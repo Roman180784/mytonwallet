@@ -42,7 +42,6 @@ import { toDecimal } from '../../../../util/decimals';
 import { getDnsDomainZone } from '../../../../util/dns';
 import { formatBaseCurrencyAmount, formatCurrencyExtended } from '../../../../util/formatNumber';
 import { getLocalAddressName } from '../../../../util/getLocalAddressName';
-import getPseudoRandomNumber from '../../../../util/getPseudoRandomNumber';
 import { vibrate } from '../../../../util/haptics';
 import { shortenAddress } from '../../../../util/shortenAddress';
 
@@ -65,6 +64,7 @@ type OwnProps = {
   isLast?: boolean;
   isActive?: boolean;
   withChainIcon?: boolean;
+  className?: string;
   annualYield: number | undefined;
   yieldType: ApiYieldType | undefined;
   appTheme: AppTheme;
@@ -93,6 +93,7 @@ function Transaction({
   tokensBySlug,
   transaction,
   isActive,
+  className,
   annualYield,
   yieldType,
   savedAddresses,
@@ -147,7 +148,6 @@ function Transaction({
   }, [accounts, address, chain, currentAccountId, savedAddresses]);
   const addressName = localAddressName || metadata?.name;
   const dnsIconText = useMemo(() => isDnsOperation ? getDnsIconText(nft) : '', [isDnsOperation, nft]);
-  const amountCols = useMemo(() => getPseudoRandomNumber(5, 13, timestamp.toString()), [timestamp]);
   const attachmentsTakeSubheader = shouldAttachmentTakeSubheader(transaction, isFuture);
   const isNoSubheaderLeft = getIsNoSubheaderLeft(transaction, isFuture);
   const titleTense = isFuture || status === 'failed' ? 'future' : 'past';
@@ -271,7 +271,9 @@ function Transaction({
     return (
       <SensitiveData
         isActive={isSensitiveDataHidden}
-        cols={amountCols}
+        min={5}
+        max={13}
+        seed={timestamp.toString()}
         rows={2}
         cellSize={8}
         align="right"
@@ -300,7 +302,9 @@ function Transaction({
     return (
       <SensitiveData
         isActive={isSensitiveDataHidden}
-        cols={Math.round(3 + (amountCols - 5) / 3)}
+        min={3}
+        max={5}
+        seed={timestamp.toString()}
         rows={2}
         cellSize={8}
         align="right"
@@ -368,6 +372,7 @@ function Transaction({
         onClick && styles.interactive,
         attachmentsTakeSubheader === 'full' ? styles.attachmentsInFullSubheader
           : attachmentsTakeSubheader === 'left' ? styles.attachmentsInLeftSubheader : undefined,
+        className,
       )}
       onClick={onClick && (() => onClick(id))}
       isSimple

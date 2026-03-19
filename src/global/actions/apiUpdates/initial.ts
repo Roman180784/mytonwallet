@@ -1,25 +1,30 @@
-import type { ApiLiquidStakingState } from '../../../api/types';
+import type { ApiLiquidStakingState, ApiNft, ApiStakingState } from '../../../api/types';
 import type { AccountChain } from '../../types';
 
 import {
   DEFAULT_STAKING_STATE,
+  IS_AIR_APP,
+  IS_CAPACITOR,
   IS_CORE_WALLET,
   MTW_CARDS_COLLECTION,
+  STAKING_SLUG_PREFIX,
   SWAP_API_VERSION,
   TELEGRAM_GIFTS_SUPER_COLLECTION,
 } from '../../../config';
 import { areDeepEqual } from '../../../util/areDeepEqual';
 import { buildCollectionByKey, unique } from '../../../util/iteratees';
-import { callActionInNative } from '../../../util/multitab';
 import { openUrl } from '../../../util/openUrl';
-import { IS_DELEGATING_BOTTOM_SHEET, IS_IOS_APP } from '../../../util/windowEnvironment';
+import { getIsActiveStakingState } from '../../../util/staking';
+import { IS_IOS_APP } from '../../../util/windowEnvironment';
 import { addActionHandler, setGlobal } from '../../index';
 import {
   addNft,
   addUnorderedNfts,
   createAccount,
   removeNft,
+  updateAccount,
   updateAccountChain,
+  updateAccountSettings,
   updateAccountSettingsBackgroundNft,
   updateAccountStaking,
   updateAccountState,
@@ -66,6 +71,9 @@ addActionHandler('apiUpdate', (global, actions, update) => {
         unstakeRequestAmount: 0n,
         tokenBalance: 0n,
       });
+      const prevStakingStateById = selectAccountState(global, accountId)?.staking?.stateById || {};
+      const prevStakingIds = new Set(Object.keys(prevStakingStateById));
+
       global = updateAccountStaking(global, accountId, {
         stateById,
         shouldUseNominators,
@@ -75,9 +83,13 @@ addActionHandler('apiUpdate', (global, actions, update) => {
       const { stakingId } = selectAccountState(global, accountId)?.staking ?? {};
 
       if (!stakingId) {
-        const stateWithBiggestBalance = [...states].sort(
-          (state0, state1) => Number(state1.balance - state0.balance),
-        )[0];
+        let stateWithBiggestBalance: ApiStakingState | undefined;
+
+        if (states.length > 0) {
+          stateWithBiggestBalance = states.reduce((max, state) =>
+            state.balance > max.balance ? state : max, states[0],
+          );
+        }
 
         if (stateWithBiggestBalance && stateWithBiggestBalance.balance > 0n) {
           global = updateAccountStaking(global, accountId, {
@@ -88,6 +100,28 @@ addActionHandler('apiUpdate', (global, actions, update) => {
             stakingId: stateById.nominators.id,
           });
         }
+      }
+
+      // Collect all new staking slugs for auto-pinning
+      const newStakingSlugs = states
+        .filter((state) => {
+          const isNewStaking = !prevStakingIds.has(state.id);
+          const isActive = getIsActiveStakingState(state);
+          return isNewStaking && isActive;
+        })
+        .map((state) => `${STAKING_SLUG_PREFIX}${state.tokenSlug}`);
+      const hasNewPins = newStakingSlugs.length > 0;
+
+      if (hasNewPins) {
+        const accountSettings = selectAccountSettings(global, accountId) || {};
+        const { pinnedSlugs = [] } = accountSettings;
+
+        const newPinnedSlugs = unique(newStakingSlugs.concat(pinnedSlugs));
+
+        global = updateAccountSettings(global, accountId, {
+          ...accountSettings,
+          pinnedSlugs: newPinnedSlugs,
+        });
       }
 
       setGlobal(global);
@@ -115,20 +149,59 @@ addActionHandler('apiUpdate', (global, actions, update) => {
     }
 
     case 'updateNfts': {
-      const { accountId, shouldAppend } = update;
+      const { chain, accountId, collectionAddress, isFullLoading, streamedAddresses } = update;
       const nfts = buildCollectionByKey(update.nfts, 'address');
       const currentNfts = selectAccountState(global, accountId)?.nfts;
       const newOrderedAddresses = Object.keys(nfts);
 
+      const shouldAppend = Boolean(collectionAddress) || Boolean(isFullLoading);
+
+      let byAddress: Record<string, ApiNft>;
+      let orderedAddresses: string[];
+
+      if (streamedAddresses) {
+        // Streaming complete - prune NFTs not seen during the session for this chain
+        const streamed = new Set(streamedAddresses);
+        const prunedByAddress = { ...currentNfts?.byAddress };
+        for (const addr of Object.keys(prunedByAddress)) {
+          if (prunedByAddress[addr].chain === chain && !streamed.has(addr)) {
+            delete prunedByAddress[addr];
+          }
+        }
+        byAddress = prunedByAddress;
+        orderedAddresses = (currentNfts?.orderedAddresses ?? [])
+          .filter((addr) => streamed.has(addr) || currentNfts?.byAddress?.[addr]?.chain !== chain);
+      } else if (shouldAppend) {
+        // Batch or collection loading - preserve existing entries (fresher websocket data)
+        byAddress = { ...nfts, ...currentNfts?.byAddress };
+        orderedAddresses = unique(
+          ([] as string[]).concat(currentNfts?.orderedAddresses ?? [], newOrderedAddresses),
+        );
+      } else {
+        // Non-streaming full update - new data takes priority
+        byAddress = { ...currentNfts?.byAddress, ...nfts };
+        orderedAddresses = unique(
+          ([] as string[]).concat(newOrderedAddresses, currentNfts?.orderedAddresses ?? []),
+        );
+      }
+
       global = updateAccountState(global, accountId, {
         nfts: {
           ...currentNfts,
-          byAddress: { ...nfts, ...currentNfts?.byAddress },
-          orderedAddresses: unique(
-            shouldAppend
-              ? ([] as string[]).concat(currentNfts?.orderedAddresses ?? [], newOrderedAddresses)
-              : ([] as string[]).concat(newOrderedAddresses, currentNfts?.orderedAddresses ?? []),
-          ),
+          byAddress,
+          orderedAddresses,
+          isLoadedByAddress: {
+            ...currentNfts?.isLoadedByAddress,
+            ...(shouldAppend && Boolean(collectionAddress) ? { [collectionAddress]: true } : {}),
+          },
+          collectionLoadedTimestamps: {
+            ...currentNfts?.collectionLoadedTimestamps,
+            ...(shouldAppend && Boolean(collectionAddress) ? { [collectionAddress]: Date.now() } : {}),
+          },
+          isFullLoadingByChain: isFullLoading !== undefined ? {
+            ...currentNfts?.isFullLoadingByChain,
+            [chain]: isFullLoading,
+          } : currentNfts?.isFullLoadingByChain,
         },
       });
 
@@ -143,14 +216,17 @@ addActionHandler('apiUpdate', (global, actions, update) => {
       const hasTelegramGifts = update.nfts.some((nft) => nft.isTelegramGift);
       if (hasTelegramGifts) {
         actions.addCollectionTab({
-          collectionAddress: TELEGRAM_GIFTS_SUPER_COLLECTION,
+          collection: {
+            address: TELEGRAM_GIFTS_SUPER_COLLECTION,
+            chain: 'ton',
+          },
           isAuto: true,
         });
       }
 
       setGlobal(global);
 
-      actions.checkCardNftOwnership();
+      actions.checkCardNftOwnership({ accountId });
       break;
     }
 
@@ -165,7 +241,7 @@ addActionHandler('apiUpdate', (global, actions, update) => {
       }
       setGlobal(global);
 
-      actions.checkCardNftOwnership();
+      actions.checkCardNftOwnership({ accountId });
       break;
     }
 
@@ -175,7 +251,7 @@ addActionHandler('apiUpdate', (global, actions, update) => {
       setGlobal(global);
 
       if (!IS_CORE_WALLET) {
-        actions.checkCardNftOwnership();
+        actions.checkCardNftOwnership({ accountId });
         const settings = selectAccountSettings(global, accountId);
         // If a user received an NFT card from the MyTonWallet collection, it is applied immediately.
         // But only if it is not already set.
@@ -199,7 +275,26 @@ addActionHandler('apiUpdate', (global, actions, update) => {
     case 'updateAccount': {
       const { accountId, chain, domain, address, isMultisig } = update;
       const account = selectAccount(global, accountId);
-      if (!account?.byChain[chain]) {
+      if (!account) {
+        break;
+      }
+
+      if (!account.byChain[chain]) {
+        if (!address) {
+          break;
+        }
+
+        global = updateAccount(global, accountId, {
+          byChain: {
+            ...account.byChain,
+            [chain]: {
+              address,
+              ...(domain ? { domain } : {}),
+              ...(isMultisig ? { isMultisig: true } : {}),
+            },
+          },
+        });
+        setGlobal(global);
         break;
       }
 
@@ -225,15 +320,24 @@ addActionHandler('apiUpdate', (global, actions, update) => {
         supportAccountsCount,
         countryCode,
         isAppUpdateRequired,
+        shouldAutoSwitchToAir,
         swapVersion,
+        seasonalTheme,
       } = update;
 
-      const shouldRestrictSwapsAndOnRamp = (IS_IOS_APP && isLimitedRegion) || IS_CORE_WALLET;
+      if (shouldAutoSwitchToAir && IS_CAPACITOR && !IS_AIR_APP && global.settings.hasOpenedAir !== true) {
+        global = updateSettings(global, {
+          shouldAutoSwitchToAirOnNextStart: true,
+        });
+      }
+
+      const shouldRestrictSwapsAndOnOffRamp = (IS_IOS_APP && isLimitedRegion) || IS_CORE_WALLET;
       global = updateRestrictions(global, {
         isLimitedRegion,
-        isSwapDisabled: shouldRestrictSwapsAndOnRamp,
-        isOnRampDisabled: shouldRestrictSwapsAndOnRamp,
-        isNftBuyingDisabled: shouldRestrictSwapsAndOnRamp,
+        isSwapDisabled: shouldRestrictSwapsAndOnOffRamp,
+        isOnRampDisabled: shouldRestrictSwapsAndOnOffRamp,
+        isOffRampDisabled: shouldRestrictSwapsAndOnOffRamp,
+        isNftBuyingDisabled: shouldRestrictSwapsAndOnOffRamp,
         isCopyStorageEnabled,
         supportAccountsCount,
         countryCode,
@@ -242,16 +346,13 @@ addActionHandler('apiUpdate', (global, actions, update) => {
         ...global,
         isAppUpdateRequired: IS_CORE_WALLET ? undefined : isAppUpdateRequired,
         swapVersion: swapVersion ?? SWAP_API_VERSION,
+        seasonalTheme,
       };
       setGlobal(global);
       break;
     }
 
     case 'updateWalletVersions': {
-      if (IS_DELEGATING_BOTTOM_SHEET) {
-        callActionInNative('apiUpdateWalletVersions', update);
-      }
-
       actions.apiUpdateWalletVersions(update);
       break;
     }
@@ -291,9 +392,16 @@ addActionHandler('apiUpdate', (global, actions, update) => {
       const accountState = selectAccountState(global, accountId);
       if (isUpdating && accountState?.[key]) break;
 
-      setGlobal(updateAccountState(global, accountId, {
+      global = updateAccountState(global, accountId, {
         [key]: isUpdating ? Date.now() : undefined,
-      }));
+      });
+
+      // Set `isAppReady` when balance loading is complete
+      if (!accountState?.isAppReady && kind === 'balance' && !isUpdating) {
+        global = updateAccountState(global, accountId, { isAppReady: true });
+      }
+
+      setGlobal(global);
       break;
     }
 
@@ -306,7 +414,6 @@ addActionHandler('apiUpdate', (global, actions, update) => {
         secondAddress,
         secondAccountId,
         isTonProxyEnabled,
-        isTonMagicEnabled,
       } = update;
 
       global = updateSettings(global, { isTestnet });
@@ -331,9 +438,6 @@ addActionHandler('apiUpdate', (global, actions, update) => {
         actions.switchAccount({ accountId, newNetwork: isTestnet ? 'testnet' : 'mainnet' });
         actions.afterSignIn();
 
-        if (isTonMagicEnabled) {
-          actions.toggleTonMagic({ isEnabled: true });
-        }
         if (isTonProxyEnabled) {
           actions.toggleTonProxy({ isEnabled: true });
         }

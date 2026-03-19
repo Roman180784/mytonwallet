@@ -5,7 +5,8 @@ import UIPasscode
 import UIComponents
 import WalletCore
 import WalletContext
-
+import Perception
+import Dependencies
 
 enum SendDappViewOrPlaceholderContent {
     case placeholder(TonConnectPlaceholder)
@@ -30,40 +31,40 @@ struct SendDappViewOrPlaceholder: View {
 
 struct SendDappContentView: View {
     
-    var account: MAccount
-    var request: MDappSendTransactions
+    var accountContext: AccountContext
+    var request: ApiUpdate.DappSendTransactions
+    var operationChain: ApiChain
     var onShowDetail: (ApiDappTransfer) -> ()
-    var onScroll: (CGFloat) -> ()
     
     var transactionsCount: Int { request.transactions.count }
     
-    @Namespace var ns
+    @Dependency(\.tokenStore) private var tokenStore
     
     var body: some View {
-        InsetList {
-            SendDappHeaderView(
-                dapp: request.dapp,
-                transactionsCount: transactionsCount,
-                account: account,
-                isDangerous: request.combinedInfo.isDangerous
-            )
-            .scrollPosition(ns: ns, offset: -88, callback: onScroll)
-            
-            if request.combinedInfo.isDangerous {
-                SendDappWarningView()
-                    .padding(.horizontal, 16)
+        WithPerceptionTracking {
+            InsetList {
+                DappHeaderView(
+                    dapp: request.dapp,
+                    accountContext: accountContext,
+                )
+                
+                if request.combinedInfo.isDangerous {
+                    SendDappWarningView()
+                        .padding(.horizontal, 16)
+                }
+                
+                if request.shouldHideTransfers != true {
+                    totalAmountSection
+                    
+                    transfersSection
+                }
+                
+                previewSection
             }
-            
-            totalAmountSection
-            
-            transfersSection
-            
-            previewSection
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: 80)
+            }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 80)
-        }
-        .coordinateSpace(name: ns)
     }
     
     @ViewBuilder
@@ -81,10 +82,10 @@ struct SendDappContentView: View {
     var transfersSection: some View {
         InsetSection {
             ForEach(request.transactions, id: \.self) { tx in
-                TransferRow(transfer: tx, action: onShowDetail)
+                TransferRow(transfer: tx, chain: operationChain, action: onShowDetail)
             }
         } header: {
-            Text(lang("%lld transfer", arg1: transactionsCount))
+            Text(lang("transfer", arg1: transactionsCount))
         }
     }
     
@@ -93,7 +94,9 @@ struct SendDappContentView: View {
         if let emulation = request.emulation {
             InsetSection {
                 ForEach(emulation.activities) { activity in
-                    WPreviewActivityCell(activity: activity)
+                    WithPerceptionTracking {
+                        WPreviewActivityCell(.init(activity: activity, accountContext: accountContext, tokenStore: tokenStore))
+                    }
                 }
             } header: {
                 let preview = Text(lang("Preview"))

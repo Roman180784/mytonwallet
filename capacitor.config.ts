@@ -21,7 +21,6 @@ const COMMON_PLUGINS = [
   '@mauricewegner/capacitor-navigation-bar',
   '@mytonwallet/air-app-launcher',
   '@mytonwallet/capacitor-usb-hid',
-  '@mytonwallet/native-bottom-sheet',
   'capacitor-native-settings',
   'capacitor-plugin-safe-area',
   'capacitor-secure-storage-plugin',
@@ -50,11 +49,6 @@ const config: CapacitorConfig = {
     includePlugins: COMMON_PLUGINS.concat(IOS_PLUGINS),
     scheme: 'MyTonWallet',
     webContentsDebuggingEnabled: APP_ENV !== 'production',
-    // This parameter fixes a problem occurring with Capacitor 7. Without it, the Delegated Bottom Sheet steals the
-    // focus from the main WebView for a second at the application start. This focus behavior broke the app logic that
-    // expected the main WebView to be focused instead of the Sheet. With the parameter, both the contexts are out of
-    // focus at the app start, and after ~60ms the main WebView gets the focus, which is ok for the app.
-    initialFocus: false,
   },
   plugins: {
     SplashScreen: {
@@ -75,6 +69,7 @@ const config: CapacitorConfig = {
       // This setting, if set to true, add a workaround that resizes the WebView even
       // when the app is in full screen. Only available for Android
       // https://capacitorjs.com/docs/apis/keyboard#configuration
+      // This is necessary since Cap7, otherwise input will be hidden by the keyboard.
       resizeOnFullScreen: true,
     },
   },

@@ -1,7 +1,6 @@
 
 import Foundation
 import WalletContext
-import WalletCore
 
 
 public enum StepId: Sendable {
@@ -17,7 +16,7 @@ public enum StepId: Sendable {
         case .openApp:
             "Unlock it and open the TON app"
         case .sign:
-            "Please confirm transaction on your Ledger"
+            "Please confirm transfer on your Ledger"
         case .discoveringWallets:
             "Discovering wallets"
         }

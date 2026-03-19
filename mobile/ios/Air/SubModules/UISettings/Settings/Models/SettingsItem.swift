@@ -7,7 +7,6 @@
 
 import Foundation
 import UIKit
-import WalletCore
 import WalletContext
 
 struct SettingsItem: Equatable, Identifiable {
@@ -15,6 +14,7 @@ struct SettingsItem: Equatable, Identifiable {
     enum Identifier: Equatable, Hashable {
         case editWalletName
         case account(accountId: String)
+        case walletSettings
         case addAccount
         case notifications
         case appearance
@@ -27,17 +27,18 @@ struct SettingsItem: Equatable, Identifiable {
         case helpCenter
         case support
         case about
-        case signout
+        case useResponsibly
     }
     
     let id: Identifier
-    let icon: UIImage?
-    let title: String
+    var icon: UIImage?
+    var highlightIcon: Bool = true
+    var title: String
     var subtitle: String? = nil
     var value: String? = nil
-    let hasPrimaryColor: Bool
-    let hasChild: Bool
-    let isDangerous: Bool
+    var hasPrimaryColor: Bool
+    var hasChild: Bool
+    var isDangerous: Bool
 }
 
 
@@ -48,33 +49,29 @@ extension SettingsItem.Identifier {
             return SettingsItem(
                 id: .editWalletName,
                 icon: UIImage.airBundle("EditWalletNameIcon").withRenderingMode(.alwaysTemplate),
+                highlightIcon: false,
                 title: lang("Edit Wallet Name"),
                 hasPrimaryColor: true,
                 hasChild: false,
                 isDangerous: false
             )
         case .account(let accountId):
-            let account = AccountStore.accountsById[accountId]
-            let title: String
-            let subtitle: String?
-            if let t = account?.title?.nilIfEmpty {
-                title = t
-                subtitle = formatStartEndAddress(account?.firstAddress ?? "")
-            } else {
-                title = formatStartEndAddress(account?.firstAddress ?? "")
-                subtitle = nil
-            }
-            let balanceAmount = BalanceStore.getTotalBalanceInBaseCurrency(for: accountId)
-            let balance = balanceAmount != nil ? formatAmountText(amount: balanceAmount!,
-                                                                  currency: TokenStore.baseCurrency?.sign,
-                                                                  decimalsCount: TokenStore.baseCurrency?.decimalsCount) : nil
             return SettingsItem(
                 id: .account(accountId: accountId),
-                icon: .avatar(for: account, withSize: 30) ?? UIImage(),
-                title: title,
-                subtitle: subtitle,
-                value: balance,
+                icon: nil,
+                title: "",
+                subtitle: "",
                 hasPrimaryColor: false,
+                hasChild: false,
+                isDangerous: false
+            )
+        case .walletSettings:
+            return SettingsItem(
+                id: .walletSettings,
+                icon: UIImage(systemName: "ellipsis"),
+                highlightIcon: false,
+                title: lang("Show All Wallets"),
+                hasPrimaryColor: true,
                 hasChild: false,
                 isDangerous: false
             )
@@ -82,7 +79,8 @@ extension SettingsItem.Identifier {
             return SettingsItem(
                 id: .addAccount,
                 icon: UIImage.airBundle("AddAccountIcon").withRenderingMode(.alwaysTemplate),
-                title: lang("Add Account"),
+                highlightIcon: false,
+                title: lang("Add Wallet"),
                 hasPrimaryColor: true,
                 hasChild: false,
                 isDangerous: false
@@ -118,7 +116,7 @@ extension SettingsItem.Identifier {
             return SettingsItem(
                 id: .connectedApps,
                 icon: UIImage.airBundle("DappsIcon"),
-                title: lang("Connected Apps"),
+                title: lang("Connected Sites"),
                 hasPrimaryColor: false,
                 hasChild: true,
                 isDangerous: false
@@ -175,26 +173,27 @@ extension SettingsItem.Identifier {
                 icon: UIImage.airBundle("SupportIcon30"),
                 title: lang("Get Support"),
                 hasPrimaryColor: false,
-                hasChild: false,
+                hasChild: true,
                 isDangerous: false
             )
         case .about:
             return SettingsItem(
                 id: .about,
-                icon: UIImage.airBundle("TermsIcon"),
-                title: lang("About %app_name%", arg1: lang("MyTonWallet")),
+                icon: UIImage.airBundle("AboutIcon"),
+                title: lang("About %app_name%", arg1: APP_NAME),
                 hasPrimaryColor: false,
                 hasChild: true,
                 isDangerous: false
             )
-        case .signout:
+            
+        case .useResponsibly:
             return SettingsItem(
-                id: .signout,
-                icon: nil,
-                title: lang("Remove Wallet"),
+                id: .useResponsibly,
+                icon: UIImage.airBundle("ResponsibilityIcon30"),
+                title: lang("Use Responsibly"),
                 hasPrimaryColor: false,
                 hasChild: true,
-                isDangerous: true
+                isDangerous: false
             )
         }
     }

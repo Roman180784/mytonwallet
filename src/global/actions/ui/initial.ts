@@ -1,5 +1,5 @@
 import type {
-  Account, AccountSettings, AccountState, NotificationType,
+  Account, AccountSettings, AccountState, ToastType,
 } from '../../types';
 import { AppState } from '../../types';
 
@@ -8,6 +8,7 @@ import {
   DEFAULT_SWAP_SECOND_TOKEN_SLUG,
   DEFAULT_TRANSFER_TOKEN_SLUG,
   IS_CAPACITOR,
+  IS_EXPLORER,
   IS_EXTENSION,
   IS_TELEGRAM_APP,
   TONCOIN,
@@ -16,10 +17,14 @@ import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import { parseAccountId } from '../../../util/account';
 import authApi from '../../../util/authApi';
 import { initCapacitorWithGlobal } from '../../../util/capacitor';
-import { processDeeplinkAfterSignIn } from '../../../util/deeplink';
+import {
+  getDeeplinkFromLocation,
+  processDeeplink,
+  processDeeplinkAfterInit,
+  processDeeplinkAfterSignIn,
+} from '../../../util/deeplink';
 import { omit } from '../../../util/iteratees';
-import { clearPreviousLangpacks, setLanguage } from '../../../util/langProvider';
-import { callActionInMain, callActionInNative } from '../../../util/multitab';
+import { clearPreviousLangpacks, getTranslation, setLanguage } from '../../../util/langProvider';
 import { initializeSounds } from '../../../util/notificationSound';
 import switchAnimationLevel from '../../../util/switchAnimationLevel';
 import switchTheme, { setStatusBarStyle } from '../../../util/switchTheme';
@@ -28,8 +33,6 @@ import {
   getIsMobileTelegramApp,
   IS_ANDROID,
   IS_ANDROID_APP,
-  IS_DELEGATED_BOTTOM_SHEET,
-  IS_DELEGATING_BOTTOM_SHEET,
   IS_ELECTRON,
   IS_IOS,
   IS_LINUX,
@@ -42,8 +45,12 @@ import {
 import { callApi } from '../../../api';
 import { errorCodeToMessage } from '../../helpers/errors';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import { updateCurrentAccountId, updateCurrentAccountState } from '../../reducers';
 import {
+  updateCurrentAccountId,
+  updateCurrentAccountState,
+} from '../../reducers';
+import {
+  selectCurrentAccountId,
   selectCurrentNetwork,
   selectNetworkAccounts,
   selectNetworkAccountsMemoized,
@@ -53,7 +60,7 @@ import {
 
 const ANIMATION_DELAY_MS = 320;
 
-addActionHandler('init', (_, actions) => {
+addActionHandler('init', (global, actions) => {
   requestMutation(() => {
     const { documentElement } = document;
 
@@ -89,9 +96,6 @@ addActionHandler('init', (_, actions) => {
     if (getIsMobileTelegramApp()) {
       documentElement.classList.add('is-mobile-telegram-app');
     }
-    if (IS_DELEGATED_BOTTOM_SHEET) {
-      documentElement.classList.add('is-native-bottom-sheet');
-    }
 
     setScrollbarWidthProperty();
 
@@ -99,7 +103,7 @@ addActionHandler('init', (_, actions) => {
   });
 });
 
-addActionHandler('afterInit', (global) => {
+addActionHandler('afterInit', (global, actions) => {
   const {
     theme, animationLevel, langCode, authConfig,
   } = global.settings;
@@ -111,6 +115,7 @@ addActionHandler('afterInit', (global) => {
   });
   void setLanguage(langCode);
   clearPreviousLangpacks();
+  processDeeplinkAfterInit();
 
   if (IS_CAPACITOR) {
     void initCapacitorWithGlobal(authConfig);
@@ -120,6 +125,18 @@ addActionHandler('afterInit', (global) => {
     }
 
     document.addEventListener('click', initializeSounds, { once: true });
+  }
+
+  if (!IS_EXPLORER) return;
+
+  void callApi('clearStorageForExplorerMode');
+
+  const deeplinkUrl = getDeeplinkFromLocation();
+
+  if (deeplinkUrl) {
+    void processDeeplink(deeplinkUrl);
+  } else {
+    actions.showToast({ message: getTranslation('$explorer_mode_warning') });
   }
 });
 
@@ -160,10 +177,6 @@ addActionHandler('showDialog', (global, actions, payload) => {
 });
 
 addActionHandler('dismissDialog', (global) => {
-  if (IS_DELEGATING_BOTTOM_SHEET) {
-    callActionInNative('dismissDialog');
-  }
-
   const newDialogs = [...global.dialogs];
 
   newDialogs.pop();
@@ -188,7 +201,10 @@ addActionHandler('selectToken', (global, actions, { slug } = {}) => {
       actions.changeTransferToken({ tokenSlug: slug });
     }
   } else {
-    const currentActivityToken = global.byAccountId[global.currentAccountId!].currentTokenSlug;
+    const currentAccountId = selectCurrentAccountId(global);
+    if (!currentAccountId) return;
+
+    const currentActivityToken = global.byAccountId[currentAccountId].currentTokenSlug;
 
     const isDefaultFirstTokenOutSwap = global.currentSwap.tokenOutSlug === DEFAULT_SWAP_FIRST_TOKEN_SLUG
       && global.currentSwap.tokenInSlug === DEFAULT_SWAP_SECOND_TOKEN_SLUG;
@@ -219,11 +235,6 @@ addActionHandler('selectToken', (global, actions, { slug } = {}) => {
 });
 
 addActionHandler('showError', (global, actions, { error } = {}) => {
-  if (IS_DELEGATED_BOTTOM_SHEET) {
-    callActionInMain('showError', { error });
-    return;
-  }
-
   actions.showDialog({
     message: error === undefined || typeof error === 'string'
       ? errorCodeToMessage(error)
@@ -231,36 +242,31 @@ addActionHandler('showError', (global, actions, { error } = {}) => {
   });
 });
 
-addActionHandler('showNotification', (global, actions, payload) => {
-  if (IS_DELEGATED_BOTTOM_SHEET) {
-    callActionInMain('showNotification', payload);
-    return undefined;
-  }
-
+addActionHandler('showToast', (global, actions, payload) => {
   const { message, icon } = payload;
 
-  const newNotifications: NotificationType[] = [...global.notifications];
-  const existingNotificationIndex = newNotifications.findIndex((n) => n.message === message);
-  if (existingNotificationIndex !== -1) {
-    newNotifications.splice(existingNotificationIndex, 1);
+  const newToasts: ToastType[] = [...global.toasts];
+  const existingToastIndex = newToasts.findIndex((n) => n.message === message);
+  if (existingToastIndex !== -1) {
+    newToasts.splice(existingToastIndex, 1);
   }
 
-  newNotifications.push({ message, icon });
+  newToasts.push({ message, icon });
 
   return {
     ...global,
-    notifications: newNotifications,
+    toasts: newToasts,
   };
 });
 
-addActionHandler('dismissNotification', (global) => {
-  const newNotifications = [...global.notifications];
+addActionHandler('dismissToast', (global) => {
+  const newToasts = [...global.toasts];
 
-  newNotifications.pop();
+  newToasts.pop();
 
   return {
     ...global,
-    notifications: newNotifications,
+    toasts: newToasts,
   };
 });
 
@@ -272,18 +278,6 @@ addActionHandler('toggleTonProxy', (global, actions, { isEnabled }) => {
     settings: {
       ...global.settings,
       isTonProxyEnabled: isEnabled,
-    },
-  };
-});
-
-addActionHandler('toggleTonMagic', (global, actions, { isEnabled }) => {
-  void callApi('doMagic', isEnabled);
-
-  return {
-    ...global,
-    settings: {
-      ...global.settings,
-      isTonMagicEnabled: isEnabled,
     },
   };
 });
@@ -305,11 +299,7 @@ addActionHandler('toggleDeeplinkHook', (global, actions, { isEnabled }) => {
 });
 
 addActionHandler('signOut', async (global, actions, payload) => {
-  if (IS_DELEGATED_BOTTOM_SHEET) {
-    callActionInMain('signOut', payload);
-  }
-
-  const { level } = payload;
+  const { level, accountId } = payload;
 
   const network = selectCurrentNetwork(global);
   const accounts = selectNetworkAccounts(global)!;
@@ -379,23 +369,36 @@ addActionHandler('signOut', async (global, actions, payload) => {
       actions.init();
     }
   } else {
-    const prevAccountId = global.currentAccountId!;
-    const nextAccountId = accountIds.find((id) => id !== prevAccountId)!;
-    const nextNewestActivityTimestamps = selectNewestActivityTimestamps(global, nextAccountId);
+    const currentAccountId = selectCurrentAccountId(global)!;
+    const removingAccountId = accountId ?? currentAccountId;
+    const shouldSwitchAccount = removingAccountId === currentAccountId;
+    const isRemovingTemporaryAccount = removingAccountId === global.currentTemporaryViewAccountId;
+    // If removing temporary account, we should switch to previous account (aka `global.currentAccountId`), not to the first of the `accountIds`.
+    const nextAccountId = shouldSwitchAccount
+      ? (isRemovingTemporaryAccount && global.currentAccountId
+        ? global.currentAccountId
+        : accountIds.find((id) => id !== removingAccountId)!)
+      : undefined;
+    const nextNewestActivityTimestamps = nextAccountId
+      ? selectNewestActivityTimestamps(global, nextAccountId)
+      : undefined;
 
-    await callApi('removeAccount', prevAccountId, nextAccountId, nextNewestActivityTimestamps);
-    actions.deleteNotificationAccount({ accountId: prevAccountId });
+    await callApi('removeAccount', removingAccountId, nextAccountId, nextNewestActivityTimestamps);
+    actions.deleteNotificationAccount({ accountId: removingAccountId });
 
     global = getGlobal();
 
-    const accountsById = omit(global.accounts!.byId, [prevAccountId]);
-    const byAccountId = omit(global.byAccountId, [prevAccountId]);
-    const settingsByAccountId = omit(global.settings.byAccountId, [prevAccountId]);
+    const accountsById = omit(global.accounts!.byId, [removingAccountId]);
+    const byAccountId = omit(global.byAccountId, [removingAccountId]);
+    const settingsByAccountId = omit(global.settings.byAccountId, [removingAccountId]);
 
-    global = updateCurrentAccountId(global, nextAccountId);
+    if (nextAccountId !== undefined) {
+      global = updateCurrentAccountId(global, nextAccountId);
+    }
 
     global = {
       ...global,
+      currentTemporaryViewAccountId: undefined,
       accounts: {
         ...global.accounts!,
         byId: accountsById,
